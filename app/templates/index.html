@@ -1,0 +1,2394 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Synology Space Analyzer - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: {
+                            50: '#f0f4ff',
+                            100: '#e0e9ff',
+                            500: '#667eea',
+                            600: '#5568d3',
+                            700: '#4c5bc4',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Minimal custom CSS für Spezialfälle */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from {
+                transform: translateY(20px);
+                opacity: 0;
+            }
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        .scan-item-running {
+            animation: pulse 2s infinite;
+        }
+        
+        .modal-overlay {
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        .modal {
+            animation: slideUp 0.3s ease-out;
+        }
+        
+        /* Focus trap helper */
+        .focus-trap-start,
+        .focus-trap-end {
+            position: absolute;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+        }
+        
+        /* Chart container */
+        .chart-container {
+            position: relative;
+            height: 400px;
+        }
+        
+        @media (max-width: 640px) {
+            .chart-container {
+                height: 300px;
+            }
+        }
+        
+        /* Custom scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 min-h-screen">
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed top-4 right-4 z-50 flex flex-col gap-2"></div>
+    
+    <!-- Command Palette Modal -->
+    <div id="command-palette" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="palette-title">
+        <div class="modal bg-white rounded-xl shadow-2xl max-w-2xl w-full" style="max-height: 80vh;">
+            <div class="p-4 border-b border-slate-200">
+                <div class="flex items-center gap-3 mb-3">
+                    <h2 id="palette-title" class="text-lg font-semibold text-slate-900">🔍 Scan suchen</h2>
+                </div>
+                <input 
+                    type="text" 
+                    id="palette-input" 
+                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent" 
+                    placeholder="Scan-Name, Host, Share oder Status eingeben..."
+                    autocomplete="off"
+                />
+            </div>
+            <div id="palette-results" class="overflow-y-auto custom-scrollbar" style="max-height: calc(80vh - 140px);">
+                <div class="p-4 text-center text-slate-500 text-sm">Tippen Sie, um zu suchen...</div>
+            </div>
+            <div class="p-4 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">↑</kbd>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">↓</kbd>
+                        <span class="ml-2">Navigieren</span>
+                    </div>
+                    <div>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">Enter</kbd>
+                        <span class="ml-2">Ergebnisse öffnen</span>
+                    </div>
+                    <div>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">Shift</kbd>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">Enter</kbd>
+                        <span class="ml-2">oder</span>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">H</kbd>
+                        <span class="ml-2">Historie</span>
+                    </div>
+                    <div>
+                        <kbd class="px-2 py-1 bg-white border border-slate-300 rounded text-xs">Esc</kbd>
+                        <span class="ml-2">Schließen</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal für Ergebnisse -->
+    <div id="results-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-40 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <h2 id="modal-title" class="text-xl font-semibold">📊 Scan-Ergebnisse</h2>
+                    <span id="modal-status-badge" class="status-badge"></span>
+                </div>
+                <button 
+                    class="modal-close bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full w-10 h-10 flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-primary-500" 
+                    onclick="closeModal()"
+                    aria-label="Modal schließen"
+                >
+                    ×
+                </button>
+            </div>
+            
+            <!-- Modal Tabs -->
+            <div class="border-b border-slate-200 px-6 flex gap-1">
+                <button 
+                    class="modal-tab px-6 py-3 font-medium text-slate-600 border-b-2 border-transparent hover:text-primary-600 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset"
+                    onclick="switchTab('results')"
+                    id="tab-results"
+                >
+                    📊 Ergebnisse
+                </button>
+                <button 
+                    class="modal-tab px-6 py-3 font-medium text-slate-600 border-b-2 border-transparent hover:text-primary-600 transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset"
+                    onclick="switchTab('history')"
+                    id="tab-history"
+                >
+                    📜 Historie
+                </button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="modal-body flex-1 overflow-y-auto px-6 py-6">
+                <!-- Ergebnisse Tab -->
+                <div id="modal-results-tab" class="modal-tab-content">
+                    <div id="modal-results-container">
+                        <div class="flex items-center justify-center py-12">
+                            <div class="text-slate-500">Lade Ergebnisse...</div>
+                        </div>
+                    </div>
+                    <div id="modal-chart-container" class="chart-container mt-8 hidden">
+                        <canvas id="modal-sizeChart"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Historie Tab -->
+                <div id="modal-history-tab" class="modal-tab-content hidden">
+                    <!-- Desktop: Master-Detail Layout -->
+                    <div id="history-desktop-layout" class="hidden md:flex gap-6 h-full" style="min-height: 500px;">
+                        <!-- Left Panel: Timeline List -->
+                        <div class="w-[35%] border-r border-slate-200 pr-6 flex flex-col">
+                            <!-- Filter Section -->
+                            <div class="mb-4">
+                                <input 
+                                    type="text" 
+                                    id="history-search-input" 
+                                    class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3" 
+                                    placeholder="🔍 Historie durchsuchen..."
+                                    oninput="filterHistoryList()"
+                                />
+                                <div class="flex gap-2">
+                                    <button 
+                                        class="history-filter-btn px-3 py-1 text-xs font-medium rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors active"
+                                        data-filter="all"
+                                        onclick="setHistoryFilter('all')"
+                                    >
+                                        Alle
+                                    </button>
+                                    <button 
+                                        class="history-filter-btn px-3 py-1 text-xs font-medium rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                        data-filter="completed"
+                                        onclick="setHistoryFilter('completed')"
+                                    >
+                                        ✅ Abgeschlossen
+                                    </button>
+                                    <button 
+                                        class="history-filter-btn px-3 py-1 text-xs font-medium rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                        data-filter="failed"
+                                        onclick="setHistoryFilter('failed')"
+                                    >
+                                        ❌ Fehlgeschlagen
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- History List -->
+                            <div id="history-list-container" class="flex-1 overflow-y-auto custom-scrollbar">
+                                <div class="text-center text-slate-500 text-sm py-8">Lade Historie...</div>
+                            </div>
+                        </div>
+                        
+                        <!-- Right Panel: Detail View -->
+                        <div class="flex-1 flex flex-col">
+                            <div id="history-detail-container">
+                                <div class="flex items-center justify-center py-12">
+                                    <div class="text-slate-500">Wählen Sie einen Eintrag aus der Liste</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Mobile: Stack Layout -->
+                    <div id="history-mobile-layout" class="md:hidden">
+                        <div id="history-mobile-list-view">
+                            <!-- Filter Section -->
+                            <div class="mb-4">
+                                <input 
+                                    type="text" 
+                                    id="history-search-input-mobile" 
+                                    class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mb-3" 
+                                    placeholder="🔍 Historie durchsuchen..."
+                                    oninput="filterHistoryListMobile()"
+                                />
+                                <div class="flex gap-2">
+                                    <button 
+                                        class="history-filter-btn-mobile px-3 py-1 text-xs font-medium rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors active"
+                                        data-filter="all"
+                                        onclick="setHistoryFilterMobile('all')"
+                                    >
+                                        Alle
+                                    </button>
+                                    <button 
+                                        class="history-filter-btn-mobile px-3 py-1 text-xs font-medium rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                        data-filter="completed"
+                                        onclick="setHistoryFilterMobile('completed')"
+                                    >
+                                        ✅ Abgeschlossen
+                                    </button>
+                                    <button 
+                                        class="history-filter-btn-mobile px-3 py-1 text-xs font-medium rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                        data-filter="failed"
+                                        onclick="setHistoryFilterMobile('failed')"
+                                    >
+                                        ❌ Fehlgeschlagen
+                                    </button>
+                                </div>
+                            </div>
+                            <!-- History List -->
+                            <div id="history-list-container-mobile" class="space-y-3">
+                                <div class="text-center text-slate-500 text-sm py-8">Lade Historie...</div>
+                            </div>
+                        </div>
+                        
+                        <div id="history-mobile-detail-view" class="hidden">
+                            <button 
+                                onclick="showHistoryMobileList()"
+                                class="mb-4 px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 flex items-center gap-2"
+                            >
+                                ← Zurück zur Liste
+                            </button>
+                            <div id="history-detail-container-mobile"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="border-t border-slate-200 px-6 py-4 bg-slate-50 flex justify-end gap-3">
+                <button 
+                    class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors" 
+                    onclick="closeModal()"
+                >
+                    Schließen
+                </button>
+                <button 
+                    class="px-4 py-2 text-sm font-medium text-white bg-primary-500 rounded-lg hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors hidden" 
+                    onclick="exportCurrentResults()" 
+                    id="modal-export-btn"
+                >
+                    📥 Exportieren
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Storage Management Modal -->
+    <div id="storage-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="storage-modal-title">
+        <div class="modal bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <h2 id="storage-modal-title" class="text-xl font-semibold">💾 Storage-Management</h2>
+                </div>
+                <button 
+                    class="modal-close bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full w-10 h-10 flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-purple-500" 
+                    onclick="closeStorageModal()"
+                    aria-label="Modal schließen"
+                >
+                    ×
+                </button>
+            </div>
+            
+            <!-- Modal Tabs -->
+            <div class="border-b border-slate-200 px-6 flex gap-1">
+                <button 
+                    class="storage-tab px-6 py-3 font-medium text-slate-600 border-b-2 border-transparent hover:text-purple-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-inset active border-purple-500 text-purple-600"
+                    onclick="switchStorageTab('stats')"
+                    id="storage-tab-stats"
+                >
+                    📊 Statistiken
+                </button>
+                <button 
+                    class="storage-tab px-6 py-3 font-medium text-slate-600 border-b-2 border-transparent hover:text-purple-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-inset"
+                    onclick="switchStorageTab('folders')"
+                    id="storage-tab-folders"
+                >
+                    📂 Ordner
+                </button>
+                <button 
+                    class="storage-tab px-6 py-3 font-medium text-slate-600 border-b-2 border-transparent hover:text-purple-600 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-inset"
+                    onclick="switchStorageTab('cleanup')"
+                    id="storage-tab-cleanup"
+                >
+                    🧹 Bereinigung
+                </button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="modal-body flex-1 overflow-y-auto px-6 py-6">
+                <!-- Statistiken Tab -->
+                <div id="storage-stats-tab" class="storage-tab-content">
+                    <div id="storage-stats-container">
+                        <div class="flex items-center justify-center py-12">
+                            <div class="text-slate-500">Lade Statistiken...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Ordner Tab -->
+                <div id="storage-folders-tab" class="storage-tab-content hidden">
+                    <div class="mb-4">
+                        <div class="flex gap-2 mb-4">
+                            <input 
+                                type="text" 
+                                id="folder-filter-nas" 
+                                class="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                                placeholder="NAS-Host filter (optional)"
+                            />
+                            <input 
+                                type="text" 
+                                id="folder-filter-scan" 
+                                class="flex-1 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                                placeholder="Scan-Name filter (optional)"
+                            />
+                            <button 
+                                class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm font-medium"
+                                onclick="loadFolders()"
+                            >
+                                🔍 Suchen
+                            </button>
+                        </div>
+                    </div>
+                    <div id="storage-folders-container">
+                        <div class="flex items-center justify-center py-12">
+                            <div class="text-slate-500">Lade Ordner...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Bereinigung Tab -->
+                <div id="storage-cleanup-tab" class="storage-tab-content hidden">
+                    <div class="space-y-6">
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <div class="flex items-start gap-3">
+                                <span class="text-yellow-600 text-xl">⚠️</span>
+                                <div>
+                                    <h3 class="font-semibold text-yellow-900 mb-1">Warnung</h3>
+                                    <p class="text-sm text-yellow-800">Bereinigungsoperationen können nicht rückgängig gemacht werden. Verwenden Sie die Vorschau, um zu sehen, welche Daten gelöscht werden.</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">Anzahl Tage</label>
+                                <input 
+                                    type="number" 
+                                    id="cleanup-days" 
+                                    value="90"
+                                    min="1"
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">NAS-Host (optional)</label>
+                                <input 
+                                    type="text" 
+                                    id="cleanup-nas-host" 
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    placeholder="z.B. 192.168.1.100"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">Ordner-Pfad (optional)</label>
+                                <input 
+                                    type="text" 
+                                    id="cleanup-folder-path" 
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    placeholder="z.B. homes/user1"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">Scan-Name (optional)</label>
+                                <input 
+                                    type="text" 
+                                    id="cleanup-scan-name" 
+                                    class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    placeholder="z.B. my_scan"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-3">
+                            <button 
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+                                onclick="previewCleanup()"
+                            >
+                                👁️ Vorschau
+                            </button>
+                            <button 
+                                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
+                                onclick="executeCleanup()"
+                            >
+                                🗑️ Bereinigen
+                            </button>
+                        </div>
+                        
+                        <div id="cleanup-preview-result" class="hidden"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="border-t border-slate-200 px-6 py-4 bg-slate-50 flex justify-end gap-3">
+                <button 
+                    class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors" 
+                    onclick="closeStorageModal()"
+                >
+                    Schließen
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Container -->
+    <div class="container mx-auto max-w-7xl px-4 py-6">
+        <!-- Header -->
+        <div class="bg-white rounded-xl shadow-sm p-6 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900 mb-1">🔍 Synology Space Analyzer</h1>
+                <p class="text-slate-600 text-sm">Dashboard für Scan-Status und Ergebnisse</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button 
+                    id="command-palette-trigger"
+                    class="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors font-medium flex items-center gap-2 text-sm"
+                    onclick="openPalette()"
+                    title="Schnellsuche (⌘K oder Ctrl+K)"
+                >
+                    🔍 Suchen...
+                    <kbd class="hidden sm:inline-block px-2 py-0.5 text-xs bg-white border border-slate-300 rounded">⌘K</kbd>
+                </button>
+                <span id="auto-refresh-indicator" class="hidden text-green-600 text-sm flex items-center gap-2">
+                    <span class="animate-spin">🔄</span>
+                    <span>Auto-Refresh aktiv</span>
+                </span>
+                <button 
+                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors font-medium flex items-center gap-2"
+                    onclick="reloadConfig()"
+                    id="reload-config-btn"
+                    title="Konfiguration neu laden"
+                >
+                    ⚙️ Config Reload
+                </button>
+                <button 
+                    class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors font-medium flex items-center gap-2"
+                    onclick="loadScans()"
+                >
+                    🔄 Aktualisieren
+                </button>
+                <button 
+                    class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 transition-colors font-medium flex items-center gap-2"
+                    onclick="openStorageModal()"
+                    title="Storage-Management"
+                >
+                    💾 Storage
+                </button>
+            </div>
+        </div>
+        
+        <!-- Scan-Liste -->
+        <div class="bg-white rounded-xl shadow-sm p-6">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xl font-semibold text-slate-900">📊 Scan-Status</h2>
+            </div>
+            <div id="scan-list" class="space-y-4">
+                <div class="flex items-center justify-center py-12">
+                    <div class="text-slate-500">Lade Scans...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Global State
+        let sizeChart = null;
+        let modalSizeChart = null;
+        let autoRefreshInterval = null;
+        let currentScanName = null;
+        let modalFocusTrap = null;
+        let currentScans = []; // Für Command Palette
+        let paletteSelectedIndex = 0;
+        let paletteResults = [];
+        let paletteTriggerElement = null;
+        
+        // UI State
+        const uiState = {
+            selectedScanName: null,
+            modalTab: 'results',
+            selectedHistoryIndex: null,
+            historyRange: 'all',
+            paletteOpen: false,
+            paletteQuery: '',
+            paletteIndex: 0,
+            historyFilter: 'all',
+            historySearchQuery: '',
+            historyCache: {} // { scanName: { data: [], fetchedAt: timestamp } }
+        };
+        
+        // Lade Scans beim Seitenaufruf
+        document.addEventListener('DOMContentLoaded', function() {
+            loadScans();
+            startAutoRefresh();
+            setupKeyboardShortcuts();
+        });
+        
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', function(event) {
+                // Cmd/Ctrl+K für Command Palette
+                if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+                    event.preventDefault();
+                    if (uiState.paletteOpen) {
+                        closePalette();
+                    } else {
+                        openPalette();
+                    }
+                }
+                
+                // ESC schließt Modals
+                if (event.key === 'Escape') {
+                    if (uiState.paletteOpen) {
+                        closePalette();
+                        event.stopPropagation();
+                    } else {
+                        const storageModal = document.getElementById('storage-modal');
+                        const resultsModal = document.getElementById('results-modal');
+                        if (storageModal && !storageModal.classList.contains('hidden')) {
+                            closeStorageModal();
+                        } else if (resultsModal && !resultsModal.classList.contains('hidden')) {
+                            closeModal();
+                        }
+                    }
+                }
+            });
+        }
+        
+        // ========== COMMAND PALETTE ==========
+        
+        function openPalette() {
+            uiState.paletteOpen = true;
+            paletteTriggerElement = document.activeElement;
+            const palette = document.getElementById('command-palette');
+            palette.classList.remove('hidden');
+            palette.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            
+            // Focus auf Input
+            setTimeout(() => {
+                const input = document.getElementById('palette-input');
+                input.focus();
+                input.select();
+            }, 100);
+            
+            // Lade aktuelle Scans
+            updatePaletteResults('');
+        }
+        
+        function closePalette() {
+            uiState.paletteOpen = false;
+            const palette = document.getElementById('command-palette');
+            palette.classList.add('hidden');
+            palette.classList.remove('flex');
+            document.body.style.overflow = '';
+            
+            // Reset
+            paletteSelectedIndex = 0;
+            paletteResults = [];
+            document.getElementById('palette-input').value = '';
+            
+            // Focus zurück
+            if (paletteTriggerElement) {
+                paletteTriggerElement.focus();
+                paletteTriggerElement = null;
+            }
+        }
+        
+        function updatePaletteResults(query) {
+            uiState.paletteQuery = query;
+            const resultsContainer = document.getElementById('palette-results');
+            
+            if (!currentScans || currentScans.length === 0) {
+                resultsContainer.innerHTML = '<div class="p-4 text-center text-slate-500 text-sm">Lade Scans...</div>';
+                return;
+            }
+            
+            if (!query || query.trim() === '') {
+                paletteResults = currentScans.slice(0, 15);
+            } else {
+                paletteResults = filterScans(query).slice(0, 15);
+            }
+            
+            paletteSelectedIndex = 0;
+            renderPaletteResults();
+        }
+        
+        function filterScans(query) {
+            const lowerQuery = query.toLowerCase().trim();
+            if (!lowerQuery) return currentScans;
+            
+            const tokens = lowerQuery.split(/\s+/).filter(t => t.length > 0);
+            
+            return currentScans.map(scan => {
+                let score = 0;
+                
+                // Sammle alle Suchfelder
+                const searchText = [
+                    scan.scan_name || '',
+                    scan.status || '',
+                    scan.nas?.host || '',
+                    scan.nas?.username || '',
+                    ...(scan.shares || []),
+                    ...(scan.folders || []),
+                    ...(scan.paths || [])
+                ].join(' ').toLowerCase();
+                
+                // Exact match
+                if (searchText === lowerQuery) {
+                    score += 1000;
+                }
+                // Prefix match
+                else if (searchText.startsWith(lowerQuery)) {
+                    score += 500;
+                }
+                // Contains match
+                else if (searchText.includes(lowerQuery)) {
+                    score += 100;
+                }
+                
+                // Token-based matching
+                if (tokens.length > 0) {
+                    let allTokensMatch = true;
+                    let tokenScore = 0;
+                    
+                    for (const token of tokens) {
+                        if (searchText.includes(token)) {
+                            if (searchText.startsWith(token)) {
+                                tokenScore += 50;
+                            } else {
+                                tokenScore += 10;
+                            }
+                        } else {
+                            allTokensMatch = false;
+                            break;
+                        }
+                    }
+                    
+                    if (allTokensMatch) {
+                        score += tokenScore;
+                    } else {
+                        score = 0; // Alle Tokens müssen matchen
+                    }
+                }
+                
+                return { scan, score };
+            })
+            .filter(item => item.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .map(item => item.scan);
+        }
+        
+        function renderPaletteResults() {
+            const resultsContainer = document.getElementById('palette-results');
+            
+            if (paletteResults.length === 0) {
+                resultsContainer.innerHTML = '<div class="p-4 text-center text-slate-500 text-sm">Keine Ergebnisse gefunden</div>';
+                return;
+            }
+            
+            let html = '';
+            paletteResults.forEach((scan, index) => {
+                const isSelected = index === paletteSelectedIndex;
+                const statusConfig = {
+                    completed: { icon: '✅', text: 'Abgeschlossen', class: 'bg-green-100 text-green-800' },
+                    running: { icon: '🔄', text: 'Läuft', class: 'bg-yellow-100 text-yellow-800' },
+                    failed: { icon: '❌', text: 'Fehlgeschlagen', class: 'bg-red-100 text-red-800' },
+                    pending: { icon: '⏳', text: 'Ausstehend', class: 'bg-slate-100 text-slate-800' }
+                };
+                const status = statusConfig[scan.status] || statusConfig.pending;
+                
+                const host = scan.nas?.host || 'N/A';
+                const folders = [
+                    ...(scan.shares || []),
+                    ...(scan.folders || []),
+                    ...(scan.paths || [])
+                ];
+                const shareInfo = folders.length > 0 ? folders.slice(0, 2).join(', ') : 'N/A';
+                
+                html += `
+                    <div 
+                        class="palette-result-item px-4 py-3 cursor-pointer border-l-4 transition-colors ${
+                            isSelected ? 'bg-primary-50 border-primary-500' : 'bg-white border-transparent hover:bg-slate-50'
+                        }"
+                        data-index="${index}"
+                        onclick="selectPaletteResult(${index})"
+                        onmouseenter="setPaletteSelectedIndex(${index})"
+                    >
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="font-semibold text-slate-900">${scan.scan_name}</div>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${status.class}">
+                                <span>${status.icon}</span>
+                                <span>${status.text}</span>
+                            </span>
+                        </div>
+                        <div class="text-xs text-slate-600">
+                            🖥️ ${host} | 📂 ${shareInfo}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            resultsContainer.innerHTML = html;
+        }
+        
+        function setPaletteSelectedIndex(index) {
+            if (index >= 0 && index < paletteResults.length) {
+                paletteSelectedIndex = index;
+                renderPaletteResults();
+            }
+        }
+        
+        function selectPaletteResult(index, action = 'results') {
+            if (index < 0 || index >= paletteResults.length) return;
+            
+            const scan = paletteResults[index];
+            closePalette();
+            
+            if (action === 'history' || action === 'h') {
+                showHistoryForScan(scan.scan_name);
+            } else {
+                showResultsForScan(scan.scan_name);
+            }
+        }
+        
+        // Command Palette Event Listeners
+        document.getElementById('palette-input').addEventListener('input', function(e) {
+            updatePaletteResults(e.target.value);
+        });
+        
+        document.getElementById('palette-input').addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setPaletteSelectedIndex(Math.min(paletteSelectedIndex + 1, paletteResults.length - 1));
+                const selectedEl = document.querySelector(`.palette-result-item[data-index="${paletteSelectedIndex}"]`);
+                if (selectedEl) selectedEl.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setPaletteSelectedIndex(Math.max(paletteSelectedIndex - 1, 0));
+                const selectedEl = document.querySelector(`.palette-result-item[data-index="${paletteSelectedIndex}"]`);
+                if (selectedEl) selectedEl.scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (e.shiftKey) {
+                    selectPaletteResult(paletteSelectedIndex, 'history');
+                } else {
+                    selectPaletteResult(paletteSelectedIndex, 'results');
+                }
+            } else if (e.key === 'h' || e.key === 'H') {
+                e.preventDefault();
+                selectPaletteResult(paletteSelectedIndex, 'history');
+            }
+        });
+        
+        // Schließe Palette bei Klick außerhalb
+        document.getElementById('command-palette').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closePalette();
+            }
+        });
+        
+        // ========== HISTORIE MASTER-DETAIL ==========
+        
+        async function ensureHistory(scanName) {
+            const cache = uiState.historyCache[scanName];
+            const now = Date.now();
+            const ttl = 60000; // 60 Sekunden
+            
+            if (cache && (now - cache.fetchedAt) < ttl) {
+                return cache.data;
+            }
+            
+            try {
+                const response = await fetch(`/api/scans/${scanName}/history`);
+                const historyData = await response.json();
+                
+                if (historyData && historyData.results) {
+                    // Entferne Duplikate
+                    const seen = new Set();
+                    const uniqueResults = historyData.results.filter(result => {
+                        const key = `${result.timestamp}_${result.status}_${result.results.length}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                    });
+                    
+                    const sortedResults = [...uniqueResults].sort((a, b) => 
+                        new Date(b.timestamp) - new Date(a.timestamp)
+                    );
+                    
+                    uiState.historyCache[scanName] = {
+                        data: sortedResults,
+                        fetchedAt: now
+                    };
+                    
+                    return sortedResults;
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Historie:', error);
+            }
+            
+            return [];
+        }
+        
+        async function loadHistoryInModal(scanName) {
+            const historyData = await ensureHistory(scanName);
+            
+            if (historyData.length === 0) {
+                document.getElementById('history-list-container').innerHTML = 
+                    '<div class="text-center text-slate-500 text-sm py-8">Keine Historie verfügbar</div>';
+                document.getElementById('history-list-container-mobile').innerHTML = 
+                    '<div class="text-center text-slate-500 text-sm py-8">Keine Historie verfügbar</div>';
+                return;
+            }
+            
+            // Setze ersten Eintrag als selected
+            uiState.selectedHistoryIndex = 0;
+            renderHistoryList(historyData);
+            renderHistoryDetail(historyData[0], scanName);
+        }
+        
+        function renderHistoryList(historyData) {
+            const filtered = filterHistoryEntries(historyData);
+            
+            // Desktop
+            let htmlDesktop = '';
+            filtered.forEach((result, index) => {
+                const originalIndex = historyData.findIndex(r => 
+                    r.timestamp === result.timestamp && 
+                    r.status === result.status
+                );
+                const isSelected = originalIndex === uiState.selectedHistoryIndex;
+                
+                const totalSize = result.results.reduce((sum, item) => 
+                    sum + (item.total_size?.bytes || 0), 0);
+                const size = formatSize({
+                    formatted: totalSize / (1024**3),
+                    unit: 'GB',
+                    bytes: totalSize
+                });
+                
+                const statusConfig = {
+                    completed: { icon: '✅', class: 'bg-green-100 text-green-800' },
+                    running: { icon: '🔄', class: 'bg-yellow-100 text-yellow-800' },
+                    failed: { icon: '❌', class: 'bg-red-100 text-red-800' },
+                    pending: { icon: '⏳', class: 'bg-slate-100 text-slate-800' }
+                };
+                const status = statusConfig[result.status] || statusConfig.pending;
+                
+                // Delta zur vorherigen
+                let deltaHtml = '';
+                if (originalIndex < historyData.length - 1) {
+                    const prevResult = historyData[originalIndex + 1];
+                    const prevSize = prevResult.results.reduce((sum, item) => 
+                        sum + (item.total_size?.bytes || 0), 0);
+                    const delta = totalSize - prevSize;
+                    const deltaGB = delta / (1024**3);
+                    if (Math.abs(deltaGB) > 0.01) {
+                        const deltaSign = deltaGB > 0 ? '+' : '';
+                        const deltaColor = deltaGB > 0 ? 'text-red-600' : 'text-green-600';
+                        deltaHtml = `<span class="text-xs ${deltaColor}">(${deltaSign}${deltaGB.toFixed(2)} GB)</span>`;
+                    }
+                }
+                
+                htmlDesktop += `
+                    <div 
+                        class="history-list-item p-3 rounded-lg cursor-pointer transition-colors mb-2 ${
+                            isSelected ? 'bg-primary-50 border-2 border-primary-500' : 'bg-white border border-slate-200 hover:bg-slate-50'
+                        }"
+                        onclick="selectHistoryEntry(${originalIndex})"
+                    >
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="text-xs font-semibold text-slate-900">${formatDateShort(result.timestamp)}</div>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${status.class}">
+                                <span>${status.icon}</span>
+                            </span>
+                        </div>
+                        <div class="text-xs text-slate-600">
+                            ${size} ${deltaHtml}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('history-list-container').innerHTML = htmlDesktop || 
+                '<div class="text-center text-slate-500 text-sm py-8">Keine Einträge</div>';
+            
+            // Mobile
+            let htmlMobile = '';
+            filtered.forEach((result, index) => {
+                const originalIndex = historyData.findIndex(r => 
+                    r.timestamp === result.timestamp && 
+                    r.status === result.status
+                );
+                
+                const totalSize = result.results.reduce((sum, item) => 
+                    sum + (item.total_size?.bytes || 0), 0);
+                const size = formatSize({
+                    formatted: totalSize / (1024**3),
+                    unit: 'GB',
+                    bytes: totalSize
+                });
+                
+                const statusConfig = {
+                    completed: { icon: '✅', class: 'bg-green-100 text-green-800' },
+                    running: { icon: '🔄', class: 'bg-yellow-100 text-yellow-800' },
+                    failed: { icon: '❌', class: 'bg-red-100 text-red-800' },
+                    pending: { icon: '⏳', class: 'bg-slate-100 text-slate-800' }
+                };
+                const status = statusConfig[result.status] || statusConfig.pending;
+                
+                htmlMobile += `
+                    <div 
+                        class="bg-slate-50 border-l-4 border-primary-500 rounded-lg p-4 cursor-pointer hover:bg-slate-100 transition-colors"
+                        onclick="selectHistoryEntryMobile(${originalIndex})"
+                    >
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="font-semibold text-slate-900 text-sm">${formatDateShort(result.timestamp)}</div>
+                            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${status.class}">
+                                <span>${status.icon}</span>
+                                <span>${result.status}</span>
+                            </span>
+                        </div>
+                        <div class="text-xs text-slate-600">
+                            ${size}
+                        </div>
+                    </div>
+                `;
+            });
+            
+            document.getElementById('history-list-container-mobile').innerHTML = htmlMobile || 
+                '<div class="text-center text-slate-500 text-sm py-8">Keine Einträge</div>';
+        }
+        
+        function filterHistoryEntries(historyData) {
+            let filtered = [...historyData];
+            
+            // Status Filter
+            if (uiState.historyFilter !== 'all') {
+                filtered = filtered.filter(r => r.status === uiState.historyFilter);
+            }
+            
+            // Search Filter
+            if (uiState.historySearchQuery) {
+                const query = uiState.historySearchQuery.toLowerCase();
+                filtered = filtered.filter(r => {
+                    const searchText = [
+                        formatDateShort(r.timestamp),
+                        r.status,
+                        formatSize({ formatted: r.results.reduce((sum, item) => sum + (item.total_size?.bytes || 0), 0) / (1024**3), unit: 'GB' })
+                    ].join(' ').toLowerCase();
+                    return searchText.includes(query);
+                });
+            }
+            
+            return filtered;
+        }
+        
+        function setHistoryFilter(filter) {
+            uiState.historyFilter = filter;
+            document.querySelectorAll('.history-filter-btn').forEach(btn => {
+                btn.classList.remove('active', 'bg-primary-500', 'text-white');
+                btn.classList.add('bg-white', 'text-slate-700');
+            });
+            const btn = document.querySelector(`.history-filter-btn[data-filter="${filter}"]`);
+            if (btn) {
+                btn.classList.add('active', 'bg-primary-500', 'text-white');
+                btn.classList.remove('bg-white', 'text-slate-700');
+            }
+            
+            if (currentScanName) {
+                ensureHistory(currentScanName).then(data => {
+                    renderHistoryList(data);
+                });
+            }
+        }
+        
+        function filterHistoryList() {
+            uiState.historySearchQuery = document.getElementById('history-search-input').value;
+            if (currentScanName) {
+                ensureHistory(currentScanName).then(data => {
+                    renderHistoryList(data);
+                });
+            }
+        }
+        
+        function setHistoryFilterMobile(filter) {
+            uiState.historyFilter = filter;
+            document.querySelectorAll('.history-filter-btn-mobile').forEach(btn => {
+                btn.classList.remove('active', 'bg-primary-500', 'text-white');
+                btn.classList.add('bg-white', 'text-slate-700');
+            });
+            const btn = document.querySelector(`.history-filter-btn-mobile[data-filter="${filter}"]`);
+            if (btn) {
+                btn.classList.add('active', 'bg-primary-500', 'text-white');
+                btn.classList.remove('bg-white', 'text-slate-700');
+            }
+            
+            if (currentScanName) {
+                ensureHistory(currentScanName).then(data => {
+                    renderHistoryList(data);
+                });
+            }
+        }
+        
+        function filterHistoryListMobile() {
+            uiState.historySearchQuery = document.getElementById('history-search-input-mobile').value;
+            if (currentScanName) {
+                ensureHistory(currentScanName).then(data => {
+                    renderHistoryList(data);
+                });
+            }
+        }
+        
+        function selectHistoryEntry(index) {
+            uiState.selectedHistoryIndex = index;
+            if (currentScanName) {
+                ensureHistory(currentScanName).then(data => {
+                    if (data[index]) {
+                        renderHistoryDetail(data[index], currentScanName);
+                        renderHistoryList(data);
+                    }
+                });
+            }
+        }
+        
+        function selectHistoryEntryMobile(index) {
+            uiState.selectedHistoryIndex = index;
+            if (currentScanName) {
+                ensureHistory(currentScanName).then(data => {
+                    if (data[index]) {
+                        renderHistoryDetailMobile(data[index], currentScanName);
+                        showHistoryMobileDetail();
+                    }
+                });
+            }
+        }
+        
+        function showHistoryMobileList() {
+            document.getElementById('history-mobile-list-view').classList.remove('hidden');
+            document.getElementById('history-mobile-detail-view').classList.add('hidden');
+        }
+        
+        function showHistoryMobileDetail() {
+            document.getElementById('history-mobile-list-view').classList.add('hidden');
+            document.getElementById('history-mobile-detail-view').classList.remove('hidden');
+        }
+        
+        function renderHistoryDetail(result, scanName) {
+            const container = document.getElementById('history-detail-container');
+            
+            const totalSize = result.results.reduce((sum, item) => 
+                sum + (item.total_size?.bytes || 0), 0);
+            const totalDirs = result.results.reduce((sum, item) => sum + (item.num_dir || 0), 0);
+            const totalFiles = result.results.reduce((sum, item) => sum + (item.num_file || 0), 0);
+            
+            const statusConfig = {
+                completed: { icon: '✅', text: 'Abgeschlossen', class: 'bg-green-100 text-green-800' },
+                running: { icon: '🔄', text: 'Läuft', class: 'bg-yellow-100 text-yellow-800' },
+                failed: { icon: '❌', text: 'Fehlgeschlagen', class: 'bg-red-100 text-red-800' },
+                pending: { icon: '⏳', text: 'Ausstehend', class: 'bg-slate-100 text-slate-800' }
+            };
+            const status = statusConfig[result.status] || statusConfig.pending;
+            
+            let html = `
+                <div class="space-y-6">
+                    <!-- KPI Cards -->
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Gesamtgröße</div>
+                            <div class="text-2xl font-bold">${formatSize({formatted: totalSize / (1024**3), unit: 'GB'})}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Verzeichnisse</div>
+                            <div class="text-2xl font-bold">${totalDirs.toLocaleString()}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Dateien</div>
+                            <div class="text-2xl font-bold">${totalFiles.toLocaleString()}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Status</div>
+                            <div class="text-sm font-semibold mt-1">${status.icon} ${status.text}</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Timestamp -->
+                    <div class="bg-slate-50 rounded-lg p-4">
+                        <div class="text-sm text-slate-600 mb-1">🕐 Zeitstempel</div>
+                        <div class="font-semibold text-slate-900">${formatDate(result.timestamp)}</div>
+                    </div>
+                    
+                    <!-- Range Selector für Chart -->
+                    <div class="flex items-center justify-between">
+                        <div class="text-sm font-semibold text-slate-900">📈 Speicherverbrauch über Zeit</div>
+                        <div class="flex gap-2">
+                            <button 
+                                class="history-range-btn px-3 py-1 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                data-range="24h"
+                                onclick="setHistoryRange('24h', '${scanName}')"
+                            >
+                                24h
+                            </button>
+                            <button 
+                                class="history-range-btn px-3 py-1 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                data-range="7d"
+                                onclick="setHistoryRange('7d', '${scanName}')"
+                            >
+                                7d
+                            </button>
+                            <button 
+                                class="history-range-btn px-3 py-1 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+                                data-range="30d"
+                                onclick="setHistoryRange('30d', '${scanName}')"
+                            >
+                                30d
+                            </button>
+                            <button 
+                                class="history-range-btn px-3 py-1 text-xs font-medium rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 transition-colors active"
+                                data-range="all"
+                                onclick="setHistoryRange('all', '${scanName}')"
+                            >
+                                All
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Chart -->
+                    <div class="chart-container">
+                        <canvas id="history-chart"></canvas>
+                    </div>
+                    
+                    <!-- Details pro Ordner -->
+                    ${result.results && result.results.length > 0 ? `
+                        <div class="bg-slate-50 rounded-lg p-4">
+                            <div class="text-sm font-semibold text-slate-900 mb-3">📂 Details pro Ordner</div>
+                            <div class="space-y-2">
+                                ${result.results.map(item => {
+                                    const itemSize = item.total_size ? formatSize(item.total_size) : 'N/A';
+                                    const itemStatus = item.success ? '✅' : '❌';
+                                    return `
+                                        <div class="bg-white rounded-lg p-3 text-sm">
+                                            <div class="flex items-center justify-between mb-1">
+                                                <span class="font-medium text-slate-900">${itemStatus} ${item.folder_name}</span>
+                                                <span class="text-slate-600 font-semibold">${itemSize}</span>
+                                            </div>
+                                            ${item.success ? `
+                                                <div class="text-xs text-slate-500 mt-1">
+                                                    📂 ${item.num_dir || 0} Verzeichnisse | 📄 ${item.num_file || 0} Dateien
+                                                </div>
+                                            ` : item.error ? `
+                                                <div class="text-xs text-red-600 mt-1">${item.error}</div>
+                                            ` : ''}
+                                        </div>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            container.innerHTML = html;
+            
+            // Render Chart
+            renderHistoryChart(scanName, uiState.historyRange);
+        }
+        
+        function renderHistoryDetailMobile(result, scanName) {
+            const container = document.getElementById('history-detail-container-mobile');
+            renderHistoryDetail(result, scanName);
+            // Copy content to mobile container
+            container.innerHTML = document.getElementById('history-detail-container').innerHTML;
+        }
+        
+        function setHistoryRange(range, scanName) {
+            uiState.historyRange = range;
+            document.querySelectorAll('.history-range-btn').forEach(btn => {
+                btn.classList.remove('active', 'bg-primary-500', 'text-white');
+                btn.classList.add('bg-white', 'text-slate-700');
+            });
+            const btn = document.querySelector(`.history-range-btn[data-range="${range}"]`);
+            if (btn) {
+                btn.classList.add('active', 'bg-primary-500', 'text-white');
+                btn.classList.remove('bg-white', 'text-slate-700');
+            }
+            
+            renderHistoryChart(scanName, range);
+        }
+        
+        async function renderHistoryChart(scanName, range) {
+            const historyData = await ensureHistory(scanName);
+            if (!historyData || historyData.length === 0) return;
+            
+            const now = Date.now();
+            let filteredData = [...historyData];
+            
+            // Filter by range
+            if (range === '24h') {
+                const cutoff = now - (24 * 60 * 60 * 1000);
+                filteredData = filteredData.filter(r => new Date(r.timestamp).getTime() >= cutoff);
+            } else if (range === '7d') {
+                const cutoff = now - (7 * 24 * 60 * 60 * 1000);
+                filteredData = filteredData.filter(r => new Date(r.timestamp).getTime() >= cutoff);
+            } else if (range === '30d') {
+                const cutoff = now - (30 * 24 * 60 * 60 * 1000);
+                filteredData = filteredData.filter(r => new Date(r.timestamp).getTime() >= cutoff);
+            }
+            
+            // Sort by timestamp
+            filteredData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            // Downsample to max 60 points
+            let dataToRender = filteredData;
+            if (filteredData.length > 60) {
+                const step = Math.ceil(filteredData.length / 60);
+                dataToRender = [];
+                for (let i = 0; i < filteredData.length; i += step) {
+                    dataToRender.push(filteredData[i]);
+                }
+                // Always include last point
+                if (dataToRender[dataToRender.length - 1] !== filteredData[filteredData.length - 1]) {
+                    dataToRender.push(filteredData[filteredData.length - 1]);
+                }
+            }
+            
+            const labels = dataToRender.map(r => formatDateShort(r.timestamp));
+            const sizes = dataToRender.map(r => {
+                const totalSize = r.results.reduce((sum, item) => 
+                    sum + (item.total_size?.bytes || 0), 0);
+                return totalSize / (1024**3);
+            });
+            
+            const ctx = document.getElementById('history-chart');
+            if (!ctx) return;
+            
+            // Destroy existing chart if any
+            if (window.historyChartInstance) {
+                window.historyChartInstance.destroy();
+            }
+            
+            window.historyChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Gesamtgröße (GB)',
+                        data: sizes,
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                        borderColor: 'rgba(102, 126, 234, 1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: 'Größe (GB)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Zeitpunkt'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `Größe: ${context.parsed.y.toFixed(2)} GB`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // ========== EXISTING FUNCTIONS (Updated) ==========
+        
+        function startAutoRefresh() {
+            autoRefreshInterval = setInterval(() => {
+                const scanList = document.getElementById('scan-list');
+                const scanItems = scanList.querySelectorAll('.scan-item-running');
+                if (scanItems.length > 0) {
+                    loadScans(false);
+                    if (currentScanName) {
+                        loadResultsInModal(currentScanName, false);
+                    }
+                    document.getElementById('auto-refresh-indicator').classList.remove('hidden');
+                } else {
+                    document.getElementById('auto-refresh-indicator').classList.add('hidden');
+                }
+            }, 5000);
+        }
+        
+        async function loadScans(showToast = true) {
+            const scanList = document.getElementById('scan-list');
+            
+            scanList.innerHTML = '<div class="flex items-center justify-center py-12"><div class="text-slate-500">Lade Scans...</div></div>';
+            
+            try {
+                const response = await fetch('/api/scans');
+                const data = await response.json();
+                
+                if (data.scans && data.scans.length > 0) {
+                    scanList.innerHTML = '';
+                    currentScans = data.scans; // Store for Command Palette
+                    
+                    data.scans.forEach(scan => {
+                        const scanItem = createScanItem(scan);
+                        scanList.appendChild(scanItem);
+                    });
+                } else {
+                    currentScans = [];
+                    scanList.innerHTML = `
+                        <div class="flex flex-col items-center justify-center py-16 text-center">
+                            <div class="text-6xl mb-4">📭</div>
+                            <p class="text-slate-600 text-lg">Keine Scans konfiguriert</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                currentScans = [];
+                scanList.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+                        <div class="font-semibold mb-1">Fehler beim Laden der Scans</div>
+                        <div class="text-sm">${error.message}</div>
+                        <button 
+                            class="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                            onclick="loadScans()"
+                        >
+                            Erneut versuchen
+                        </button>
+                    </div>
+                `;
+                if (showToast) {
+                    showToast('Fehler', 'Fehler beim Laden der Scans', 'error');
+                }
+            }
+        }
+        
+        async function reloadConfig() {
+            const btn = document.getElementById('reload-config-btn');
+            const originalText = btn.innerHTML;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-spin">🔄</span> Lade...';
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            
+            try {
+                const response = await fetch('/api/config/reload', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    const message = `Config neu geladen! ${data.added_scans.length > 0 ? `+${data.added_scans.length} neu` : ''} ${data.updated_scans.length > 0 ? `${data.updated_scans.length} aktualisiert` : ''} ${data.removed_scans.length > 0 ? `${data.removed_scans.length} entfernt` : ''}`;
+                    showToast('Erfolg', message, 'success');
+                    await loadScans(false);
+                } else {
+                    showToast('Fehler', data.message || 'Fehler beim Neuladen der Konfiguration', 'error');
+                }
+            } catch (error) {
+                showToast('Fehler', `Fehler beim Neuladen der Konfiguration: ${error.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+                btn.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+        
+        function createScanItem(scan) {
+            const item = document.createElement('div');
+            const statusClass = scan.status === 'running' ? 'scan-item-running' : '';
+            item.className = `bg-slate-50 border-l-4 rounded-lg p-5 transition-all hover:shadow-md ${statusClass} ${
+                scan.status === 'completed' ? 'border-green-500' :
+                scan.status === 'running' ? 'border-yellow-500' :
+                scan.status === 'failed' ? 'border-red-500' :
+                'border-slate-400'
+            }`;
+            
+            const statusConfig = {
+                completed: { icon: '✅', text: 'Abgeschlossen', class: 'bg-green-100 text-green-800' },
+                running: { icon: '🔄', text: 'Läuft', class: 'bg-yellow-100 text-yellow-800' },
+                failed: { icon: '❌', text: 'Fehlgeschlagen', class: 'bg-red-100 text-red-800' },
+                pending: { icon: '⏳', text: 'Ausstehend', class: 'bg-slate-100 text-slate-800' }
+            };
+            const status = statusConfig[scan.status] || statusConfig.pending;
+            
+            const header = document.createElement('div');
+            header.className = 'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4';
+            
+            const leftSection = document.createElement('div');
+            leftSection.className = 'flex items-start gap-4 flex-1';
+            
+            const statusBadge = document.createElement('span');
+            statusBadge.className = `inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${status.class}`;
+            statusBadge.innerHTML = `<span>${status.icon}</span><span>${status.text}</span>`;
+            
+            const nameSection = document.createElement('div');
+            nameSection.className = 'flex-1';
+            const name = document.createElement('div');
+            name.className = 'font-semibold text-slate-900 text-lg mb-1';
+            name.textContent = scan.scan_name;
+            nameSection.appendChild(name);
+            
+            leftSection.appendChild(statusBadge);
+            leftSection.appendChild(nameSection);
+            
+            const actions = document.createElement('div');
+            actions.className = 'flex flex-wrap gap-2 sm:flex-nowrap';
+            
+            const startBtn = document.createElement('button');
+            startBtn.className = 'px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2';
+            startBtn.innerHTML = '<span>▶</span><span>Starten</span>';
+            startBtn.onclick = () => triggerScan(scan.scan_name);
+            startBtn.disabled = scan.status === 'running' || !scan.enabled;
+            
+            const resultsBtn = document.createElement('button');
+            resultsBtn.className = 'px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors text-sm font-medium flex items-center gap-2';
+            resultsBtn.innerHTML = '<span>📊</span><span>Ergebnisse</span>';
+            resultsBtn.onclick = () => showResultsForScan(scan.scan_name);
+            
+            const historyBtn = document.createElement('button');
+            historyBtn.className = 'px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors text-sm font-medium flex items-center gap-2';
+            historyBtn.innerHTML = '<span>📜</span><span>Historie</span>';
+            historyBtn.onclick = () => showHistoryForScan(scan.scan_name);
+            
+            actions.appendChild(startBtn);
+            actions.appendChild(resultsBtn);
+            actions.appendChild(historyBtn);
+            
+            header.appendChild(leftSection);
+            header.appendChild(actions);
+            
+            const meta = document.createElement('div');
+            meta.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm text-slate-600';
+            
+            if (scan.last_run) {
+                const date = new Date(scan.last_run);
+                const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + 
+                               date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                const metaItem = document.createElement('div');
+                metaItem.className = 'flex items-center gap-2';
+                metaItem.innerHTML = `<span>🕐</span><span><strong class="text-slate-700">Letzter Lauf:</strong> ${dateStr}</span>`;
+                meta.appendChild(metaItem);
+            }
+            
+            if (scan.next_run) {
+                const date = new Date(scan.next_run);
+                const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + 
+                               date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+                const metaItem = document.createElement('div');
+                metaItem.className = 'flex items-center gap-2';
+                metaItem.innerHTML = `<span>⏰</span><span><strong class="text-slate-700">Nächster Lauf:</strong> ${dateStr}</span>`;
+                meta.appendChild(metaItem);
+            }
+            
+            if (scan.interval) {
+                const metaItem = document.createElement('div');
+                metaItem.className = 'flex items-center gap-2';
+                metaItem.innerHTML = `<span>⏱️</span><span><strong class="text-slate-700">Intervall:</strong> ${scan.interval}</span>`;
+                meta.appendChild(metaItem);
+            }
+            
+            const enabledItem = document.createElement('div');
+            enabledItem.className = 'flex items-center gap-2';
+            enabledItem.innerHTML = `<span>${scan.enabled ? '✅' : '❌'}</span><span><strong class="text-slate-700">Status:</strong> ${scan.enabled ? 'Aktiviert' : 'Deaktiviert'}</span>`;
+            meta.appendChild(enabledItem);
+            
+            if (scan.nas || (scan.shares && scan.shares.length > 0) || (scan.folders && scan.folders.length > 0) || (scan.paths && scan.paths.length > 0)) {
+                const detailSection = document.createElement('div');
+                detailSection.className = 'mt-3 pt-3 border-t border-slate-200 text-sm text-slate-600';
+                
+                if (scan.nas) {
+                    const protocol = scan.nas.use_https ? 'HTTPS' : 'HTTP';
+                    const port = scan.nas.port || (scan.nas.use_https ? 5001 : 5000);
+                    const nasInfo = document.createElement('div');
+                    nasInfo.className = 'flex items-center gap-2 mb-2';
+                    nasInfo.innerHTML = `<span>🖥️</span><span><strong class="text-slate-700">NAS:</strong> ${scan.nas.host}:${port} (${protocol}, ${scan.nas.username})</span>`;
+                    detailSection.appendChild(nasInfo);
+                }
+                
+                const folders = [];
+                if (scan.shares && scan.shares.length > 0) folders.push(...scan.shares);
+                if (scan.folders && scan.folders.length > 0) folders.push(...scan.folders);
+                if (scan.paths && scan.paths.length > 0) folders.push(...scan.paths);
+                
+                if (folders.length > 0) {
+                    const folderInfo = document.createElement('div');
+                    folderInfo.className = 'flex items-center gap-2';
+                    folderInfo.innerHTML = `<span>📂</span><span><strong class="text-slate-700">Pfade:</strong> ${folders.join(', ')}</span>`;
+                    detailSection.appendChild(folderInfo);
+                }
+                
+                meta.appendChild(detailSection);
+            }
+            
+            item.appendChild(header);
+            item.appendChild(meta);
+            
+            item.style.cursor = 'pointer';
+            item.addEventListener('click', (e) => {
+                if (!e.target.closest('button')) {
+                    showResultsForScan(scan.scan_name);
+                }
+            });
+            
+            return item;
+        }
+        
+        function showResultsForScan(scanName) {
+            currentScanName = scanName;
+            uiState.selectedScanName = scanName;
+            openModal('results', scanName);
+            loadResultsInModal(scanName);
+        }
+        
+        function showHistoryForScan(scanName) {
+            currentScanName = scanName;
+            uiState.selectedScanName = scanName;
+            openModal('history', scanName);
+            loadHistoryInModal(scanName);
+        }
+        
+        function openModal(tab, scanName) {
+            const modal = document.getElementById('results-modal');
+            const modalTitle = document.getElementById('modal-title');
+            
+            modalTitle.textContent = `📊 ${scanName}`;
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            
+            switchTab(tab);
+            
+            setTimeout(() => {
+                const firstFocusable = modal.querySelector('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (firstFocusable) firstFocusable.focus();
+            }, 100);
+        }
+        
+        function closeModal() {
+            const modal = document.getElementById('results-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = '';
+            currentScanName = null;
+            uiState.selectedScanName = null;
+            uiState.selectedHistoryIndex = null;
+            
+            // Destroy history chart
+            if (window.historyChartInstance) {
+                window.historyChartInstance.destroy();
+                window.historyChartInstance = null;
+            }
+        }
+        
+        function switchTab(tabName) {
+            uiState.modalTab = tabName;
+            
+            document.querySelectorAll('.modal-tab').forEach(tab => {
+                tab.classList.remove('border-primary-500', 'text-primary-600');
+                tab.classList.add('border-transparent', 'text-slate-600');
+            });
+            document.querySelectorAll('.modal-tab-content').forEach(content => {
+                content.classList.add('hidden');
+                content.classList.remove('block');
+            });
+            
+            if (tabName === 'results') {
+                const tab = document.getElementById('tab-results');
+                tab.classList.add('border-primary-500', 'text-primary-600');
+                tab.classList.remove('border-transparent', 'text-slate-600');
+                document.getElementById('modal-results-tab').classList.remove('hidden');
+                document.getElementById('modal-results-tab').classList.add('block');
+            } else if (tabName === 'history') {
+                const tab = document.getElementById('tab-history');
+                tab.classList.add('border-primary-500', 'text-primary-600');
+                tab.classList.remove('border-transparent', 'text-slate-600');
+                document.getElementById('modal-history-tab').classList.remove('hidden');
+                document.getElementById('modal-history-tab').classList.add('block');
+                
+                // Show appropriate layout based on screen size
+                if (window.innerWidth >= 768) {
+                    document.getElementById('history-desktop-layout').classList.remove('hidden');
+                } else {
+                    document.getElementById('history-mobile-layout').classList.remove('hidden');
+                }
+                
+                if (currentScanName) {
+                    loadHistoryInModal(currentScanName);
+                }
+            }
+        }
+        
+        // Handle window resize for history layout
+        window.addEventListener('resize', function() {
+            if (uiState.modalTab === 'history' && !document.getElementById('results-modal').classList.contains('hidden')) {
+                if (window.innerWidth >= 768) {
+                    document.getElementById('history-desktop-layout').classList.remove('hidden');
+                    document.getElementById('history-mobile-layout').classList.add('hidden');
+                } else {
+                    document.getElementById('history-desktop-layout').classList.add('hidden');
+                    document.getElementById('history-mobile-layout').classList.remove('hidden');
+                }
+            }
+        });
+        
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('results-modal');
+            if (event.target === modal) {
+                closeModal();
+            }
+        });
+        
+        async function triggerScan(scanName) {
+            try {
+                showToast('Scan starten', `Starte Scan '${scanName}'...`, 'warning');
+                
+                const response = await fetch(`/api/scans/${scanName}/trigger`, {
+                    method: 'POST'
+                });
+                const result = await response.json();
+                
+                if (result.triggered) {
+                    showToast('Erfolg', result.message, 'success');
+                    loadScans(false);
+                    if (currentScanName === scanName) {
+                        loadResultsInModal(scanName, false);
+                    }
+                } else {
+                    showToast('Info', result.message, 'warning');
+                }
+            } catch (error) {
+                showToast('Fehler', `Fehler beim Starten: ${error.message}`, 'error');
+            }
+        }
+        
+        async function loadResultsInModal(scanName, showToast = false) {
+            const resultsContainer = document.getElementById('modal-results-container');
+            const chartContainer = document.getElementById('modal-chart-container');
+            const exportBtn = document.getElementById('modal-export-btn');
+            const modalStatusBadge = document.getElementById('modal-status-badge');
+            
+            resultsContainer.innerHTML = '<div class="flex items-center justify-center py-12"><div class="text-slate-500">Lade Ergebnisse...</div></div>';
+            chartContainer.classList.add('hidden');
+            exportBtn.classList.remove('hidden');
+            
+            try {
+                const response = await fetch(`/api/scans/${scanName}/results`);
+                const result = await response.json();
+                
+                if (result.error) {
+                    resultsContainer.innerHTML = `
+                        <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+                            <div class="font-semibold mb-1">Fehler</div>
+                            <div class="text-sm">${result.error}</div>
+                            <button 
+                                class="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                                onclick="loadResultsInModal('${scanName}')"
+                            >
+                                Erneut versuchen
+                            </button>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                const statusConfig = {
+                    completed: { icon: '✅', text: 'Abgeschlossen', class: 'bg-green-100 text-green-800' },
+                    running: { icon: '🔄', text: 'Läuft', class: 'bg-yellow-100 text-yellow-800' },
+                    failed: { icon: '❌', text: 'Fehlgeschlagen', class: 'bg-red-100 text-red-800' },
+                    pending: { icon: '⏳', text: 'Ausstehend', class: 'bg-slate-100 text-slate-800' }
+                };
+                const status = statusConfig[result.status] || statusConfig.pending;
+                modalStatusBadge.className = `inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${status.class}`;
+                modalStatusBadge.innerHTML = `<span>${status.icon}</span><span>${status.text}</span>`;
+                
+                let html = '';
+                
+                if (result.results && result.results.length > 0) {
+                    const totalSize = result.results.reduce((sum, r) => sum + (r.total_size?.bytes || 0), 0);
+                    const totalDirs = result.results.reduce((sum, r) => sum + (r.num_dir || 0), 0);
+                    const totalFiles = result.results.reduce((sum, r) => sum + (r.num_file || 0), 0);
+                    const avgTime = result.results.reduce((sum, r) => sum + (r.elapsed_time_ms || 0), 0) / result.results.length;
+                    
+                    html += `
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                            <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-5">
+                                <div class="text-sm opacity-90 mb-2">Gesamtgröße</div>
+                                <div class="text-3xl font-bold">${formatSize({formatted: totalSize / (1024**3), unit: 'GB'})}</div>
+                            </div>
+                            <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-5">
+                                <div class="text-sm opacity-90 mb-2">Verzeichnisse</div>
+                                <div class="text-3xl font-bold">${totalDirs.toLocaleString()}</div>
+                            </div>
+                            <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-5">
+                                <div class="text-sm opacity-90 mb-2">Dateien</div>
+                                <div class="text-3xl font-bold">${totalFiles.toLocaleString()}</div>
+                            </div>
+                            <div class="bg-gradient-to-br from-primary-500 to-purple-600 text-white rounded-lg p-5">
+                                <div class="text-sm opacity-90 mb-2">Ø Scan-Zeit</div>
+                                <div class="text-3xl font-bold">${(avgTime / 1000).toFixed(1)}s</div>
+                            </div>
+                        </div>
+                    `;
+                    
+                    result.results.forEach(item => {
+                        if (item.success) {
+                            html += `
+                                <div class="bg-slate-50 rounded-lg p-5 mb-4 border border-slate-200">
+                                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 pb-4 border-b border-slate-200">
+                                        <div class="font-semibold text-slate-900 text-lg mb-2 sm:mb-0">📁 ${item.folder_name}</div>
+                                        <div class="text-2xl font-bold text-primary-600">${formatSize(item.total_size)}</div>
+                                    </div>
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                                        <div class="flex items-center gap-2 bg-white rounded-lg p-3">
+                                            <span>📂</span>
+                                            <span><strong class="text-slate-700">Verzeichnisse:</strong> ${item.num_dir.toLocaleString()}</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 bg-white rounded-lg p-3">
+                                            <span>📄</span>
+                                            <span><strong class="text-slate-700">Dateien:</strong> ${item.num_file.toLocaleString()}</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 bg-white rounded-lg p-3">
+                                            <span>⏱️</span>
+                                            <span><strong class="text-slate-700">Dauer:</strong> ${(item.elapsed_time_ms / 1000).toFixed(2)}s</span>
+                                        </div>
+                                        <div class="flex items-center gap-2 bg-white rounded-lg p-3">
+                                            <span>💾</span>
+                                            <span><strong class="text-slate-700">Bytes:</strong> ${item.total_size?.bytes.toLocaleString() || 'N/A'}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        } else {
+                            html += `
+                                <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800 mb-4">
+                                    ❌ Fehler: ${item.error || 'Unbekannter Fehler'}
+                                </div>
+                            `;
+                        }
+                    });
+                } else {
+                    html += `
+                        <div class="flex flex-col items-center justify-center py-16 text-center">
+                            <div class="text-6xl mb-4">📭</div>
+                            <p class="text-slate-600 text-lg">Keine Ergebnisse verfügbar</p>
+                        </div>
+                    `;
+                }
+                
+                html += `<div class="text-slate-500 text-sm mt-6 pt-6 border-t border-slate-200">🕐 Zeitstempel: ${formatDate(result.timestamp)}</div>`;
+                
+                resultsContainer.innerHTML = html;
+                
+                await loadHistoryForChartInModal(scanName);
+                
+            } catch (error) {
+                resultsContainer.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+                        <div class="font-semibold mb-1">Fehler beim Laden der Ergebnisse</div>
+                        <div class="text-sm">${error.message}</div>
+                        <button 
+                            class="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+                            onclick="loadResultsInModal('${scanName}')"
+                        >
+                            Erneut versuchen
+                        </button>
+                    </div>
+                `;
+                if (showToast) {
+                    showToast('Fehler', 'Fehler beim Laden der Ergebnisse', 'error');
+                }
+            }
+        }
+        
+        async function loadHistoryForChartInModal(scanName) {
+            try {
+                const response = await fetch(`/api/scans/${scanName}/history`);
+                const historyData = await response.json();
+                
+                if (historyData && historyData.results && historyData.results.length > 0) {
+                    const chartContainer = document.getElementById('modal-chart-container');
+                    chartContainer.classList.remove('hidden');
+                    
+                    const labels = historyData.results.map(r => formatDate(r.timestamp));
+                    const sizes = historyData.results.map(r => {
+                        const totalSize = r.results.reduce((sum, item) => 
+                            sum + (item.total_size?.bytes || 0), 0);
+                        return totalSize / (1024**3);
+                    });
+                    
+                    const ctx = document.getElementById('modal-sizeChart').getContext('2d');
+                    
+                    if (modalSizeChart) {
+                        modalSizeChart.destroy();
+                    }
+                    
+                    modalSizeChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Gesamtgröße (GB)',
+                                data: sizes,
+                                backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                                borderColor: 'rgba(102, 126, 234, 1)',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                y: {
+                                    beginAtZero: false,
+                                    title: {
+                                        display: true,
+                                        text: 'Größe (GB)'
+                                    }
+                                },
+                                x: {
+                                    title: {
+                                        display: true,
+                                        text: 'Zeitpunkt'
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: true,
+                                    position: 'top'
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Speicherverbrauch über Zeit'
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return `Größe: ${context.parsed.y.toFixed(2)} GB`;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+            } catch (error) {
+                console.error('Fehler beim Laden der Historie:', error);
+            }
+        }
+        
+        function exportCurrentResults() {
+            if (!currentScanName) {
+                showToast('Info', 'Bitte wählen Sie zuerst einen Scan aus', 'warning');
+                return;
+            }
+            
+            fetch(`/api/scans/${currentScanName}/results`)
+                .then(response => response.json())
+                .then(data => {
+                    const jsonStr = JSON.stringify(data, null, 2);
+                    const blob = new Blob([jsonStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `scan-${currentScanName}-${new Date().toISOString().split('T')[0]}.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    showToast('Erfolg', 'Ergebnisse wurden exportiert', 'success');
+                })
+                .catch(error => {
+                    showToast('Fehler', `Export fehlgeschlagen: ${error.message}`, 'error');
+                });
+        }
+        
+        function showToast(title, message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            
+            const typeConfig = {
+                success: 'bg-green-50 border-green-200 text-green-800',
+                error: 'bg-red-50 border-red-200 text-red-800',
+                warning: 'bg-yellow-50 border-yellow-200 text-yellow-800',
+                info: 'bg-blue-50 border-blue-200 text-blue-800'
+            };
+            
+            toast.className = `bg-white border-l-4 rounded-lg shadow-lg p-4 min-w-[300px] ${typeConfig[type] || typeConfig.info}`;
+            
+            toast.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <span class="font-semibold">${title}</span>
+                    <button 
+                        class="text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
+                        onclick="this.parentElement.parentElement.remove()"
+                        aria-label="Toast schließen"
+                    >
+                        ×
+                    </button>
+                </div>
+                <div class="text-sm">${message}</div>
+            `;
+            
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.style.opacity = '0';
+                    toast.style.transition = 'opacity 0.3s';
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }, 5000);
+        }
+        
+        function formatDate(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('de-DE', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+        
+        function formatDateShort(dateString) {
+            if (!dateString) return 'N/A';
+            const date = new Date(dateString);
+            return date.toLocaleString('de-DE', {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+        
+        function formatSize(sizeObj) {
+            if (!sizeObj) return 'N/A';
+            return `${sizeObj.formatted.toFixed(2)} ${sizeObj.unit}`;
+        }
+        
+        // ========== STORAGE MANAGEMENT ==========
+        
+        let currentStorageTab = 'stats';
+        
+        function openStorageModal() {
+            const modal = document.getElementById('storage-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+            loadStorageStats();
+        }
+        
+        function closeStorageModal() {
+            const modal = document.getElementById('storage-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = '';
+        }
+        
+        function switchStorageTab(tabName) {
+            currentStorageTab = tabName;
+            
+            // Update Tab Buttons
+            document.querySelectorAll('.storage-tab').forEach(tab => {
+                tab.classList.remove('border-purple-500', 'text-purple-600');
+                tab.classList.add('border-transparent', 'text-slate-600');
+            });
+            
+            const activeTab = document.getElementById(`storage-tab-${tabName}`);
+            if (activeTab) {
+                activeTab.classList.add('border-purple-500', 'text-purple-600');
+                activeTab.classList.remove('border-transparent', 'text-slate-600');
+            }
+            
+            // Update Tab Content
+            document.querySelectorAll('.storage-tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+            
+            const activeContent = document.getElementById(`storage-${tabName}-tab`);
+            if (activeContent) {
+                activeContent.classList.remove('hidden');
+            }
+            
+            // Load data for tab
+            if (tabName === 'stats') {
+                loadStorageStats();
+            } else if (tabName === 'folders') {
+                loadFolders();
+            }
+        }
+        
+        async function loadStorageStats() {
+            const container = document.getElementById('storage-stats-container');
+            container.innerHTML = '<div class="flex items-center justify-center py-12"><div class="text-slate-500">Lade Statistiken...</div></div>';
+            
+            try {
+                const response = await fetch('/api/storage/stats');
+                const stats = await response.json();
+                
+                let html = `
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Scans</div>
+                            <div class="text-2xl font-bold">${stats.scan_count || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">NAS-Server</div>
+                            <div class="text-2xl font-bold">${stats.nas_count || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Ordner</div>
+                            <div class="text-2xl font-bold">${stats.folder_count || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Einträge (RAM)</div>
+                            <div class="text-2xl font-bold">${stats.total_results_ram || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Einträge (DB)</div>
+                            <div class="text-2xl font-bold">${stats.total_results_db || 0}</div>
+                        </div>
+                        <div class="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-lg p-4">
+                            <div class="text-xs opacity-90 mb-1">Datenbank-Größe</div>
+                            <div class="text-2xl font-bold">${stats.db_size_mb ? stats.db_size_mb.toFixed(2) : '0.00'} MB</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6 space-y-4">
+                        <div class="bg-slate-50 rounded-lg p-4">
+                            <div class="text-sm font-semibold text-slate-900 mb-3">⚙️ Konfiguration</div>
+                            <div class="grid grid-cols-2 gap-3 text-sm">
+                                <div>
+                                    <span class="text-slate-600">Max History:</span>
+                                    <span class="font-semibold text-slate-900 ml-2">${stats.max_history || 'N/A'}</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-600">Auto-Cleanup:</span>
+                                    <span class="font-semibold text-slate-900 ml-2">${stats.auto_cleanup_enabled ? '✅ Aktiv' : '❌ Inaktiv'}</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-600">Cleanup-Tage:</span>
+                                    <span class="font-semibold text-slate-900 ml-2">${stats.auto_cleanup_days || 'N/A'}</span>
+                                </div>
+                                <div>
+                                    <span class="text-slate-600">Datenbank-Pfad:</span>
+                                    <span class="font-semibold text-slate-900 ml-2 text-xs">${stats.db_path || 'N/A'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        ${stats.oldest_entry || stats.newest_entry ? `
+                            <div class="bg-slate-50 rounded-lg p-4">
+                                <div class="text-sm font-semibold text-slate-900 mb-3">📅 Zeitraum</div>
+                                <div class="grid grid-cols-2 gap-3 text-sm">
+                                    ${stats.oldest_entry ? `
+                                        <div>
+                                            <span class="text-slate-600">Ältester Eintrag:</span>
+                                            <div class="font-semibold text-slate-900 mt-1">${formatDate(stats.oldest_entry)}</div>
+                                        </div>
+                                    ` : ''}
+                                    ${stats.newest_entry ? `
+                                        <div>
+                                            <span class="text-slate-600">Neuester Eintrag:</span>
+                                            <div class="font-semibold text-slate-900 mt-1">${formatDate(stats.newest_entry)}</div>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+                
+                container.innerHTML = html;
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+                        <div class="font-semibold mb-1">Fehler beim Laden der Statistiken</div>
+                        <div class="text-sm">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        async function loadFolders() {
+            const container = document.getElementById('storage-folders-container');
+            container.innerHTML = '<div class="flex items-center justify-center py-12"><div class="text-slate-500">Lade Ordner...</div></div>';
+            
+            try {
+                const nasHost = document.getElementById('folder-filter-nas').value.trim() || null;
+                const scanName = document.getElementById('folder-filter-scan').value.trim() || null;
+                
+                let url = '/api/storage/folders?';
+                if (nasHost) url += `nas_host=${encodeURIComponent(nasHost)}&`;
+                if (scanName) url += `scan_name=${encodeURIComponent(scanName)}&`;
+                
+                const response = await fetch(url);
+                const data = await response.json();
+                
+                if (data.folders && data.folders.length > 0) {
+                    let html = `
+                        <div class="mb-4 text-sm text-slate-600">
+                            Gefunden: ${data.count} Ordner
+                        </div>
+                        <div class="space-y-2">
+                    `;
+                    
+                    data.folders.forEach(folder => {
+                        html += `
+                            <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 flex items-center justify-between">
+                                <div class="flex-1">
+                                    <div class="font-semibold text-slate-900">${folder.folder_path}</div>
+                                    <div class="text-xs text-slate-600 mt-1">🖥️ ${folder.nas_host}</div>
+                                </div>
+                                <button 
+                                    class="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 text-xs font-medium"
+                                    onclick="deleteFolder('${folder.nas_host}', '${folder.folder_path}')"
+                                    title="Ordner löschen"
+                                >
+                                    🗑️ Löschen
+                                </button>
+                            </div>
+                        `;
+                    });
+                    
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = `
+                        <div class="flex flex-col items-center justify-center py-16 text-center">
+                            <div class="text-6xl mb-4">📭</div>
+                            <p class="text-slate-600 text-lg">Keine Ordner gefunden</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+                        <div class="font-semibold mb-1">Fehler beim Laden der Ordner</div>
+                        <div class="text-sm">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        async function deleteFolder(nasHost, folderPath) {
+            if (!confirm(`Möchten Sie wirklich alle Daten für den Ordner "${folderPath}" auf "${nasHost}" löschen?\n\nDiese Aktion kann nicht rückgängig gemacht werden!`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(
+                    `/api/storage/folders?nas_host=${encodeURIComponent(nasHost)}&folder_path=${encodeURIComponent(folderPath)}`,
+                    { method: 'DELETE' }
+                );
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast('Erfolg', `Ordner gelöscht: ${result.deleted_count} Einträge entfernt`, 'success');
+                    loadFolders();
+                } else {
+                    showToast('Fehler', result.message || 'Fehler beim Löschen', 'error');
+                }
+            } catch (error) {
+                showToast('Fehler', `Fehler beim Löschen: ${error.message}`, 'error');
+            }
+        }
+        
+        async function previewCleanup() {
+            const days = parseInt(document.getElementById('cleanup-days').value) || 90;
+            const nasHost = document.getElementById('cleanup-nas-host').value.trim() || null;
+            const folderPath = document.getElementById('cleanup-folder-path').value.trim() || null;
+            const scanName = document.getElementById('cleanup-scan-name').value.trim() || null;
+            
+            const container = document.getElementById('cleanup-preview-result');
+            container.innerHTML = '<div class="text-slate-500">Lade Vorschau...</div>';
+            container.classList.remove('hidden');
+            
+            try {
+                let url = `/api/storage/cleanup-preview?days=${days}`;
+                if (nasHost) url += `&nas_host=${encodeURIComponent(nasHost)}`;
+                if (folderPath) url += `&folder_path=${encodeURIComponent(folderPath)}`;
+                if (scanName) url += `&scan_name=${encodeURIComponent(scanName)}`;
+                
+                const response = await fetch(url);
+                const stats = await response.json();
+                
+                const cutoffDate = new Date(stats.cutoff_date);
+                container.innerHTML = `
+                    <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <div class="font-semibold text-blue-900 mb-2">📊 Bereinigungs-Vorschau</div>
+                        <div class="space-y-2 text-sm">
+                            <div>
+                                <span class="text-blue-700">Zu löschende Einträge:</span>
+                                <span class="font-semibold text-blue-900 ml-2">${stats.deleted_count || 0}</span>
+                            </div>
+                            <div>
+                                <span class="text-blue-700">Geschätzter freigegebener Speicher:</span>
+                                <span class="font-semibold text-blue-900 ml-2">${stats.freed_space_mb ? stats.freed_space_mb.toFixed(2) : '0.00'} MB</span>
+                            </div>
+                            <div>
+                                <span class="text-blue-700">Cutoff-Datum:</span>
+                                <span class="font-semibold text-blue-900 ml-2">${formatDate(cutoffDate.toISOString())}</span>
+                            </div>
+                            <div>
+                                <span class="text-blue-700">Tage:</span>
+                                <span class="font-semibold text-blue-900 ml-2">${stats.days}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                container.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+                        <div class="font-semibold mb-1">Fehler bei Vorschau</div>
+                        <div class="text-sm">${error.message}</div>
+                    </div>
+                `;
+            }
+        }
+        
+        async function executeCleanup() {
+            const days = parseInt(document.getElementById('cleanup-days').value) || 90;
+            const nasHost = document.getElementById('cleanup-nas-host').value.trim() || null;
+            const folderPath = document.getElementById('cleanup-folder-path').value.trim() || null;
+            const scanName = document.getElementById('cleanup-scan-name').value.trim() || null;
+            
+            let confirmMsg = `Möchten Sie wirklich alle Daten löschen, die älter als ${days} Tage sind?`;
+            if (nasHost) confirmMsg += `\nNAS: ${nasHost}`;
+            if (folderPath) confirmMsg += `\nOrdner: ${folderPath}`;
+            if (scanName) confirmMsg += `\nScan: ${scanName}`;
+            confirmMsg += '\n\nDiese Aktion kann nicht rückgängig gemacht werden!';
+            
+            if (!confirm(confirmMsg)) {
+                return;
+            }
+            
+            try {
+                const body = { days };
+                if (nasHost) body.nas_host = nasHost;
+                if (folderPath) body.folder_path = folderPath;
+                if (scanName) body.scan_name = scanName;
+                
+                const response = await fetch('/api/storage/cleanup', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(body)
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast('Erfolg', result.message, 'success');
+                    loadStorageStats();
+                    document.getElementById('cleanup-preview-result').classList.add('hidden');
+                } else {
+                    showToast('Fehler', result.message || 'Fehler bei Bereinigung', 'error');
+                }
+            } catch (error) {
+                showToast('Fehler', `Fehler bei Bereinigung: ${error.message}`, 'error');
+            }
+        }
+        
+        // Schließe Storage-Modal bei Klick außerhalb
+        document.getElementById('storage-modal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeStorageModal();
+            }
+        });
+    </script>
+</body>
+</html>
