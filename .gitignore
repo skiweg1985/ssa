@@ -61,3 +61,11 @@ history.db
 
 # Datenbank-Verzeichnis
 data/
+
+# Systemd Service (falls lokal erstellt)
+*.service.local
+
+# Temporäre Installations-Dateien
+*.tmp
+*.bak
+*.backup

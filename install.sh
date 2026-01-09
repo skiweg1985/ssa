@@ -1,8 +1,6 @@
 #!/bin/bash
-#
-# Installations-Script für Synology Space Analyzer als systemd-Service
-# Installiert den FastAPI-Service auf einem Debian/Ubuntu-System
-#
+# Systemd Service Installer für Synology Space Analyzer
+# Verwendet das Projektverzeichnis direkt (kein separates Install-Verzeichnis)
 
 set -euo pipefail
 
@@ -13,16 +11,16 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Konfigurierbare Variablen
-SERVICE_USER="syno-analyzer"
-INSTALL_DIR="/opt/syno-space-analyzer"
-SERVICE_NAME="syno-space-analyzer"
-PORT="8080"
-HOST="0.0.0.0"
-LOG_DIR="/var/log/syno-space-analyzer"
-VENV_DIR="${INSTALL_DIR}/venv"
+# Konfiguration
+SERVICE_USER="${SERVICE_USER:-syno-analyzer}"
+SERVICE_NAME="${SERVICE_NAME:-syno-space-analyzer}"
+PORT="${PORT:-8080}"
+HOST="${HOST:-0.0.0.0}"
 
-# Funktionen
+# Projektverzeichnis (wo das Script ausgeführt wird)
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Log-Funktionen
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
 }
@@ -39,7 +37,7 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Prüfungen
+# Prüfe Root-Rechte
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         log_error "Dieses Script muss als root ausgeführt werden (sudo)"
@@ -47,236 +45,247 @@ check_root() {
     fi
 }
 
-check_os() {
+# Prüfe Debian/Ubuntu
+check_distro() {
     if [[ ! -f /etc/debian_version ]] && [[ ! -f /etc/lsb-release ]]; then
-        log_error "Dieses Script ist nur für Debian/Ubuntu-Systeme gedacht"
-        exit 1
+        log_warning "Dieses Script wurde für Debian/Ubuntu entwickelt"
     fi
-    log_info "OS-Check erfolgreich: Debian/Ubuntu erkannt"
 }
 
+# Prüfe Python 3
 check_python() {
     if ! command -v python3 &> /dev/null; then
-        log_error "Python 3 ist nicht installiert. Bitte installieren Sie Python 3:"
-        echo "  apt-get update && apt-get install -y python3 python3-venv python3-pip"
+        log_error "Python 3 ist nicht installiert"
         exit 1
     fi
     
     PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-    log_info "Python 3 gefunden: ${PYTHON_VERSION}"
+    log_info "Python Version: $PYTHON_VERSION"
 }
 
+# Prüfe systemd
 check_systemd() {
     if ! command -v systemctl &> /dev/null; then
         log_error "systemd ist nicht verfügbar"
         exit 1
     fi
-    log_info "systemd gefunden"
 }
 
-# Benutzer erstellen
+# Erstelle Service-Benutzer
 create_user() {
     if id "$SERVICE_USER" &>/dev/null; then
-        log_warning "Benutzer ${SERVICE_USER} existiert bereits"
+        log_info "Benutzer '$SERVICE_USER' existiert bereits"
     else
-        log_info "Erstelle Benutzer ${SERVICE_USER}..."
-        useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER"
-        log_success "Benutzer ${SERVICE_USER} erstellt"
-    fi
-}
-
-# Installationsverzeichnis erstellen
-create_install_dir() {
-    log_info "Erstelle Installationsverzeichnis ${INSTALL_DIR}..."
-    
-    if [[ -d "$INSTALL_DIR" ]]; then
-        log_warning "Installationsverzeichnis ${INSTALL_DIR} existiert bereits"
-        read -p "Möchten Sie die vorhandene Installation überschreiben? (j/N): " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Jj]$ ]]; then
-            log_error "Installation abgebrochen"
+        log_info "Erstelle Benutzer '$SERVICE_USER'..."
+        useradd --system --no-create-home --shell /usr/sbin/nologin "$SERVICE_USER" || {
+            log_error "Fehler beim Erstellen des Benutzers"
             exit 1
-        fi
-        log_info "Sichere vorhandene Installation..."
-        BACKUP_DIR="${INSTALL_DIR}.backup.$(date +%Y%m%d_%H%M%S)"
-        mv "$INSTALL_DIR" "$BACKUP_DIR"
-        log_info "Backup erstellt: ${BACKUP_DIR}"
+        }
+        log_success "Benutzer '$SERVICE_USER' erstellt"
     fi
-    
-    mkdir -p "$INSTALL_DIR"
-    log_success "Installationsverzeichnis erstellt"
 }
 
-# Projekt-Dateien kopieren
-copy_project_files() {
-    log_info "Kopiere Projekt-Dateien..."
-    
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    
-    # Wichtige Dateien und Verzeichnisse kopieren
-    cp -r "${SCRIPT_DIR}/app" "${INSTALL_DIR}/"
-    cp "${SCRIPT_DIR}/requirements.txt" "${INSTALL_DIR}/"
-    cp "${SCRIPT_DIR}/README.md" "${INSTALL_DIR}/" 2>/dev/null || true
-    
-    # config.yaml.example kopieren, falls vorhanden
-    if [[ -f "${SCRIPT_DIR}/config.yaml.example" ]]; then
-        cp "${SCRIPT_DIR}/config.yaml.example" "${INSTALL_DIR}/"
-        log_info "config.yaml.example kopiert - bitte erstellen Sie config.yaml"
-    fi
-    
-    # .env.example kopieren, falls vorhanden
-    if [[ -f "${SCRIPT_DIR}/.env.example" ]]; then
-        cp "${SCRIPT_DIR}/.env.example" "${INSTALL_DIR}/"
-        log_info ".env.example kopiert - bitte erstellen Sie .env falls benötigt"
-    fi
-    
-    log_success "Projekt-Dateien kopiert"
-}
-
-# Virtuelles Environment erstellen
+# Erstelle virtuelles Environment
 create_venv() {
-    log_info "Erstelle virtuelles Python-Environment..."
+    local venv_path="$PROJECT_DIR/venv"
     
-    python3 -m venv "$VENV_DIR"
+    if [[ -d "$venv_path" ]]; then
+        log_warning "Virtuelles Environment existiert bereits in $venv_path"
+        read -p "Neu erstellen? (j/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Jj]$ ]]; then
+            log_info "Entferne vorhandenes virtuelles Environment..."
+            rm -rf "$venv_path"
+        else
+            log_info "Verwende vorhandenes virtuelles Environment"
+            return 0
+        fi
+    fi
+    
+    log_info "Erstelle virtuelles Environment in $venv_path..."
+    python3 -m venv "$venv_path" || {
+        log_error "Fehler beim Erstellen des virtuellen Environments"
+        exit 1
+    }
+    
     log_success "Virtuelles Environment erstellt"
 }
 
-# Abhängigkeiten installieren
+# Installiere Abhängigkeiten
 install_dependencies() {
-    log_info "Installiere Python-Abhängigkeiten..."
+    local venv_path="$PROJECT_DIR/venv"
+    local requirements_file="$PROJECT_DIR/requirements.txt"
     
-    "${VENV_DIR}/bin/pip" install --upgrade pip
-    "${VENV_DIR}/bin/pip" install -r "${INSTALL_DIR}/requirements.txt"
+    if [[ ! -f "$requirements_file" ]]; then
+        log_error "requirements.txt nicht gefunden in $PROJECT_DIR"
+        exit 1
+    fi
+    
+    log_info "Installiere Python-Abhängigkeiten..."
+    "$venv_path/bin/pip" install --upgrade pip || {
+        log_error "Fehler beim Aktualisieren von pip"
+        exit 1
+    }
+    
+    "$venv_path/bin/pip" install -r "$requirements_file" || {
+        log_error "Fehler beim Installieren der Abhängigkeiten"
+        exit 1
+    }
     
     log_success "Abhängigkeiten installiert"
 }
 
-# Log-Verzeichnis erstellen
-create_log_dir() {
-    log_info "Erstelle Log-Verzeichnis ${LOG_DIR}..."
+# Erstelle data-Verzeichnis
+create_data_dir() {
+    local data_dir="$PROJECT_DIR/data"
     
-    mkdir -p "$LOG_DIR"
-    chown "${SERVICE_USER}:${SERVICE_USER}" "$LOG_DIR"
-    chmod 755 "$LOG_DIR"
+    if [[ ! -d "$data_dir" ]]; then
+        log_info "Erstelle data-Verzeichnis..."
+        mkdir -p "$data_dir"
+    fi
     
-    log_success "Log-Verzeichnis erstellt"
+    # Setze Permissions
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$data_dir" || {
+        log_warning "Konnte Permissions für $data_dir nicht setzen"
+    }
+    
+    log_success "Data-Verzeichnis bereit"
 }
 
-# Permissions setzen
-set_permissions() {
-    log_info "Setze Dateiberechtigungen..."
+# Erstelle systemd Service-Datei
+create_service_file() {
+    local service_file="/etc/systemd/system/${SERVICE_NAME}.service"
+    local venv_path="$PROJECT_DIR/venv"
+    local python_path="$venv_path/bin"
+    local uvicorn_path="$venv_path/bin/uvicorn"
     
-    chown -R "${SERVICE_USER}:${SERVICE_USER}" "$INSTALL_DIR"
-    chmod -R 755 "$INSTALL_DIR"
+    log_info "Erstelle systemd Service-Datei..."
     
-    log_success "Dateiberechtigungen gesetzt"
-}
-
-# systemd-Service erstellen
-create_systemd_service() {
-    log_info "Erstelle systemd-Service..."
-    
-    SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
-    
-    cat > "$SERVICE_FILE" <<EOF
+    cat > "$service_file" <<EOF
 [Unit]
 Description=Synology Space Analyzer API Service
 After=network.target
 
 [Service]
 Type=simple
-User=${SERVICE_USER}
-Group=${SERVICE_USER}
-WorkingDirectory=${INSTALL_DIR}
-Environment="PATH=${VENV_DIR}/bin"
-ExecStart=${VENV_DIR}/bin/uvicorn app.main:app --host ${HOST} --port ${PORT}
+User=$SERVICE_USER
+Group=$SERVICE_USER
+WorkingDirectory=$PROJECT_DIR
+Environment="PATH=$python_path"
+ExecStart=$uvicorn_path app.main:app --host $HOST --port $PORT
 Restart=always
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=${SERVICE_NAME}
+SyslogIdentifier=$SERVICE_NAME
+
+# Umgebungsvariablen (optional)
+# Environment="PYTHONUNBUFFERED=1"
 
 [Install]
 WantedBy=multi-user.target
 EOF
     
-    log_success "systemd-Service-Datei erstellt: ${SERVICE_FILE}"
+    log_success "Service-Datei erstellt: $service_file"
 }
 
-# Service aktivieren und starten
-enable_and_start_service() {
+# Setze Permissions für Projektverzeichnis
+set_permissions() {
+    log_info "Setze Permissions für Projektverzeichnis..."
+    
+    # Setze Besitzer für Projektverzeichnis (außer venv, das bleibt beim aktuellen Benutzer)
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$PROJECT_DIR" || {
+        log_warning "Konnte Permissions nicht vollständig setzen"
+    }
+    
+    # Stelle sicher, dass venv lesbar ist
+    if [[ -d "$PROJECT_DIR/venv" ]]; then
+        chmod -R u+rX "$PROJECT_DIR/venv" || true
+    fi
+    
+    # Stelle sicher, dass Scripts ausführbar sind
+    find "$PROJECT_DIR" -name "*.sh" -type f -exec chmod +x {} \; || true
+    
+    log_success "Permissions gesetzt"
+}
+
+# Aktiviere und starte Service
+enable_service() {
     log_info "Lade systemd-Daemon neu..."
-    systemctl daemon-reload
+    systemctl daemon-reload || {
+        log_error "Fehler beim Neuladen des systemd-Daemons"
+        exit 1
+    }
     
-    log_info "Aktiviere Service ${SERVICE_NAME}..."
-    systemctl enable "${SERVICE_NAME}.service"
+    log_info "Aktiviere Service '$SERVICE_NAME'..."
+    systemctl enable "$SERVICE_NAME" || {
+        log_error "Fehler beim Aktivieren des Services"
+        exit 1
+    }
     
-    log_info "Starte Service ${SERVICE_NAME}..."
-    systemctl start "${SERVICE_NAME}.service"
+    log_info "Starte Service '$SERVICE_NAME'..."
+    systemctl start "$SERVICE_NAME" || {
+        log_error "Fehler beim Starten des Services"
+        exit 1
+    }
     
-    # Kurz warten, damit Service starten kann
+    log_success "Service gestartet"
+}
+
+# Prüfe Service-Status
+check_service_status() {
+    log_info "Prüfe Service-Status..."
     sleep 2
     
-    # Status prüfen
-    if systemctl is-active --quiet "${SERVICE_NAME}.service"; then
-        log_success "Service ${SERVICE_NAME} läuft erfolgreich"
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        log_success "Service läuft erfolgreich"
     else
-        log_error "Service ${SERVICE_NAME} konnte nicht gestartet werden"
+        log_error "Service läuft nicht!"
         log_info "Zeige Service-Status:"
-        systemctl status "${SERVICE_NAME}.service" || true
+        systemctl status "$SERVICE_NAME" --no-pager || true
         exit 1
     fi
 }
 
-# Zusammenfassung anzeigen
-show_summary() {
-    echo ""
-    log_success "=========================================="
-    log_success "Installation erfolgreich abgeschlossen!"
-    log_success "=========================================="
-    echo ""
-    echo "Service-Informationen:"
-    echo "  Service-Name: ${SERVICE_NAME}"
-    echo "  Installationsverzeichnis: ${INSTALL_DIR}"
-    echo "  Benutzer: ${SERVICE_USER}"
-    echo "  Port: ${PORT}"
-    echo "  URL: http://${HOST}:${PORT}"
-    echo ""
+# Zeige Informationen
+show_info() {
+    echo
+    log_success "Installation abgeschlossen!"
+    echo
+    echo "Projektverzeichnis: $PROJECT_DIR"
+    echo "Service-Name: $SERVICE_NAME"
+    echo "Benutzer: $SERVICE_USER"
+    echo "Port: $PORT"
+    echo
     echo "Nützliche Befehle:"
-    echo "  Service-Status:    systemctl status ${SERVICE_NAME}"
-    echo "  Service stoppen:   systemctl stop ${SERVICE_NAME}"
-    echo "  Service starten:   systemctl start ${SERVICE_NAME}"
-    echo "  Service neu starten: systemctl restart ${SERVICE_NAME}"
-    echo "  Logs anzeigen:     journalctl -u ${SERVICE_NAME} -f"
-    echo ""
-    echo "Wichtige Hinweise:"
-    echo "  - Stellen Sie sicher, dass config.yaml im Installationsverzeichnis existiert"
-    echo "  - Prüfen Sie die Logs bei Problemen: journalctl -u ${SERVICE_NAME}"
-    echo ""
+    echo "  Status anzeigen:  systemctl status $SERVICE_NAME"
+    echo "  Logs anzeigen:    journalctl -u $SERVICE_NAME -f"
+    echo "  Service stoppen:  systemctl stop $SERVICE_NAME"
+    echo "  Service starten:  systemctl start $SERVICE_NAME"
+    echo "  Service neu starten: systemctl restart $SERVICE_NAME"
+    echo
 }
 
 # Hauptfunktion
 main() {
-    log_info "Starte Installation von ${SERVICE_NAME}..."
-    echo ""
+    log_info "Starte Installation von $SERVICE_NAME..."
+    echo
     
     check_root
-    check_os
+    check_distro
     check_python
     check_systemd
     
     create_user
-    create_install_dir
-    copy_project_files
     create_venv
     install_dependencies
-    create_log_dir
+    create_data_dir
+    create_service_file
     set_permissions
-    create_systemd_service
-    enable_and_start_service
-    
-    show_summary
+    enable_service
+    check_service_status
+    show_info
 }
 
-# Script ausführen
+# Führe Installation aus
 main "$@"

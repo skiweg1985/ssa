@@ -1,167 +1,141 @@
 #!/bin/bash
-#
 # Service-Management-Wrapper für Synology Space Analyzer
-# Vereinfachte Befehle zum Verwalten des systemd-Services
-#
 
 set -euo pipefail
 
-# Farben für Ausgabe
+# Konfiguration
+SERVICE_NAME="${SERVICE_NAME:-syno-space-analyzer}"
+
+# Farben
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-# Service-Name (muss mit install.sh übereinstimmen)
-SERVICE_NAME="syno-space-analyzer"
+# Prüfe ob systemctl verfügbar ist
+if ! command -v systemctl &> /dev/null; then
+    echo -e "${RED}Fehler: systemctl ist nicht verfügbar${NC}"
+    exit 1
+fi
 
 # Funktionen
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Prüft ob Service existiert
-check_service() {
-    if ! systemctl list-unit-files | grep -q "${SERVICE_NAME}.service"; then
-        log_error "Service ${SERVICE_NAME} ist nicht installiert"
-        echo "Bitte führen Sie zuerst ./install.sh aus"
-        exit 1
-    fi
+show_usage() {
+    echo "Verwendung: $0 {start|stop|restart|status|logs|enable|disable}"
+    echo
+    echo "Befehle:"
+    echo "  start    - Service starten"
+    echo "  stop     - Service stoppen"
+    echo "  restart  - Service neu starten"
+    echo "  status   - Service-Status anzeigen"
+    echo "  logs     - Logs anzeigen (mit -f für Follow-Modus)"
+    echo "  enable   - Service aktivieren (Start bei Boot)"
+    echo "  disable  - Service deaktivieren"
+    exit 1
 }
 
 # Service starten
 start_service() {
-    check_service
-    log_info "Starte Service ${SERVICE_NAME}..."
-    
-    if sudo systemctl start "${SERVICE_NAME}.service"; then
-        log_success "Service gestartet"
-        show_status
+    echo -e "${BLUE}Starte Service '$SERVICE_NAME'...${NC}"
+    sudo systemctl start "$SERVICE_NAME"
+    sleep 1
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "${GREEN}Service gestartet${NC}"
     else
-        log_error "Service konnte nicht gestartet werden"
+        echo -e "${RED}Fehler beim Starten des Services${NC}"
         exit 1
     fi
 }
 
 # Service stoppen
 stop_service() {
-    check_service
-    log_info "Stoppe Service ${SERVICE_NAME}..."
-    
-    if sudo systemctl stop "${SERVICE_NAME}.service"; then
-        log_success "Service gestoppt"
+    echo -e "${BLUE}Stoppe Service '$SERVICE_NAME'...${NC}"
+    sudo systemctl stop "$SERVICE_NAME"
+    sleep 1
+    if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "${GREEN}Service gestoppt${NC}"
     else
-        log_error "Service konnte nicht gestoppt werden"
+        echo -e "${RED}Fehler beim Stoppen des Services${NC}"
         exit 1
     fi
 }
 
 # Service neu starten
 restart_service() {
-    check_service
-    log_info "Starte Service ${SERVICE_NAME} neu..."
-    
-    if sudo systemctl restart "${SERVICE_NAME}.service"; then
-        log_success "Service neu gestartet"
-        sleep 1
-        show_status
+    echo -e "${BLUE}Starte Service '$SERVICE_NAME' neu...${NC}"
+    sudo systemctl restart "$SERVICE_NAME"
+    sleep 1
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        echo -e "${GREEN}Service neu gestartet${NC}"
     else
-        log_error "Service konnte nicht neu gestartet werden"
+        echo -e "${RED}Fehler beim Neustarten des Services${NC}"
         exit 1
     fi
 }
 
 # Service-Status anzeigen
 show_status() {
-    check_service
-    echo ""
-    log_info "Service-Status:"
-    echo ""
-    sudo systemctl status "${SERVICE_NAME}.service" --no-pager || true
-    echo ""
+    echo -e "${BLUE}Status von '$SERVICE_NAME':${NC}"
+    echo
+    systemctl status "$SERVICE_NAME" --no-pager -l || true
 }
 
 # Logs anzeigen
 show_logs() {
-    check_service
+    local follow=false
     
-    if [[ "${1:-}" == "-f" ]] || [[ "${1:-}" == "--follow" ]]; then
-        log_info "Zeige Logs (Live-Modus, Ctrl+C zum Beenden)..."
-        echo ""
-        sudo journalctl -u "${SERVICE_NAME}.service" -f
+    # Prüfe ob -f Flag gesetzt ist
+    if [[ "${2:-}" == "-f" ]] || [[ "${2:-}" == "--follow" ]]; then
+        follow=true
+    fi
+    
+    if [[ "$follow" == true ]]; then
+        echo -e "${BLUE}Zeige Logs von '$SERVICE_NAME' (Follow-Modus, Ctrl+C zum Beenden)...${NC}"
+        sudo journalctl -u "$SERVICE_NAME" -f
     else
-        log_info "Zeige letzte Log-Einträge..."
-        echo ""
-        sudo journalctl -u "${SERVICE_NAME}.service" -n 50 --no-pager
-        echo ""
-        echo "Für Live-Logs verwenden Sie: $0 logs -f"
+        echo -e "${BLUE}Zeige letzte Logs von '$SERVICE_NAME':${NC}"
+        sudo journalctl -u "$SERVICE_NAME" -n 50 --no-pager
     fi
 }
 
-# Hilfe anzeigen
-show_help() {
-    cat <<EOF
-Verwendung: $0 <Befehl> [Optionen]
-
-Befehle:
-  start              Service starten
-  stop               Service stoppen
-  restart            Service neu starten
-  status             Service-Status anzeigen
-  logs [--follow]    Logs anzeigen (--follow für Live-Modus)
-  help               Diese Hilfe anzeigen
-
-Beispiele:
-  $0 start                    # Service starten
-  $0 stop                     # Service stoppen
-  $0 restart                  # Service neu starten
-  $0 status                   # Status anzeigen
-  $0 logs                     # Letzte 50 Log-Einträge
-  $0 logs --follow            # Live-Logs (wie tail -f)
-
-Hinweis:
-  Einige Befehle benötigen sudo-Rechte.
-EOF
+# Service aktivieren
+enable_service() {
+    echo -e "${BLUE}Aktiviere Service '$SERVICE_NAME' (Start bei Boot)...${NC}"
+    sudo systemctl enable "$SERVICE_NAME"
+    echo -e "${GREEN}Service aktiviert${NC}"
 }
 
-# Hauptfunktion
-main() {
-    case "${1:-help}" in
-        start)
-            start_service
-            ;;
-        stop)
-            stop_service
-            ;;
-        restart)
-            restart_service
-            ;;
-        status)
-            show_status
-            ;;
-        logs)
-            show_logs "${2:-}"
-            ;;
-        help|--help|-h)
-            show_help
-            ;;
-        *)
-            log_error "Unbekannter Befehl: $1"
-            echo ""
-            show_help
-            exit 1
-            ;;
-    esac
+# Service deaktivieren
+disable_service() {
+    echo -e "${BLUE}Deaktiviere Service '$SERVICE_NAME'...${NC}"
+    sudo systemctl disable "$SERVICE_NAME"
+    echo -e "${GREEN}Service deaktiviert${NC}"
 }
 
-# Script ausführen
-main "$@"
+# Hauptlogik
+case "${1:-}" in
+    start)
+        start_service
+        ;;
+    stop)
+        stop_service
+        ;;
+    restart)
+        restart_service
+        ;;
+    status)
+        show_status
+        ;;
+    logs)
+        show_logs "$@"
+        ;;
+    enable)
+        enable_service
+        ;;
+    disable)
+        disable_service
+        ;;
+    *)
+        show_usage
+        ;;
+esac
