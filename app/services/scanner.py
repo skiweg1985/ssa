@@ -30,10 +30,23 @@ class ScannerService:
     def __init__(self):
         """Initialisiert den Scanner Service"""
         self._running_scans: dict[str, bool] = {}  # Track laufende Scans
+        self._scan_status: dict[str, dict] = {}  # Intermediäre Status-Informationen für laufende Scans
     
     def is_scan_running(self, scan_name: str) -> bool:
         """Prüft ob ein Scan aktuell läuft"""
         return self._running_scans.get(scan_name, False)
+    
+    def get_scan_progress(self, scan_name: str) -> Optional[dict]:
+        """
+        Gibt die aktuellen intermediären Status-Informationen eines laufenden Scans zurück.
+        
+        Args:
+            scan_name: Name des Scans
+            
+        Returns:
+            Dict mit Status-Informationen oder None wenn Scan nicht läuft
+        """
+        return self._scan_status.get(scan_name)
     
     async def run_scan(self, scan_config: ScanTaskConfigYAML) -> ScanResult:
         """
@@ -59,8 +72,16 @@ class ScannerService:
                 results=[]
             )
         
-        # Markiere Scan als laufend
+        # Markiere Scan als laufend und initialisiere Status
         self._running_scans[scan_name] = True
+        self._scan_status[scan_name] = {
+            "num_dir": 0,
+            "num_file": 0,
+            "total_size": 0,
+            "waited": 0,
+            "finished": False,
+            "current_path": None
+        }
         logger.info(f"=== Scan '{scan_name}' gestartet ===")
         logger.info(f"Scan '{scan_name}': Verbinde zu NAS {scan_config.nas.host}:{scan_config.nas.port}")
         
@@ -123,11 +144,33 @@ class ScannerService:
                 
                 # Führe Scans für alle Pfade aus
                 result_items = []
+                
+                # Erstelle Callback für Status-Updates
+                def update_scan_status(status_info: dict):
+                    """Aktualisiert den intermediären Status des Scans"""
+                    if scan_name in self._running_scans:
+                        # Aktualisiere Status mit neuen Informationen
+                        current_status = self._scan_status.get(scan_name, {})
+                        current_status.update(status_info)
+                        # Speichere auch den aktuellen Pfad
+                        current_status["current_path"] = path
+                        self._scan_status[scan_name] = current_status
+                
                 for idx, path in enumerate(paths, 1):
                     try:
                         logger.info(f"Scan '{scan_name}': [{idx}/{len(paths)}] Starte Scan von '{path}'")
                         path_start_time = datetime.now(timezone.utc)
-                        result = await api.get_dir_size_async(path, max_wait=300)
+                        
+                        # Aktualisiere Status mit aktuellem Pfad
+                        if scan_name in self._scan_status:
+                            self._scan_status[scan_name]["current_path"] = path
+                        
+                        # Übergib Callback an get_dir_size_async
+                        result = await api.get_dir_size_async(
+                            path, 
+                            max_wait=300,
+                            status_callback=update_scan_status  # Callback für Status-Updates
+                        )
                         path_duration = (datetime.now(timezone.utc) - path_start_time).total_seconds()
                         
                         if result is None:
@@ -211,8 +254,10 @@ class ScannerService:
             scan_result.timestamp = datetime.utcnow()  # Aktualisiere Timestamp
         
         finally:
-            # Markiere Scan als beendet
+            # Markiere Scan als beendet und entferne Status
             self._running_scans[scan_name] = False
+            if scan_name in self._scan_status:
+                del self._scan_status[scan_name]
         
         # Speichere nur abgeschlossene Scans (completed oder failed)
         # "running" Status wird nicht gespeichert

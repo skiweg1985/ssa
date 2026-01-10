@@ -144,6 +144,53 @@ async def get_scan_status(scan_name: str):
     return await get_scan(scan_name)
 
 
+@router.get("/scans/{scan_name}/progress")
+async def get_scan_progress(scan_name: str):
+    """
+    Gibt die aktuellen intermediären Status-Informationen eines laufenden Scans zurück.
+    
+    Args:
+        scan_name: Name des Scans
+    
+    Returns:
+        Dict mit Status-Informationen (num_dir, num_file, total_size, waited, finished, current_path)
+        oder 404 wenn Scan nicht läuft
+    """
+    try:
+        config = load_config()
+        scan_config = get_scan_config(config, scan_name)
+        
+        if not scan_config:
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
+        
+        # Prüfe ob Scan läuft
+        if not scanner_service.is_scan_running(scan_name):
+            raise HTTPException(
+                status_code=404,
+                detail=f"Scan '{scan_name}' läuft aktuell nicht"
+            )
+        
+        # Hole Status-Informationen
+        progress = scanner_service.get_scan_progress(scan_name)
+        
+        if not progress:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Keine Status-Informationen für Scan '{scan_name}' verfügbar"
+            )
+        
+        return {
+            "scan_name": scan_name,
+            "status": "running",
+            "progress": progress
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Fehler beim Abrufen des Status: {str(e)}")
+
+
 @router.get("/scans/{scan_name}/results", response_model=ScanResult)
 async def get_scan_results(scan_name: str, latest: bool = True):
     """

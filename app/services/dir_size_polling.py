@@ -5,7 +5,7 @@ Enthält alle Hilfsfunktionen für das Polling von DirSize-Tasks.
 import time
 import threading
 import logging
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Callable
 
 # Importiere console und logger aus explore_syno_api
 # Da diese Module-Level-Variablen sind, müssen wir sie importieren
@@ -273,7 +273,8 @@ class DirSizePollingHelper:
                                 min_poll_interval: int, max_poll_interval: int,
                                 last_progress: Optional[float],
                                 no_progress_count: int,
-                                last_status_print: int) -> Tuple[int, Optional[float], int, int]:
+                                last_status_print: int,
+                                status_callback: Optional[Callable] = None) -> Tuple[int, Optional[float], int, int]:
         """
         Verarbeitet eine Status-Response und aktualisiert Polling-Parameter.
         
@@ -287,6 +288,8 @@ class DirSizePollingHelper:
             last_progress: Letzter Fortschrittswert
             no_progress_count: Anzahl Polls ohne Fortschritt
             last_status_print: Letzter Zeitpunkt für Status-Print
+            status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
+                            Wird mit Dict aufgerufen: {num_dir, num_file, total_size, waited, finished}
             
         Returns:
             Tuple mit (neues_intervall, neuer_last_progress, neuer_no_progress_count, neuer_last_status_print)
@@ -296,13 +299,56 @@ class DirSizePollingHelper:
         
         data = status_response["data"]
         
+        # Extrahiere intermediäre Status-Informationen
+        num_dir = data.get("num_dir", 0)
+        num_file = data.get("num_file", 0)
+        total_size = data.get("total_size", 0)
+        finished = data.get("finished", False)
+        
+        # Rufe Callback auf, wenn vorhanden (für FastAPI-Server)
+        if status_callback:
+            try:
+                status_callback({
+                    "num_dir": num_dir,
+                    "num_file": num_file,
+                    "total_size": total_size,
+                    "waited": waited,
+                    "finished": finished
+                })
+            except Exception as e:
+                logger.warning(f"Fehler beim Aufruf des Status-Callbacks: {e}")
+        
         # Adaptive Polling: Prüfe Fortschritt und passe Intervall an
         current_poll_interval, last_progress, no_progress_count = self.update_polling_interval(
             data, current_poll_interval, min_poll_interval, max_poll_interval,
             last_progress, no_progress_count
         )
         
-        # Detaillierte Task-Status-Logs
+        # CLI: Zeige intermediäre Informationen bei JEDEM Poll (nicht nur alle 10 Sekunden)
+        if not self.api.output_json:
+            # Formatiere Größe für Ausgabe
+            size_formatted = None
+            if total_size > 0:
+                try:
+                    size_formatted = self.api._format_size_with_unit(total_size)
+                except Exception:
+                    pass
+            
+            # Erstelle Status-Info mit intermediären Informationen
+            status_parts = []
+            if num_dir > 0:
+                status_parts.append(f"{num_dir:,} Ordner")
+            if num_file > 0:
+                status_parts.append(f"{num_file:,} Dateien")
+            if size_formatted:
+                status_parts.append(f"{size_formatted['size_formatted']:.2f} {size_formatted['unit']}")
+            
+            # Zeige Status nur wenn Informationen vorhanden sind
+            if status_parts:
+                status_info = f"  ⏳ Berechnung läuft... ({waited}s) - {', '.join(status_parts)}"
+                console.print(status_info)
+        
+        # Detaillierte Task-Status-Logs (alle 10 Sekunden für zusätzliche Details)
         if waited - last_status_print >= 10:
             progress = data.get("progress", 0)
             processed_num = data.get("processed_num", -1)
@@ -310,21 +356,23 @@ class DirSizePollingHelper:
             total = data.get("total", -1)
             processing_path = data.get("processing_path", "")
             
-            status_info = f"  ⏳ Berechnung läuft... ({waited}s)"
-            if progress > 0:
-                status_info += f" - Fortschritt: {progress*100:.1f}%"
-            if processed_num >= 0 and total >= 0:
-                status_info += f" - Verarbeitet: {processed_num}/{total}"
-            if processing_path:
-                status_info += f" - Aktuell: {processing_path}"
-            if not self.api.output_json:
-                console.print(status_info)
+            if progress > 0 or processed_num >= 0 or processing_path:
+                detail_info = f"  📊 Details ({waited}s)"
+                if progress > 0:
+                    detail_info += f" - Fortschritt: {progress*100:.1f}%"
+                if processed_num >= 0 and total >= 0:
+                    detail_info += f" - Verarbeitet: {processed_num}/{total}"
+                if processing_path:
+                    detail_info += f" - Aktuell: {processing_path}"
+                if not self.api.output_json:
+                    console.print(detail_info)
             last_status_print = waited
         
         # Task noch nicht fertig - Debug-Log
         if logger.isEnabledFor(logging.DEBUG):
             finished_value = data.get("finished")
             logger.debug(f"Task noch nicht fertig (finished={finished_value})")
+            logger.debug(f"  Intermediär: {num_dir} Ordner, {num_file} Dateien, {total_size} Bytes")
         
         return (current_poll_interval, last_progress, no_progress_count, last_status_print)
     
@@ -479,7 +527,8 @@ class DirSizePollingHelper:
     
     def poll_task_status(self, task_id: str, start_time: float, max_wait: int,
                          poll_interval: int, shutdown_event: Optional[threading.Event],
-                         error_599_count: int) -> Optional[Dict]:
+                         error_599_count: int,
+                         status_callback: Optional[Callable] = None) -> Optional[Dict]:
         """
         Führt die Polling-Schleife für einen Task durch.
         
@@ -490,6 +539,7 @@ class DirSizePollingHelper:
             poll_interval: Basis-Polling-Intervall in Sekunden
             shutdown_event: Optionales Threading-Event für Shutdown-Signal
             error_599_count: Initialer 599-Fehler-Counter
+            status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
             
         Returns:
             Ergebnis-Dict wenn fertig, None bei Timeout/Fehler
@@ -604,7 +654,8 @@ class DirSizePollingHelper:
                     current_poll_interval, last_progress, no_progress_count, last_status_print = self.process_status_response(
                         status_response, task_id, waited, current_poll_interval,
                         min_poll_interval, max_poll_interval, last_progress,
-                        no_progress_count, last_status_print
+                        no_progress_count, last_status_print,
+                        status_callback=status_callback  # Callback weiterreichen
                     )
                 elif status_response:
                     # API-Fehler beim Status-Check

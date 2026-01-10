@@ -10,7 +10,7 @@ import time
 import asyncio
 import aiohttp
 import ssl
-from typing import Dict, Optional, List, Tuple
+from typing import Dict, Optional, List, Tuple, Callable
 import sys
 import os
 import json
@@ -324,7 +324,8 @@ class SynologyAPI:
     
     def _poll_task_status(self, task_id: str, start_time: float, max_wait: int,
                          poll_interval: int, shutdown_event: Optional[threading.Event],
-                         error_599_count: int) -> Optional[Dict]:
+                         error_599_count: int,
+                         status_callback: Optional[Callable] = None) -> Optional[Dict]:
         """
         Führt die Polling-Schleife für einen Task durch.
         Delegiert an DirSizePollingHelper.
@@ -336,6 +337,7 @@ class SynologyAPI:
             poll_interval: Basis-Polling-Intervall in Sekunden
             shutdown_event: Optionales Threading-Event für Shutdown-Signal
             error_599_count: Initialer 599-Fehler-Counter
+            status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
             
         Returns:
             Ergebnis-Dict wenn fertig, None bei Timeout/Fehler
@@ -344,7 +346,8 @@ class SynologyAPI:
             from app.services.dir_size_polling import DirSizePollingHelper
             self._polling_helper = DirSizePollingHelper(self)
         return self._polling_helper.poll_task_status(
-            task_id, start_time, max_wait, poll_interval, shutdown_event, error_599_count
+            task_id, start_time, max_wait, poll_interval, shutdown_event, error_599_count,
+            status_callback=status_callback
         )
     
     def __init__(self, host: str, port: Optional[int] = None, use_https: bool = True, 
@@ -1107,7 +1110,8 @@ class SynologyAPI:
         return None
     
     async def get_dir_size_async(self, folder_path: str, max_wait: int = 300,
-                                 poll_interval: int = 2) -> Optional[Dict]:
+                                 poll_interval: int = 2,
+                                 status_callback: Optional[Callable] = None) -> Optional[Dict]:
         """
         Ruft die Größe eines Verzeichnisses asynchron ab
         
@@ -1115,6 +1119,8 @@ class SynologyAPI:
             folder_path: Pfad zum Verzeichnis
             max_wait: Maximale Wartezeit in Sekunden (Standard: 300 = 5 Minuten)
             poll_interval: Abstand zwischen Status-Checks in Sekunden (Standard: 2)
+            status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
+                            Wird mit Dict aufgerufen: {num_dir, num_file, total_size, waited, finished}
         
         Returns:
             Dictionary mit num_dir, num_file, total_size oder None bei Fehler
@@ -1284,10 +1290,64 @@ class SynologyAPI:
                                 "elapsed_time": round(elapsed_time, 2)
                             }
                         else:
-                            # Status alle 10 Sekunden ausgeben
+                            # Extrahiere intermediäre Status-Informationen
+                            num_dir = data.get("num_dir", 0)
+                            num_file = data.get("num_file", 0)
+                            total_size = data.get("total_size", 0)
+                            finished = data.get("finished", False)
+                            
+                            # Rufe Callback auf, wenn vorhanden (für FastAPI-Server)
+                            if status_callback:
+                                try:
+                                    status_callback({
+                                        "num_dir": num_dir,
+                                        "num_file": num_file,
+                                        "total_size": total_size,
+                                        "waited": waited,
+                                        "finished": finished
+                                    })
+                                except Exception as e:
+                                    logger.warning(f"Fehler beim Aufruf des Status-Callbacks: {e}")
+                            
+                            # CLI: Zeige intermediäre Informationen bei JEDEM Poll
+                            if not self.output_json:
+                                # Formatiere Größe für Ausgabe
+                                size_formatted = None
+                                if total_size > 0:
+                                    try:
+                                        size_formatted = self._format_size_with_unit(total_size)
+                                    except Exception:
+                                        pass
+                                
+                                # Erstelle Status-Info mit intermediären Informationen
+                                status_parts = []
+                                if num_dir > 0:
+                                    status_parts.append(f"{num_dir:,} Ordner")
+                                if num_file > 0:
+                                    status_parts.append(f"{num_file:,} Dateien")
+                                if size_formatted:
+                                    status_parts.append(f"{size_formatted['size_formatted']:.2f} {size_formatted['unit']}")
+                                
+                                # Zeige Status nur wenn Informationen vorhanden sind
+                                if status_parts:
+                                    console.print(f"[cyan][{folder_name}][/cyan] Berechnung läuft... ({waited}s) - {', '.join(status_parts)}")
+                            
+                            # Detaillierte Status-Informationen alle 10 Sekunden
                             if waited - last_status_print >= 10:
-                                if not self.output_json:
-                                    console.print(f"[cyan][{folder_name}][/cyan] Berechnung läuft... ({waited}s)")
+                                progress = data.get("progress", 0)
+                                processed_num = data.get("processed_num", -1)
+                                processing_path = data.get("processing_path", "")
+                                
+                                if progress > 0 or processed_num >= 0 or processing_path:
+                                    detail_info = f"[cyan][{folder_name}][/cyan] 📊 Details ({waited}s)"
+                                    if progress > 0:
+                                        detail_info += f" - Fortschritt: {progress*100:.1f}%"
+                                    if processed_num >= 0:
+                                        detail_info += f" - Verarbeitet: {processed_num}"
+                                    if processing_path:
+                                        detail_info += f" - Aktuell: {processing_path}"
+                                    if not self.output_json:
+                                        console.print(detail_info)
                                 last_status_print = waited
                     elif status_response:
                         error = status_response.get("error", {})
