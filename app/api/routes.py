@@ -165,8 +165,11 @@ async def get_scan_progress(scan_name: str):
         scan_name: Name des Scans
     
     Returns:
-        Dict mit Status-Informationen (num_dir, num_file, total_size, waited, finished, current_path)
+        Dict mit Status-Informationen (num_dir, num_file, total_size, waited, finished, current_path, progress_percent)
         oder 404 wenn Scan nicht läuft
+        
+        progress_percent: Prozentwert basierend auf dem letzten erfolgreichen Scan (0-100)
+                         oder None wenn keine Historie vorhanden ist
     """
     try:
         config = load_config()
@@ -191,10 +194,161 @@ async def get_scan_progress(scan_name: str):
                 detail=f"Keine Status-Informationen für Scan '{scan_name}' verfügbar"
             )
         
+        # Berechne Fortschritt basierend auf historischem Scan
+        progress_percent = None
+        last_completed = storage.get_latest_completed_result(scan_name)
+        
+        if last_completed and last_completed.results:
+            # Hole path_status für pro-Ordner Berechnung
+            path_status = progress.get("path_status", {})
+            
+            # Normalisiere Pfade für Vergleich (entferne führende/trailing Slashes)
+            def normalize_path(p: str) -> str:
+                """Normalisiert einen Pfad für Vergleich"""
+                return p.strip().strip('/')
+            
+            # Erstelle Mapping von historischen Werten pro Pfad (normalisiert)
+            historical_by_path = {}
+            for item in last_completed.results:
+                if item.success:
+                    # Normalisiere Pfad für konsistenten Vergleich
+                    normalized_path = normalize_path(item.folder_name)
+                    historical_by_path[normalized_path] = {
+                        "size": item.total_size.bytes if item.total_size else 0,
+                        "dirs": item.num_dir or 0,
+                        "files": item.num_file or 0,
+                        "original_path": item.folder_name  # Behalte Original für Debugging
+                    }
+            
+            # Erstelle normalisiertes Mapping von aktuellen Pfaden
+            normalized_path_status = {}
+            for path, status in path_status.items():
+                normalized = normalize_path(path)
+                # Wenn mehrere Pfade auf denselben normalisierten Pfad mappen, 
+                # verwende den mit den höchsten Werten (aktuellster Status)
+                if normalized not in normalized_path_status:
+                    normalized_path_status[normalized] = status
+                else:
+                    # Behalte den Status mit höheren Werten
+                    existing = normalized_path_status[normalized]
+                    if status.get("total_size", 0) > existing.get("total_size", 0):
+                        normalized_path_status[normalized] = status
+            
+            # Berechne Gesamtwerte des letzten erfolgreichen Scans (für Fallback)
+            historical_total_size = sum(
+                item.total_size.bytes 
+                for item in last_completed.results 
+                if item.success and item.total_size and item.total_size.bytes > 0
+            )
+            historical_total_dirs = sum(
+                item.num_dir or 0 
+                for item in last_completed.results 
+                if item.success
+            )
+            historical_total_files = sum(
+                item.num_file or 0 
+                for item in last_completed.results 
+                if item.success
+            )
+            
+            # Berechne Fortschritt pro Ordner und gewichte nach Größe
+            total_weighted_size_percent = 0.0
+            total_weighted_dirs_percent = 0.0
+            total_weighted_files_percent = 0.0
+            total_weight = 0.0
+            
+            # Iteriere über alle historischen Pfade
+            for normalized_path, historical in historical_by_path.items():
+                # Hole aktuellen Status für diesen Pfad (falls vorhanden)
+                current_path_status = normalized_path_status.get(normalized_path, {})
+                current_size = current_path_status.get("total_size", 0) or 0
+                current_dirs = current_path_status.get("num_dir", 0) or 0
+                current_files = current_path_status.get("num_file", 0) or 0
+                
+                hist_size = historical["size"]
+                hist_dirs = historical["dirs"]
+                hist_files = historical["files"]
+                
+                # Gewicht basierend auf historischer Größe (wichtigste Metrik)
+                # Verwende Größe als primäres Gewicht, da sie am genauesten ist
+                if hist_size > 0:
+                    weight = hist_size
+                elif hist_dirs > 0:
+                    weight = hist_dirs * 1000  # Fallback: verwende dirs als Gewicht
+                elif hist_files > 0:
+                    weight = hist_files  # Fallback: verwende files als Gewicht
+                else:
+                    weight = 1  # Minimales Gewicht für leere Ordner
+                
+                # Berechne Fortschritt für diesen Ordner
+                # Wenn der Ordner noch nicht gestartet wurde, ist der Fortschritt 0%
+                if hist_size > 0:
+                    path_size_percent = min(100, max(0, (current_size / hist_size) * 100))
+                else:
+                    # Für leere Ordner: 100% wenn fertig, sonst 0%
+                    path_size_percent = 100 if current_path_status.get("finished", False) else 0
+                
+                if hist_dirs > 0:
+                    path_dirs_percent = min(100, max(0, (current_dirs / hist_dirs) * 100))
+                else:
+                    path_dirs_percent = 100 if current_path_status.get("finished", False) else 0
+                
+                if hist_files > 0:
+                    path_files_percent = min(100, max(0, (current_files / hist_files) * 100))
+                else:
+                    path_files_percent = 100 if current_path_status.get("finished", False) else 0
+                
+                # Gewichtete Summe (jeder Ordner trägt entsprechend seiner Größe zum Gesamtfortschritt bei)
+                total_weighted_size_percent += path_size_percent * weight
+                total_weighted_dirs_percent += path_dirs_percent * weight
+                total_weighted_files_percent += path_files_percent * weight
+                total_weight += weight
+            
+            # Berechne gewichteten Durchschnitt
+            if total_weight > 0:
+                size_percent = total_weighted_size_percent / total_weight
+                dirs_percent = total_weighted_dirs_percent / total_weight
+                files_percent = total_weighted_files_percent / total_weight
+            else:
+                # Fallback: verwende aggregierte Werte wenn keine path_status verfügbar
+                current_total_size = progress.get("total_size", 0) or 0
+                current_total_dirs = progress.get("num_dir", 0) or 0
+                current_total_files = progress.get("num_file", 0) or 0
+                
+                if historical_total_size > 0:
+                    size_percent = min(100, max(0, (current_total_size / historical_total_size) * 100))
+                else:
+                    size_percent = 0
+                
+                if historical_total_dirs > 0:
+                    dirs_percent = min(100, max(0, (current_total_dirs / historical_total_dirs) * 100))
+                else:
+                    dirs_percent = 0
+                
+                if historical_total_files > 0:
+                    files_percent = min(100, max(0, (current_total_files / historical_total_files) * 100))
+                else:
+                    files_percent = 0
+            
+            # Gewichteter Durchschnitt der Metriken (Größe 70%, Ordner 20%, Dateien 10%)
+            progress_percent = (size_percent * 0.7 + dirs_percent * 0.2 + files_percent * 0.1)
+            progress_percent = round(progress_percent, 1)
+        
+        # Füge progress_percent zum Progress-Dict hinzu
+        progress_with_percent = progress.copy()
+        progress_with_percent["progress_percent"] = progress_percent
+        
+        # Bestimme Status basierend auf finished-Flag
+        # Wenn finished=True, dann ist der Scan abgeschlossen
+        if progress_with_percent.get("finished", False):
+            response_status = "completed"
+        else:
+            response_status = "running"
+        
         return {
             "scan_name": scan_name,
-            "status": "running",
-            "progress": progress
+            "status": response_status,
+            "progress": progress_with_percent
         }
     
     except HTTPException:

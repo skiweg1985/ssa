@@ -108,6 +108,7 @@ Der Port kann beim Start mit `--port` angepasst werden oder beim Install-Script 
 
 Das Interface zeigt:
 - Status aller konfigurierten Scans
+- Fortschrittsanzeige für laufende Scans (mit Prozentangabe und Progress-Bar)
 - Letzte Ergebnisse
 - Nächste geplante Ausführung
 - Möglichkeit, Scans manuell zu starten
@@ -154,6 +155,54 @@ Gibt Details eines spezifischen Scans zurück.
 ```http
 GET /api/scans/{scan_name}/status
 ```
+
+#### Scan-Fortschritt abrufen
+
+```http
+GET /api/scans/{scan_name}/progress
+```
+
+Gibt den aktuellen Fortschritt eines laufenden Scans zurück.
+
+**Response:**
+```json
+{
+  "scan_name": "homes_scan",
+  "status": "running",
+  "progress": {
+    "num_dir": 25664,
+    "num_file": 1344600,
+    "total_size": 9936676294163,
+    "waited": 0,
+    "finished": false,
+    "current_path": "/homes/user1/Documents",
+    "progress_percent": 45.3,
+    "path_status": {
+      "/homes/user1/Documents": {
+        "num_dir": 12832,
+        "num_file": 672300,
+        "total_size": 4968338147081,
+        "waited": 0,
+        "finished": false
+      }
+    }
+  }
+}
+```
+
+**Felder:**
+- `num_dir`, `num_file`, `total_size`: Aggregierte Werte aller gescannten Ordner
+- `waited`: Maximale Wartezeit (längster laufender Scan)
+- `finished`: `true` nur wenn alle erwarteten Ordner fertig sind
+- `current_path`: Aktuell gescannter Pfad
+- `progress_percent`: Fortschritt in Prozent (0-100), basierend auf historischen Werten
+- `path_status`: Status pro Ordner (für Scans mit mehreren Pfaden)
+
+**Fortschrittsberechnung:**
+- Bei Scans mit mehreren Ordnern wird der Fortschritt pro Ordner berechnet und gewichtet aggregiert
+- Die Gewichtung basiert auf der historischen Größe jedes Ordners
+- Größere Ordner haben mehr Einfluss auf den Gesamtfortschritt
+- Der Fortschritt wird nur angezeigt, wenn historische Daten verfügbar sind
 
 #### Scan-Ergebnisse abrufen
 
@@ -356,12 +405,24 @@ Für detailliertere Logs kann das Log-Level angepasst werden.
 - CORS konfigurierbar (Standard: alle Origins erlaubt - für Produktion einschränken)
 - `config.yaml` sollte nicht in Git committed werden
 
+## Fortschrittsanzeige
+
+Bei laufenden Scans wird der Fortschritt in Echtzeit angezeigt:
+
+- **Pro-Ordner-Berechnung**: Bei Scans mit mehreren Ordnern wird der Fortschritt für jeden Ordner separat berechnet
+- **Gewichtete Aggregation**: Der Gesamtfortschritt wird gewichtet nach der historischen Größe jedes Ordners berechnet
+- **Korrekte finished-Prüfung**: Ein Scan wird erst als fertig markiert, wenn alle erwarteten Ordner gescannt wurden
+- **Pfadnormalisierung**: Pfade werden konsistent normalisiert, um korrekte Zuordnung zwischen historischen und aktuellen Werten zu gewährleisten
+
+Die Fortschrittsanzeige ist im Web-Interface sichtbar und kann auch über die REST API abgerufen werden.
+
 ## Performance
 
 - Scans laufen asynchron im Hintergrund
 - Parallele Ausführung mehrerer Scans möglich
 - SQLite-Datenbank für schnelle Abfragen
 - Automatische Bereinigung verhindert Datenbankwachstum
+- Fortschritts-Updates werden effizient aggregiert
 
 ## Fehlerbehandlung
 

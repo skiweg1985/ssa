@@ -95,37 +95,62 @@ app.add_middleware(
 # API Routes
 app.include_router(router, prefix="/api", tags=["scans"])
 
-# Static Files
-static_dir = Path(__file__).parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-
-# HTML-Formular Route
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
-    """
-    Gibt das HTML-Formular für Status und Ergebnisse zurück
-    """
-    try:
-        templates_dir = Path(__file__).parent / "templates"
-        index_file = templates_dir / "index.html"
-        
-        if not index_file.exists():
-            logger.error(f"index.html nicht gefunden in: {index_file}")
-            return HTMLResponse(
-                content="<h1>Fehler: index.html nicht gefunden</h1>",
-                status_code=500
-            )
-        
-        with open(index_file, "r", encoding="utf-8") as f:
-            html_content = f.read()
-        
-        return HTMLResponse(content=html_content)
-    except Exception as e:
-        logger.exception(f"Fehler beim Laden des HTML-Formulars: {e}")
+# Frontend build directory (React app)
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    # Mount assets directory
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    
+    # Serve index.html for root and all non-API routes
+    from fastapi.responses import FileResponse
+    
+    @app.get("/", response_class=HTMLResponse)
+    async def serve_frontend_root():
+        """Serve React frontend index.html"""
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        logger.error(f"React frontend index.html nicht gefunden in: {index_file}")
         return HTMLResponse(
-            content=f"<h1>Fehler beim Laden des Formulars: {str(e)}</h1>",
+            content="<h1>Fehler: React Frontend nicht gefunden. Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</h1>",
+            status_code=500
+        )
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """
+        Serve the React frontend for all non-API routes.
+        """
+        # Don't interfere with API routes or health endpoint
+        if full_path.startswith("api/") or full_path == "health":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Try to serve static file first (for assets, etc.)
+        static_file = frontend_dist / full_path
+        if static_file.exists() and static_file.is_file():
+            return FileResponse(str(static_file))
+        
+        # Otherwise serve index.html (for React Router)
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        
+        # Frontend not found
+        logger.error(f"React frontend index.html nicht gefunden in: {index_file}")
+        return HTMLResponse(
+            content="<h1>Fehler: React Frontend nicht gefunden. Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</h1>",
+            status_code=500
+        )
+else:
+    # Frontend build not found
+    @app.get("/", response_class=HTMLResponse)
+    async def read_root():
+        logger.error(f"React frontend build nicht gefunden in: {frontend_dist}")
+        return HTMLResponse(
+            content="<h1>Fehler: React Frontend Build nicht gefunden</h1><p>Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</p>",
             status_code=500
         )
 

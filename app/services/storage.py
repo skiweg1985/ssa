@@ -494,6 +494,28 @@ class ScanStorage:
             return None
         return self._results[scan_name][-1]
     
+    def get_latest_completed_result(self, scan_name: str) -> Optional[ScanResult]:
+        """
+        Holt das neueste erfolgreich abgeschlossene Scan-Ergebnis (status='completed')
+        
+        Args:
+            scan_name: Name des Scan-Tasks
+            
+        Returns:
+            Das neueste erfolgreiche ScanResult oder None wenn keines vorhanden ist
+        """
+        if scan_name not in self._results or not self._results[scan_name]:
+            return None
+        
+        # Durchsuche Ergebnisse rückwärts (neueste zuerst) nach dem ersten "completed" Status
+        for result in reversed(self._results[scan_name]):
+            if result.status == "completed" and result.results:
+                # Prüfe ob mindestens ein erfolgreiches Ergebnis vorhanden ist
+                if any(item.success and item.total_size and item.total_size.bytes > 0 for item in result.results):
+                    return result
+        
+        return None
+    
     def get_all_results(self, scan_name: str) -> List[ScanResult]:
         """Holt alle Ergebnisse für einen Scan"""
         return self._results.get(scan_name, [])
