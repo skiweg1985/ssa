@@ -1,0 +1,114 @@
+# Synology Space Analyzer - Beispiel-Konfiguration
+# Kopiere diese Datei zu `config.yaml` und passe die Werte an.
+#
+# WICHTIG: `config.yaml` enthält sensible Daten und wird typischerweise nicht committed.
+#
+# Hinweis: Ergebnisse werden standardmäßig in `data/history.db` (SQLite) gespeichert.
+
+scans:
+  # Beispiel 1: Scan einer kompletten Freigabe
+  - name: "example_share_scan"
+    nas:
+      host: "nas.example.com"              # Hostname oder IP-Adresse des NAS
+      username: "api-user"                  # Benutzername für API-Zugriff
+      password: "Dein-Passwort-Hier"       # Passwort (wird in Git ignoriert)
+      port: null                            # Optional: Port (null = automatisch: 5001 für HTTPS, 5000 für HTTP)
+      use_https: true                       # Ob HTTPS verwendet werden soll (true = HTTPS, false = HTTP)
+      verify_ssl: false                     # SSL-Zertifikat-Verifizierung (false für selbst-signierte Zertifikate)
+    shares: ["share1"]                      # Liste von Freigaben
+    folders: null                           # Optional: Liste von Ordnern (nur sinnvoll mit genau 1 Share)
+    paths: null                             # Optional: Liste vollständiger Pfade (z.B. ["homes/user1/Documents"])
+    interval: "0 */6 * * *"                 # Cron oder z.B. "6h"
+    enabled: true                           # Scan aktivieren/deaktivieren
+  
+  # Beispiel 2: Scan mit explizitem Port
+  - name: "home_homes"
+    nas:
+      host: "192.168.1.100"
+      username: "api-user"
+      password: "Dein-Passwort-Hier"
+      port: 5001                            # Expliziter Port (5001 für HTTPS, 5000 für HTTP)
+      use_https: true                        # HTTPS verwenden
+      verify_ssl: false
+    shares: ["homes"]
+    folders: null
+    paths: null
+    interval: "0 2 * * *"                  # Täglich um 2 Uhr
+    enabled: true
+
+  # Beispiel 3: Scan eines spezifischen Ordners innerhalb einer Freigabe
+  - name: "backup_daily"
+    nas:
+      host: "192.168.1.101"
+      username: "backup_user"
+      password: "Dein-Passwort-Hier"
+      port: null                            # Automatisch basierend auf use_https
+      use_https: true                       # HTTPS verwenden
+      verify_ssl: true                      # SSL-Verifizierung aktiviert
+    shares: ["backup"]
+    folders: ["daily"]                      # Nur der "daily" Ordner innerhalb "backup"
+    paths: null
+    interval: "0 3 * * *"                  # Täglich um 3 Uhr
+    enabled: true
+
+  # Beispiel 4: Scan mit vollständigem Pfad
+  - name: "user_documents"
+    nas:
+      host: "nas.example.com"
+      username: "api-user"
+      password: "Dein-Passwort-Hier"
+      port: null
+      use_https: true                       # HTTPS verwenden
+      verify_ssl: true
+    shares: null
+    folders: null
+    paths: ["backup/project1/data"]         # Vollständiger Pfad
+    interval: "*/30 * * * *"                # Alle 30 Minuten (Cron-Format)
+                                           # Alternative: "30m"
+    enabled: true
+
+  # Beispiel 5: HTTP-Verbindung (ohne SSL/TLS)
+  - name: "http_scan"
+    nas:
+      host: "192.168.1.100"
+      username: "api-user"
+      password: "Dein-Passwort-Hier"
+      port: 5000                            # Port 5000 für HTTP
+      use_https: false                      # HTTP verwenden (kein SSL/TLS)
+      verify_ssl: false                     # Nicht relevant bei HTTP, aber muss gesetzt werden
+    shares: ["public"]
+    folders: null
+    paths: null
+    interval: "0 4 * * *"                  # Täglich um 4 Uhr
+    enabled: true
+
+  # Beispiel 6: Deaktivierter Scan (wird nicht ausgeführt)
+  - name: "disabled_scan"
+    nas:
+      host: "192.168.1.100"
+      username: "user"
+      password: "Dein-Passwort-Hier"
+      port: null
+      use_https: true
+      verify_ssl: false
+    shares: ["test"]
+    folders: null
+    paths: null
+    interval: "0 0 * * *"                  # Täglich um Mitternacht
+    enabled: false                          # Scan ist deaktiviert
+
+  # Beispiel 7: Scan mit einfachem Interval-Format (statt Cron)
+  - name: "frequent_scan"
+    nas:
+      host: "192.168.1.100"
+      username: "api-user"
+      password: "Dein-Passwort-Hier"
+      port: null
+      use_https: true
+      verify_ssl: false
+    shares: ["monitoring"]
+    folders: null
+    paths: null
+    interval: "30m"                        # Alle 30 Minuten (einfaches Interval-Format)
+                                           # Alternative Cron-Format: "*/30 * * * *"
+    enabled: true
