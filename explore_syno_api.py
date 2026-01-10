@@ -325,7 +325,8 @@ class SynologyAPI:
     def _poll_task_status(self, task_id: str, start_time: float, max_wait: int,
                          poll_interval: int, shutdown_event: Optional[threading.Event],
                          error_599_count: int,
-                         status_callback: Optional[Callable] = None) -> Optional[Dict]:
+                         status_callback: Optional[Callable] = None,
+                         progress_update_callback: Optional[Callable] = None) -> Optional[Dict]:
         """
         Führt die Polling-Schleife für einen Task durch.
         Delegiert an DirSizePollingHelper.
@@ -338,6 +339,7 @@ class SynologyAPI:
             shutdown_event: Optionales Threading-Event für Shutdown-Signal
             error_599_count: Initialer 599-Fehler-Counter
             status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
+            progress_update_callback: Optionaler Callback für Rich Progress Updates (für CLI)
             
         Returns:
             Ergebnis-Dict wenn fertig, None bei Timeout/Fehler
@@ -345,9 +347,18 @@ class SynologyAPI:
         if not hasattr(self, '_polling_helper'):
             from app.services.dir_size_polling import DirSizePollingHelper
             self._polling_helper = DirSizePollingHelper(self)
+        
+        # Verwende vollständigen Pfad für Progress-Description
+        folder_name = None
+        if hasattr(self, '_current_folder_path'):
+            # Verwende vollständigen Pfad, entferne nur führendes '/' für bessere Lesbarkeit
+            folder_name = self._current_folder_path.lstrip('/') or self._current_folder_path
+        
         return self._polling_helper.poll_task_status(
             task_id, start_time, max_wait, poll_interval, shutdown_event, error_599_count,
-            status_callback=status_callback
+            status_callback=status_callback,
+            progress_update_callback=progress_update_callback,
+            folder_name=folder_name
         )
     
     def __init__(self, host: str, port: Optional[int] = None, use_https: bool = True, 
@@ -664,7 +675,8 @@ class SynologyAPI:
         return subfolders
     
     def get_dir_size(self, folder_path: str, max_wait: int = 300, 
-                     poll_interval: int = 2, shutdown_event: Optional[threading.Event] = None) -> Optional[Dict]:
+                     poll_interval: int = 2, shutdown_event: Optional[threading.Event] = None,
+                     progress_update_callback: Optional[Callable] = None) -> Optional[Dict]:
         """
         Ruft die Größe eines Verzeichnisses ab
         
@@ -672,6 +684,9 @@ class SynologyAPI:
             folder_path: Pfad zum Verzeichnis
             max_wait: Maximale Wartezeit in Sekunden (Standard: 300 = 5 Minuten)
             poll_interval: Abstand zwischen Status-Checks in Sekunden (Standard: 2)
+            shutdown_event: Optionales Threading-Event für Shutdown-Signal
+            progress_update_callback: Optionaler Callback für Rich Progress Updates (für CLI)
+                                      Wird mit String aufgerufen: neue Description für Progress
         
         Returns:
             Dictionary mit num_dir, num_file, total_size oder None bei Fehler
@@ -685,6 +700,12 @@ class SynologyAPI:
             if not self.output_json:
                 console.print(f"[yellow]⚠[/yellow] Warnung: Pfad sollte mit '/' beginnen. Korrigiere: /{folder_path.lstrip('/')}")
             folder_path = f"/{folder_path.lstrip('/')}"
+        
+        # Extrahiere Ordnernamen für bessere Ausgabe
+        folder_name = folder_path.strip('/').split('/')[-1] or folder_path
+        
+        # Speichere folder_path temporär für _poll_task_status
+        self._current_folder_path = folder_path
         
         # Startzeit für Laufzeitmessung
         start_time = time.time()
@@ -736,7 +757,8 @@ class SynologyAPI:
         
         # Führe Polling-Schleife durch
         return self._poll_task_status(
-            task_id, start_time, max_wait, poll_interval, shutdown_event, error_599_count
+            task_id, start_time, max_wait, poll_interval, shutdown_event, error_599_count,
+            status_callback=None, progress_update_callback=progress_update_callback
         )
     
     def _stop_task(self, task_id: str, ignore_errors: bool = False) -> bool:
@@ -1111,7 +1133,8 @@ class SynologyAPI:
     
     async def get_dir_size_async(self, folder_path: str, max_wait: int = 300,
                                  poll_interval: int = 2,
-                                 status_callback: Optional[Callable] = None) -> Optional[Dict]:
+                                 status_callback: Optional[Callable] = None,
+                                 progress_update_callback: Optional[Callable] = None) -> Optional[Dict]:
         """
         Ruft die Größe eines Verzeichnisses asynchron ab
         
@@ -1121,6 +1144,8 @@ class SynologyAPI:
             poll_interval: Abstand zwischen Status-Checks in Sekunden (Standard: 2)
             status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
                             Wird mit Dict aufgerufen: {num_dir, num_file, total_size, waited, finished}
+            progress_update_callback: Optionaler Callback für Rich Progress Updates (für CLI)
+                                      Wird mit String aufgerufen: neue Description für Progress
         
         Returns:
             Dictionary mit num_dir, num_file, total_size oder None bei Fehler
@@ -1136,11 +1161,13 @@ class SynologyAPI:
                 console.print(f"[yellow]⚠[/yellow] Warnung: Pfad sollte mit '/' beginnen. Korrigiere: /{folder_path.lstrip('/')}")
             folder_path = f"/{folder_path.lstrip('/')}"
         
-        # Extrahiere Ordnernamen für bessere Ausgabe
-        folder_name = folder_path.strip('/').split('/')[-1] or folder_path
+        # Extrahiere Ordnernamen für initiale Ausgabe (nur letzter Teil)
+        folder_name_short = folder_path.strip('/').split('/')[-1] or folder_path
+        # Verwende vollständigen Pfad für Progress-Beschreibung (ohne führendes '/')
+        folder_name = folder_path.lstrip('/') or folder_path
         
         if not self.output_json:
-            console.print(f"[cyan][{folder_name}][/cyan] Berechne Verzeichnisgröße...")
+            console.print(f"[cyan][{folder_name_short}][/cyan] Berechne Verzeichnisgröße...")
         
         # Startzeit für Laufzeitmessung
         start_time = time.time()
@@ -1195,7 +1222,9 @@ class SynologyAPI:
                     # Berechne Laufzeit
                     elapsed_time = time.time() - start_time
                     if not self.output_json:
-                        console.print(f"[green][{folder_name}][/green] Abgeschlossen ({elapsed_time:.2f}s): {self._format_size(result[2])} ({result[0]:,} Ordner, {result[1]:,} Dateien)")
+                        # Formatiere Duration: nur Dezimalstellen wenn nötig
+                        duration_str = f"{int(round(elapsed_time))}s"
+                        console.print(f"[green][{folder_name}][/green] Abgeschlossen: {self._format_size(result[2])} | {result[0]:,} Verzeichnisse | {result[1]:,} Dateien | [dim]Duration: {duration_str}[/dim]")
                     return {
                         "num_dir": result[0],
                         "num_file": result[1],
@@ -1215,6 +1244,11 @@ class SynologyAPI:
             current_poll_interval = min_poll_interval
             last_progress = None  # Letzter Fortschrittswert für Vergleich
             no_progress_count = 0  # Zähler für Polls ohne Fortschritt
+            
+            # Track letzte Werte für Fortschrittserkennung basierend auf num_dir, num_file, total_size
+            last_num_dir = None
+            last_num_file = None
+            last_total_size = None
             
             try:
                 while waited < max_wait:
@@ -1251,26 +1285,60 @@ class SynologyAPI:
                         current_progress = data.get("progress", 0)
                         processed_num = data.get("processed_num", -1)
                         
-                        # Wenn Fortschritt vorhanden ist
+                        # Extrahiere intermediäre Status-Informationen für Fortschrittserkennung
+                        current_num_dir = data.get("num_dir", 0)
+                        current_num_file = data.get("num_file", 0)
+                        current_total_size = data.get("total_size", 0)
+                        
+                        # Prüfe ob Fortschritt erkannt wurde
+                        progress_detected = False
+                        
+                        # 1. Prüfe progress/processed_num (wenn verfügbar)
                         if current_progress is not None and last_progress is not None:
-                            if current_progress > last_progress or (processed_num >= 0 and processed_num > (last_progress or 0)):
-                                # Fortschritt erkannt: Setze Intervall zurück
-                                if current_poll_interval > min_poll_interval:
-                                    logger.debug(f"Fortschritt erkannt, setze Polling-Intervall zurück auf {min_poll_interval}s")
-                                    current_poll_interval = min_poll_interval
-                                no_progress_count = 0
-                            else:
-                                # Kein Fortschritt: Erhöhe Intervall schrittweise
-                                no_progress_count += 1
-                                if no_progress_count >= 3 and current_poll_interval < max_poll_interval:
-                                    # Erhöhe Intervall um 2 Sekunden, aber nicht über Maximum
-                                    new_interval = min(current_poll_interval + 2, max_poll_interval)
-                                    if new_interval != current_poll_interval:
-                                        logger.debug(f"Kein Fortschritt seit {no_progress_count} Polls, erhöhe Intervall auf {new_interval}s")
-                                        current_poll_interval = new_interval
+                            if current_progress > last_progress:
+                                progress_detected = True
+                        elif last_progress is not None:
+                            # current_progress ist None, aber last_progress nicht - prüfe processed_num
+                            if processed_num >= 0 and processed_num > (last_progress or 0):
+                                progress_detected = True
+                        
+                        # 2. Prüfe num_dir, num_file, total_size (wenn progress/processed_num nicht verfügbar oder unverändert)
+                        if not progress_detected:
+                            # Prüfe ob sich num_dir, num_file oder total_size geändert haben
+                            if last_num_dir is not None and current_num_dir > last_num_dir:
+                                progress_detected = True
+                            elif last_num_file is not None and current_num_file > last_num_file:
+                                progress_detected = True
+                            elif last_total_size is not None and current_total_size > last_total_size:
+                                progress_detected = True
+                        
+                        # 3. Reagiere auf Fortschritt
+                        if progress_detected:
+                            # Fortschritt erkannt: Setze Intervall zurück
+                            if current_poll_interval > min_poll_interval:
+                                logger.debug(f"Fortschritt erkannt, setze Polling-Intervall zurück auf {min_poll_interval}s")
+                                current_poll_interval = min_poll_interval
+                            no_progress_count = 0
+                        else:
+                            # Kein Fortschritt: Erhöhe Intervall schrittweise
+                            no_progress_count += 1
+                            if no_progress_count >= 3 and current_poll_interval < max_poll_interval:
+                                # Erhöhe Intervall um 2 Sekunden, aber nicht über Maximum
+                                new_interval = min(current_poll_interval + 2, max_poll_interval)
+                                if new_interval != current_poll_interval:
+                                    logger.debug(f"Kein Fortschritt seit {no_progress_count} Polls, erhöhe Intervall auf {new_interval}s")
+                                    current_poll_interval = new_interval
                         
                         # Aktualisiere letzten Fortschritt
                         last_progress = current_progress if current_progress is not None else processed_num
+                        
+                        # Aktualisiere letzte Werte für nächsten Poll
+                        if current_num_dir > 0:
+                            last_num_dir = current_num_dir
+                        if current_num_file > 0:
+                            last_num_file = current_num_file
+                        if current_total_size > 0:
+                            last_total_size = current_total_size
                         
                         if data.get("finished"):
                             self._active_tasks.remove(task_id)
@@ -1282,7 +1350,11 @@ class SynologyAPI:
                             # Berechne Laufzeit
                             elapsed_time = time.time() - start_time
                             if not self.output_json:
-                                console.print(f"[green][{folder_name}][/green] Abgeschlossen ({elapsed_time:.2f}s): {self._format_size(result[2])} ({result[0]:,} Ordner, {result[1]:,} Dateien)")
+                                # Formatiere Duration: nur Dezimalstellen wenn nötig
+                                duration_str = f"{int(round(elapsed_time))}s"
+                                # Verwende kurzen Namen für finale Ausgabe
+                                folder_name_short = folder_path.strip('/').split('/')[-1] or folder_path
+                                console.print(f"[green][{folder_name_short}][/green] Abgeschlossen: {self._format_size(result[2])} | {result[0]:,} Verzeichnisse | {result[1]:,} Dateien | [dim]Duration: {duration_str}[/dim]")
                             return {
                                 "num_dir": result[0],
                                 "num_file": result[1],
@@ -1328,9 +1400,17 @@ class SynologyAPI:
                                 if size_formatted:
                                     status_parts.append(f"{size_formatted['size_formatted']:.2f} {size_formatted['unit']}")
                                 
-                                # Zeige Status nur wenn Informationen vorhanden sind
-                                if status_parts:
-                                    console.print(f"[cyan][{folder_name}][/cyan] Berechnung läuft... ({waited}s) - {', '.join(status_parts)}")
+                                # Wenn Progress-Update-Callback vorhanden, verwende diesen (für Rich Progress)
+                                # WICHTIG: Keine console.print() Ausgabe, wenn Callback vorhanden ist!
+                                if progress_update_callback and status_parts:
+                                    try:
+                                        description = f"[green]Checking {folder_name} - {' | '.join(status_parts)}[/green]"
+                                        progress_update_callback(description)
+                                    except Exception as e:
+                                        logger.warning(f"Fehler beim Progress-Update-Callback: {e}")
+                                # Sonst normale Console-Ausgabe (nur wenn kein Rich Progress aktiv)
+                                elif not progress_update_callback and status_parts:
+                                    console.print(f"[cyan][{folder_name}][/cyan] Berechnung läuft... ({waited}s) - {' | '.join(status_parts)}")
                             
                             # Detaillierte Status-Informationen alle 10 Sekunden
                             if waited - last_status_print >= 10:
@@ -2229,24 +2309,6 @@ async def main_async(max_parallel_tasks: int = 3, api: Optional[SynologyAPI] = N
             async with semaphore:
                 return await task_func
         
-        # Erstelle Tasks für alle ausgewählten Freigaben
-        tasks = []
-        for folder in selected_folders:
-            # Unterstütze sowohl altes Format (Dict mit 'name') als auch neues Format (Dict mit 'path')
-            if 'path' in folder:
-                folder_path = folder['path']
-                folder_name = folder.get('name', folder_path.lstrip('/'))
-            else:
-                folder_name = folder.get("name")
-                folder_path = f"/{folder_name}"
-            
-            # Erstelle async Task mit Semaphore
-            task = run_with_semaphore(
-                api.get_dir_size_async(folder_path, max_wait=300, poll_interval=2),
-                folder_name
-            )
-            tasks.append((task, folder_name))
-        
         # Rich Progress für beide Modi (JSON und interaktiv)
         # Prozentbalken nur anzeigen, wenn mehr als ein Ordner gescannt wird
         progress_columns = [
@@ -2255,7 +2317,7 @@ async def main_async(max_parallel_tasks: int = 3, api: Optional[SynologyAPI] = N
         ]
         
         # Nur Prozentbalken und Prozentanzeige hinzufügen, wenn mehr als ein Task
-        if len(tasks) > 1:
+        if len(selected_folders) > 1:
             progress_columns.extend([
                 BarColumn(),
                 TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
@@ -2270,26 +2332,58 @@ async def main_async(max_parallel_tasks: int = 3, api: Optional[SynologyAPI] = N
         ) as progress:
             # Erstelle eine Task für den Gesamtfortschritt
             overall_task = progress.add_task(
-                f"[green]Analysiere {len(tasks)} Ordner...",
-                total=len(tasks)
+                f"[green]Checking {len(selected_folders)} Ordner...",
+                total=len(selected_folders)
             )
             
             # Wrapper-Funktion, die den Fortschritt aktualisiert
             completed_count = [0]  # Liste für mutable counter
             
+            # Erstelle Tasks für alle ausgewählten Freigaben
+            tasks = []
+            for folder in selected_folders:
+                # Unterstütze sowohl altes Format (Dict mit 'name') als auch neues Format (Dict mit 'path')
+                if 'path' in folder:
+                    folder_path = folder['path']
+                    folder_name = folder.get('name', folder_path.lstrip('/'))
+                else:
+                    folder_name = folder.get("name")
+                    folder_path = f"/{folder_name}"
+                
+                # Erstelle Progress-Update-Callback für diesen Ordner
+                def create_progress_callback(fn):
+                    def update_progress_description(description: str):
+                        progress.update(overall_task, description=description)
+                    return update_progress_description
+                
+                progress_callback = create_progress_callback(folder_name)
+                
+                # Erstelle async Task mit Semaphore und Progress-Callback
+                async def create_task_with_progress(fp, fn, pc):
+                    async with semaphore:
+                        return await api.get_dir_size_async(
+                            fp, 
+                            max_wait=300, 
+                            poll_interval=2,
+                            progress_update_callback=pc
+                        )
+                
+                task = create_task_with_progress(folder_path, folder_name, progress_callback)
+                tasks.append((task, folder_name))
+            
             async def track_progress(task_func, folder_name):
                 # Beim Start: Beschreibung aktualisieren
-                if len(tasks) == 1:
+                if len(selected_folders) == 1:
                     # Nur 1 Ordner: Zeige Ordnername
                     progress.update(
                         overall_task,
-                        description=f"[green]Analysiere {folder_name}... ({completed_count[0]}/{len(tasks)})"
+                        description=f"[green]Checking {folder_name}... ({completed_count[0]}/{len(selected_folders)})"
                     )
                 else:
                     # Mehrere Ordner: Zeige generische Beschreibung
                     progress.update(
                         overall_task,
-                        description=f"[green]Analysiere {len(tasks)} Ordner... ({completed_count[0]}/{len(tasks)})"
+                        description=f"[green]Checking {len(selected_folders)} Ordner... ({completed_count[0]}/{len(selected_folders)})"
                     )
                 
                 result = await task_func
@@ -2297,19 +2391,19 @@ async def main_async(max_parallel_tasks: int = 3, api: Optional[SynologyAPI] = N
                 # Beim Abschluss: Fortschritt aktualisieren
                 completed_count[0] += 1
                 
-                if len(tasks) == 1:
+                if len(selected_folders) == 1:
                     # Nur 1 Ordner: Ordnername bleibt sichtbar
                     progress.update(
                         overall_task, 
                         advance=1,
-                        description=f"[green]Analysiere {folder_name}... ({completed_count[0]}/{len(tasks)})"
+                        description=f"[green]Checking {folder_name}... ({completed_count[0]}/{len(selected_folders)})"
                     )
                 else:
                     # Mehrere Ordner: Generische Beschreibung mit aktuellem Fortschritt
                     progress.update(
                         overall_task, 
                         advance=1, 
-                        description=f"[green]Analysiere {len(tasks)} Ordner... ({completed_count[0]}/{len(tasks)})"
+                        description=f"[green]Checking {len(selected_folders)} Ordner... ({completed_count[0]}/{len(selected_folders)})"
                     )
                 
                 return result
@@ -2377,19 +2471,41 @@ async def main_async(max_parallel_tasks: int = 3, api: Optional[SynologyAPI] = N
         else:
             # Interaktiver Modus: Zeige Ergebnisse nach dem Progress
             console.print()
+            # Prüfe ob nur ein Ordner gescannt wurde
+            single_folder = len(json_results) == 1
+            
             for result in json_results:
                 if result.get('success'):
                     folder_name = result['folder_name']
                     size_info = result.get('size_info')
                     if size_info:
-                        console.print(f"[bold]{folder_name}[/bold]: {api._format_size(size_info['total_size'])} "
-                                    f"({size_info['num_dir']:,} Verzeichnisse, {size_info['num_file']:,} Dateien, {size_info.get('elapsed_time', 0):.2f}s)")
+                        elapsed_time = size_info.get('elapsed_time', 0)
+                        duration_str = f"{int(round(elapsed_time))}s"
+                        
+                        if single_folder:
+                            # Einzelner Ordner: Ausgabe untereinander
+                            console.print(f"[bold]{folder_name}[/bold]:")
+                            console.print(f"  Größe: {api._format_size(size_info['total_size'])}")
+                            console.print(f"  Verzeichnisse: {size_info['num_dir']:,}")
+                            console.print(f"  Dateien: {size_info['num_file']:,}")
+                            console.print(f"  [dim]Duration: {duration_str}[/dim]")
+                        else:
+                            # Mehrere Ordner: Ausgabe in einer Zeile mit Pipes
+                            console.print(f"[bold]{folder_name}[/bold]: {api._format_size(size_info['total_size'])} | "
+                                        f"{size_info['num_dir']:,} Verzeichnisse | {size_info['num_file']:,} Dateien | "
+                                        f"[dim]Duration: {duration_str}[/dim]")
                     else:
                         # Fallback falls size_info nicht vorhanden
                         total_size = result.get('total_size', {})
                         size_str = total_size.get('formatted', '0 B')
-                        console.print(f"[bold]{folder_name}[/bold]: {size_str} "
-                                    f"({result.get('num_dir', 0):,} Verzeichnisse, {result.get('num_file', 0):,} Dateien)")
+                        if single_folder:
+                            console.print(f"[bold]{folder_name}[/bold]:")
+                            console.print(f"  Größe: {size_str}")
+                            console.print(f"  Verzeichnisse: {result.get('num_dir', 0):,}")
+                            console.print(f"  Dateien: {result.get('num_file', 0):,}")
+                        else:
+                            console.print(f"[bold]{folder_name}[/bold]: {size_str} | "
+                                        f"{result.get('num_dir', 0):,} Verzeichnisse | {result.get('num_file', 0):,} Dateien")
                 else:
                     folder_name = result.get('folder_name', 'unknown')
                     console.print(f"[yellow]⚠[/yellow] Keine Ergebnisse für '{folder_name}'")
@@ -2775,7 +2891,7 @@ def main():
         )
         progress.start()
         overall_task = progress.add_task(
-            f"[green]Analysiere {len(selected_folders)} Ordner...",
+            f"[green]Checking {len(selected_folders)} Ordner...",
             total=len(selected_folders)
         )
         
@@ -2821,8 +2937,23 @@ def main():
                     'error': 'Abgebrochen'
                 }
             
+            # Erstelle Progress-Update-Callback für diesen Ordner
+            def create_progress_update_callback(fn):
+                def update_progress_description(description: str):
+                    with progress_lock:
+                        progress.update(overall_task, description=description)
+                return update_progress_description
+            
+            progress_update_callback = create_progress_update_callback(folder_name)
+            
             # Verzeichnisgröße berechnen
-            size_info = api.get_dir_size(folder_path, max_wait=300, poll_interval=2, shutdown_event=shutdown_event)
+            size_info = api.get_dir_size(
+                folder_path, 
+                max_wait=300, 
+                poll_interval=2, 
+                shutdown_event=shutdown_event,
+                progress_update_callback=progress_update_callback
+            )
             
             # Progress-Update bei Abschluss
             if progress_callback:
@@ -2871,13 +3002,13 @@ def main():
                         # Nur 1 Ordner: Zeige Ordnername
                         progress.update(
                             overall_task,
-                            description=f"[green]Analysiere {folder_name}... ({current_count}/{len(selected_folders)})"
+                            description=f"[green]Checking {folder_name}... ({current_count}/{len(selected_folders)})"
                         )
                     else:
                         # Mehrere Ordner: Zeige generische Beschreibung
                         progress.update(
                             overall_task,
-                            description=f"[green]Analysiere {len(selected_folders)} Ordner... ({current_count}/{len(selected_folders)})"
+                            description=f"[green]Checking {len(selected_folders)} Ordner... ({current_count}/{len(selected_folders)})"
                         )
                 elif completed:
                     completed_count[0] += 1
@@ -2888,14 +3019,14 @@ def main():
                         progress.update(
                             overall_task,
                             advance=1,
-                            description=f"[green]Analysiere {folder_name}... ({current_count}/{len(selected_folders)})"
+                            description=f"[green]Checking {folder_name}... ({current_count}/{len(selected_folders)})"
                         )
                     else:
                         # Mehrere Ordner: Generische Beschreibung mit aktuellem Fortschritt
                         progress.update(
                             overall_task,
                             advance=1,
-                            description=f"[green]Analysiere {len(selected_folders)} Ordner... ({current_count}/{len(selected_folders)})"
+                            description=f"[green]Checking {len(selected_folders)} Ordner... ({current_count}/{len(selected_folders)})"
                         )
         
         # Verwende ThreadPoolExecutor für Bounded Concurrency
@@ -2966,19 +3097,41 @@ def main():
         else:
             # Interaktiver Modus: Zeige Ergebnisse nach dem Progress
             console.print()
+            # Prüfe ob nur ein Ordner gescannt wurde
+            single_folder = len(json_results) == 1
+            
             for result in json_results:
                 if result.get('success'):
                     folder_name = result['folder_name']
                     size_info = result.get('size_info')
                     if size_info:
-                        console.print(f"[bold]{folder_name}[/bold]: {api._format_size(size_info['total_size'])} "
-                                    f"({size_info['num_dir']:,} Verzeichnisse, {size_info['num_file']:,} Dateien, {size_info.get('elapsed_time', 0):.2f}s)")
+                        elapsed_time = size_info.get('elapsed_time', 0)
+                        duration_str = f"{int(round(elapsed_time))}s"
+                        
+                        if single_folder:
+                            # Einzelner Ordner: Ausgabe untereinander
+                            console.print(f"[bold]{folder_name}[/bold]:")
+                            console.print(f"  Größe: {api._format_size(size_info['total_size'])}")
+                            console.print(f"  Verzeichnisse: {size_info['num_dir']:,}")
+                            console.print(f"  Dateien: {size_info['num_file']:,}")
+                            console.print(f"  [dim]Duration: {duration_str}[/dim]")
+                        else:
+                            # Mehrere Ordner: Ausgabe in einer Zeile mit Pipes
+                            console.print(f"[bold]{folder_name}[/bold]: {api._format_size(size_info['total_size'])} | "
+                                        f"{size_info['num_dir']:,} Verzeichnisse | {size_info['num_file']:,} Dateien | "
+                                        f"[dim]Duration: {duration_str}[/dim]")
                     else:
                         # Fallback falls size_info nicht vorhanden
                         total_size = result.get('total_size', {})
                         size_str = total_size.get('formatted', '0 B')
-                        console.print(f"[bold]{folder_name}[/bold]: {size_str} "
-                                    f"({result.get('num_dir', 0):,} Verzeichnisse, {result.get('num_file', 0):,} Dateien)")
+                        if single_folder:
+                            console.print(f"[bold]{folder_name}[/bold]:")
+                            console.print(f"  Größe: {size_str}")
+                            console.print(f"  Verzeichnisse: {result.get('num_dir', 0):,}")
+                            console.print(f"  Dateien: {result.get('num_file', 0):,}")
+                        else:
+                            console.print(f"[bold]{folder_name}[/bold]: {size_str} | "
+                                        f"{result.get('num_dir', 0):,} Verzeichnisse | {result.get('num_file', 0):,} Dateien")
                 else:
                     folder_name = result.get('folder_name', 'unknown')
                     console.print(f"[yellow]⚠[/yellow] Keine Ergebnisse für '{folder_name}'")

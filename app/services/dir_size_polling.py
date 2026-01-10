@@ -210,7 +210,10 @@ class DirSizePollingHelper:
     def update_polling_interval(self, data: Dict, current_interval: int,
                                 min_interval: int, max_interval: int,
                                 last_progress: Optional[float],
-                                no_progress_count: int) -> Tuple[int, Optional[float], int]:
+                                no_progress_count: int,
+                                last_num_dir: Optional[int] = None,
+                                last_num_file: Optional[int] = None,
+                                last_total_size: Optional[int] = None) -> Tuple[int, Optional[float], int]:
         """
         Aktualisiert das Polling-Intervall basierend auf Fortschritt.
         
@@ -221,6 +224,9 @@ class DirSizePollingHelper:
             max_interval: Maximales Polling-Intervall in Sekunden
             last_progress: Letzter Fortschrittswert (None wenn noch kein Fortschritt)
             no_progress_count: Anzahl Polls ohne Fortschritt
+            last_num_dir: Letzte Anzahl Verzeichnisse (für Fortschrittserkennung)
+            last_num_file: Letzte Anzahl Dateien (für Fortschrittserkennung)
+            last_total_size: Letzte Gesamtgröße (für Fortschrittserkennung)
             
         Returns:
             Tuple mit (neues_intervall, neuer_last_progress, neuer_no_progress_count)
@@ -228,40 +234,49 @@ class DirSizePollingHelper:
         current_progress = data.get("progress", 0)
         processed_num = data.get("processed_num", -1)
         
-        # Wenn Fortschritt vorhanden ist
+        # Extrahiere intermediäre Status-Informationen für Fortschrittserkennung
+        current_num_dir = data.get("num_dir", 0)
+        current_num_file = data.get("num_file", 0)
+        current_total_size = data.get("total_size", 0)
+        
+        # Prüfe ob Fortschritt erkannt wurde
+        progress_detected = False
+        
+        # 1. Prüfe progress/processed_num (wenn verfügbar)
         if current_progress is not None and last_progress is not None:
-            # Verwende current_progress für Vergleich (nicht processed_num wenn progress vorhanden)
             if current_progress > last_progress:
-                # Fortschritt erkannt: Setze Intervall zurück
-                if current_interval > min_interval:
-                    logger.debug(f"Fortschritt erkannt, setze Polling-Intervall zurück auf {min_interval}s")
-                    current_interval = min_interval
-                no_progress_count = 0
-            else:
-                # Kein Fortschritt: Erhöhe Intervall schrittweise
-                no_progress_count += 1
-                if no_progress_count >= 3 and current_interval < max_interval:
-                    # Erhöhe Intervall um 2 Sekunden, aber nicht über Maximum
-                    new_interval = min(current_interval + 2, max_interval)
-                    if new_interval != current_interval:
-                        logger.debug(f"Kein Fortschritt seit {no_progress_count} Polls, erhöhe Intervall auf {new_interval}s")
-                        current_interval = new_interval
+                progress_detected = True
         elif last_progress is not None:
             # current_progress ist None, aber last_progress nicht - prüfe processed_num
             if processed_num >= 0 and processed_num > (last_progress or 0):
-                # Fortschritt erkannt basierend auf processed_num
-                if current_interval > min_interval:
-                    logger.debug(f"Fortschritt erkannt (processed_num), setze Polling-Intervall zurück auf {min_interval}s")
-                    current_interval = min_interval
-                no_progress_count = 0
-            else:
-                # Kein Fortschritt
-                no_progress_count += 1
-                if no_progress_count >= 3 and current_interval < max_interval:
-                    new_interval = min(current_interval + 2, max_interval)
-                    if new_interval != current_interval:
-                        logger.debug(f"Kein Fortschritt seit {no_progress_count} Polls, erhöhe Intervall auf {new_interval}s")
-                        current_interval = new_interval
+                progress_detected = True
+        
+        # 2. Prüfe num_dir, num_file, total_size (wenn progress/processed_num nicht verfügbar oder unverändert)
+        if not progress_detected:
+            # Prüfe ob sich num_dir, num_file oder total_size geändert haben
+            if last_num_dir is not None and current_num_dir > last_num_dir:
+                progress_detected = True
+            elif last_num_file is not None and current_num_file > last_num_file:
+                progress_detected = True
+            elif last_total_size is not None and current_total_size > last_total_size:
+                progress_detected = True
+        
+        # 3. Reagiere auf Fortschritt
+        if progress_detected:
+            # Fortschritt erkannt: Setze Intervall zurück
+            if current_interval > min_interval:
+                logger.debug(f"Fortschritt erkannt, setze Polling-Intervall zurück auf {min_interval}s")
+                current_interval = min_interval
+            no_progress_count = 0
+        else:
+            # Kein Fortschritt: Erhöhe Intervall schrittweise
+            no_progress_count += 1
+            if no_progress_count >= 3 and current_interval < max_interval:
+                # Erhöhe Intervall um 2 Sekunden, aber nicht über Maximum
+                new_interval = min(current_interval + 2, max_interval)
+                if new_interval != current_interval:
+                    logger.debug(f"Kein Fortschritt seit {no_progress_count} Polls, erhöhe Intervall auf {new_interval}s")
+                    current_interval = new_interval
         
         # Aktualisiere letzten Fortschritt
         new_last_progress = current_progress if current_progress is not None else processed_num
@@ -274,7 +289,12 @@ class DirSizePollingHelper:
                                 last_progress: Optional[float],
                                 no_progress_count: int,
                                 last_status_print: int,
-                                status_callback: Optional[Callable] = None) -> Tuple[int, Optional[float], int, int]:
+                                status_callback: Optional[Callable] = None,
+                                progress_update_callback: Optional[Callable] = None,
+                                folder_name: Optional[str] = None,
+                                last_num_dir: Optional[int] = None,
+                                last_num_file: Optional[int] = None,
+                                last_total_size: Optional[int] = None) -> Tuple[int, Optional[float], int, int, Optional[int], Optional[int], Optional[int]]:
         """
         Verarbeitet eine Status-Response und aktualisiert Polling-Parameter.
         
@@ -290,12 +310,19 @@ class DirSizePollingHelper:
             last_status_print: Letzter Zeitpunkt für Status-Print
             status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
                             Wird mit Dict aufgerufen: {num_dir, num_file, total_size, waited, finished}
+            progress_update_callback: Optionaler Callback für Rich Progress Updates
+            folder_name: Ordnername für Progress-Description
+            last_num_dir: Letzte Anzahl Verzeichnisse (für Fortschrittserkennung)
+            last_num_file: Letzte Anzahl Dateien (für Fortschrittserkennung)
+            last_total_size: Letzte Gesamtgröße (für Fortschrittserkennung)
             
         Returns:
-            Tuple mit (neues_intervall, neuer_last_progress, neuer_no_progress_count, neuer_last_status_print)
+            Tuple mit (neues_intervall, neuer_last_progress, neuer_no_progress_count, neuer_last_status_print, 
+                      neuer_last_num_dir, neuer_last_num_file, neuer_last_total_size)
         """
         if not status_response or not status_response.get("success"):
-            return (current_poll_interval, last_progress, no_progress_count, last_status_print)
+            return (current_poll_interval, last_progress, no_progress_count, last_status_print, 
+                    last_num_dir, last_num_file, last_total_size)
         
         data = status_response["data"]
         
@@ -319,12 +346,17 @@ class DirSizePollingHelper:
                 logger.warning(f"Fehler beim Aufruf des Status-Callbacks: {e}")
         
         # Adaptive Polling: Prüfe Fortschritt und passe Intervall an
+        # Verwende num_dir, num_file, total_size für Fortschrittserkennung
         current_poll_interval, last_progress, no_progress_count = self.update_polling_interval(
             data, current_poll_interval, min_poll_interval, max_poll_interval,
-            last_progress, no_progress_count
+            last_progress, no_progress_count,
+            last_num_dir=last_num_dir,
+            last_num_file=last_num_file,
+            last_total_size=last_total_size
         )
         
         # CLI: Zeige intermediäre Informationen bei JEDEM Poll (nicht nur alle 10 Sekunden)
+        # WICHTIG: Wenn progress_update_callback vorhanden ist, verwende diesen statt console.print()
         if not self.api.output_json:
             # Formatiere Größe für Ausgabe
             size_formatted = None
@@ -343,9 +375,16 @@ class DirSizePollingHelper:
             if size_formatted:
                 status_parts.append(f"{size_formatted['size_formatted']:.2f} {size_formatted['unit']}")
             
-            # Zeige Status nur wenn Informationen vorhanden sind
-            if status_parts:
-                status_info = f"  ⏳ Berechnung läuft... ({waited}s) - {', '.join(status_parts)}"
+            # Wenn Progress-Update-Callback vorhanden, verwende diesen (für Rich Progress)
+            if progress_update_callback and status_parts and folder_name:
+                try:
+                    description = f"[green]Checking {folder_name} - {' | '.join(status_parts)}[/green]"
+                    progress_update_callback(description)
+                except Exception as e:
+                    logger.warning(f"Fehler beim Progress-Update-Callback: {e}")
+            # Sonst normale Console-Ausgabe (nur wenn kein Rich Progress aktiv)
+            elif not progress_update_callback and status_parts:
+                status_info = f"  ⏳ Berechnung läuft... ({waited}s) - {' | '.join(status_parts)}"
                 console.print(status_info)
         
         # Detaillierte Task-Status-Logs (alle 10 Sekunden für zusätzliche Details)
@@ -374,7 +413,13 @@ class DirSizePollingHelper:
             logger.debug(f"Task noch nicht fertig (finished={finished_value})")
             logger.debug(f"  Intermediär: {num_dir} Ordner, {num_file} Dateien, {total_size} Bytes")
         
-        return (current_poll_interval, last_progress, no_progress_count, last_status_print)
+        # Aktualisiere letzte Werte für nächsten Poll
+        new_last_num_dir = num_dir if num_dir > 0 else last_num_dir
+        new_last_num_file = num_file if num_file > 0 else last_num_file
+        new_last_total_size = total_size if total_size > 0 else last_total_size
+        
+        return (current_poll_interval, last_progress, no_progress_count, last_status_print,
+                new_last_num_dir, new_last_num_file, new_last_total_size)
     
     def handle_error_599(self, task_id: str, error_599_count: int,
                          max_error_599: int, waited: int,
@@ -528,7 +573,9 @@ class DirSizePollingHelper:
     def poll_task_status(self, task_id: str, start_time: float, max_wait: int,
                          poll_interval: int, shutdown_event: Optional[threading.Event],
                          error_599_count: int,
-                         status_callback: Optional[Callable] = None) -> Optional[Dict]:
+                         status_callback: Optional[Callable] = None,
+                         progress_update_callback: Optional[Callable] = None,
+                         folder_name: Optional[str] = None) -> Optional[Dict]:
         """
         Führt die Polling-Schleife für einen Task durch.
         
@@ -557,6 +604,11 @@ class DirSizePollingHelper:
         current_poll_interval = min_poll_interval
         last_progress = None
         no_progress_count = 0
+        
+        # Track letzte Werte für Fortschrittserkennung basierend auf num_dir, num_file, total_size
+        last_num_dir = None
+        last_num_file = None
+        last_total_size = None
         
         try:
             while waited < max_wait:
@@ -651,11 +703,17 @@ class DirSizePollingHelper:
                     error_599_count = 0  # Reset 599-Counter bei erfolgreichem Check
                     
                     # Verarbeite Status-Response und aktualisiere Polling-Parameter
-                    current_poll_interval, last_progress, no_progress_count, last_status_print = self.process_status_response(
+                    current_poll_interval, last_progress, no_progress_count, last_status_print, \
+                    last_num_dir, last_num_file, last_total_size = self.process_status_response(
                         status_response, task_id, waited, current_poll_interval,
                         min_poll_interval, max_poll_interval, last_progress,
                         no_progress_count, last_status_print,
-                        status_callback=status_callback  # Callback weiterreichen
+                        status_callback=status_callback,  # Callback weiterreichen
+                        progress_update_callback=progress_update_callback,  # Progress-Callback weiterreichen
+                        folder_name=folder_name,  # Ordnername für Progress-Description
+                        last_num_dir=last_num_dir,  # Letzte Werte für Fortschrittserkennung
+                        last_num_file=last_num_file,
+                        last_total_size=last_total_size
                     )
                 elif status_response:
                     # API-Fehler beim Status-Check
