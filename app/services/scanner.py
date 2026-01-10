@@ -51,9 +51,13 @@ class ScannerService:
         # Prüfe ob bereits ein Scan läuft
         if self.is_scan_running(scan_name):
             logger.warning(f"Scan '{scan_name}' läuft bereits")
-            latest = storage.get_latest_result(scan_name)
-            if latest and latest.status == "running":
-                return latest
+            # Erstelle ein temporäres "running" Result (wird nicht gespeichert)
+            return ScanResult(
+                scan_name=scan_name,
+                timestamp=datetime.now(timezone.utc),
+                status="running",
+                results=[]
+            )
         
         # Markiere Scan als laufend
         self._running_scans[scan_name] = True
@@ -61,6 +65,7 @@ class ScannerService:
         logger.info(f"Scan '{scan_name}': Verbinde zu NAS {scan_config.nas.host}:{scan_config.nas.port}")
         
         # Erstelle initiales ScanResult mit Status "running"
+        # WICHTIG: "running" Status wird NICHT gespeichert, nur in-memory gehalten
         timestamp = datetime.now(timezone.utc)
         scan_result = ScanResult(
             scan_name=scan_name,
@@ -69,8 +74,7 @@ class ScannerService:
             results=[]
         )
         
-        # Speichere initiales Result (mit nas_host für Primary Key)
-        storage.add_result(scan_name, scan_result, scan_config.nas.host)
+        # NICHT speichern - "running" Status ist nur temporär
         
         try:
             # Initialisiere API
@@ -95,8 +99,8 @@ class ScannerService:
                 scan_result.status = "failed"
                 scan_result.error = error_msg
                 scan_result.timestamp = datetime.now(timezone.utc)
-                # Aktualisiere das letzte Ergebnis, anstatt ein neues hinzuzufügen
-                storage.update_latest_result(scan_name, scan_result, scan_config.nas.host)
+                # Speichere fehlgeschlagenen Scan
+                storage.add_result(scan_name, scan_result, scan_config.nas.host)
                 return scan_result
             
             logger.info(f"Scan '{scan_name}': Login erfolgreich")
@@ -111,8 +115,8 @@ class ScannerService:
                     scan_result.status = "failed"
                     scan_result.error = error_msg
                     scan_result.timestamp = datetime.now(timezone.utc)
-                    # Aktualisiere das letzte Ergebnis, anstatt ein neues hinzuzufügen
-                    storage.update_latest_result(scan_name, scan_result, scan_config.nas.host)
+                    # Speichere fehlgeschlagenen Scan
+                    storage.add_result(scan_name, scan_result, scan_config.nas.host)
                     return scan_result
                 
                 logger.info(f"Scan '{scan_name}': {len(paths)} Pfad(e) zum Scannen gefunden: {paths}")
@@ -210,8 +214,10 @@ class ScannerService:
             # Markiere Scan als beendet
             self._running_scans[scan_name] = False
         
-        # Aktualisiere das letzte Ergebnis, anstatt ein neues hinzuzufügen
-        storage.update_latest_result(scan_name, scan_result, scan_config.nas.host)
+        # Speichere nur abgeschlossene Scans (completed oder failed)
+        # "running" Status wird nicht gespeichert
+        if scan_result.status != "running":
+            storage.add_result(scan_name, scan_result, scan_config.nas.host)
         
         return scan_result
     
