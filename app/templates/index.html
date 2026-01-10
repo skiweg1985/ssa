@@ -1300,12 +1300,12 @@
                 filteredData = filteredData.filter(r => new Date(r.timestamp).getTime() >= cutoff);
             }
             
-            // Filter out failed scans (status "failed" or 0 GB)
+            // Filtere nur erfolgreiche Scans (Status "completed" mit erfolgreichen Ergebnissen)
+            // Fehlgeschlagene Scans werden in der Historie angezeigt, aber nicht in Diagrammen
             filteredData = filteredData.filter(r => {
-                if (r.status === "failed") return false;
-                const totalSize = r.results.reduce((sum, item) => 
-                    sum + (item.total_size?.bytes || 0), 0);
-                return totalSize > 0;
+                if (r.status !== "completed") return false;
+                const hasSuccessfulItems = r.results && r.results.some(item => item.success && item.total_size);
+                return hasSuccessfulItems;
             });
             
             // Sort by timestamp
