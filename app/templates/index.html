@@ -915,6 +915,16 @@
         function renderHistoryList(historyData) {
             const filtered = filterHistoryEntries(historyData);
             
+            // Hilfsfunktion: Findet den letzten erfolgreichen Job vor dem aktuellen Index
+            function findLastSuccessfulJob(historyData, currentIndex) {
+                for (let i = currentIndex + 1; i < historyData.length; i++) {
+                    if (historyData[i].status === 'completed') {
+                        return historyData[i];
+                    }
+                }
+                return null;
+            }
+            
             // Desktop
             let htmlDesktop = '';
             filtered.forEach((result, index) => {
@@ -940,11 +950,11 @@
                 };
                 const status = statusConfig[result.status] || statusConfig.pending;
                 
-                // Delta zur vorherigen
+                // Delta zur letzten erfolgreichen (nicht zur unmittelbar vorherigen)
                 let deltaHtml = '';
-                if (originalIndex < historyData.length - 1) {
-                    const prevResult = historyData[originalIndex + 1];
-                    const prevSize = prevResult.results.reduce((sum, item) => 
+                const lastSuccessful = findLastSuccessfulJob(historyData, originalIndex);
+                if (lastSuccessful) {
+                    const prevSize = lastSuccessful.results.reduce((sum, item) => 
                         sum + (item.total_size?.bytes || 0), 0);
                     const delta = totalSize - prevSize;
                     const deltaGB = delta / (1024**3);
@@ -1302,6 +1312,9 @@
             
             // Sort by timestamp
             filteredData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            // Nur erfolgreiche Jobs für den Graph verwenden (fehlgeschlagene Jobs ausschließen)
+            filteredData = filteredData.filter(r => r.status === 'completed');
             
             // Downsample to max 60 points
             let dataToRender = filteredData;
@@ -1895,8 +1908,14 @@
                     const chartContainer = document.getElementById('modal-chart-container');
                     chartContainer.classList.remove('hidden');
                     
-                    const labels = historyData.results.map(r => formatDate(r.timestamp));
-                    const sizes = historyData.results.map(r => {
+                    // Sortiere nach Timestamp und filtere fehlgeschlagene Jobs heraus
+                    const sortedData = [...historyData.results].sort((a, b) => 
+                        new Date(a.timestamp) - new Date(b.timestamp)
+                    );
+                    const successfulData = sortedData.filter(r => r.status === 'completed');
+                    
+                    const labels = successfulData.map(r => formatDate(r.timestamp));
+                    const sizes = successfulData.map(r => {
                         const totalSize = r.results.reduce((sum, item) => 
                             sum + (item.total_size?.bytes || 0), 0);
                         return totalSize / (1024**3);
