@@ -45,9 +45,9 @@ Siehe [README_SERVER.md](README_SERVER.md) für Details zur Nutzung.
 
 ```bash
 # Server starten
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8080
 
-# Web-UI: http://localhost:8000
+# Web-UI: http://localhost:8080
 # Health: GET /health
 ```
 

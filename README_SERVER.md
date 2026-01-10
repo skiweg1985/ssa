@@ -72,22 +72,27 @@ Es können verschiedene Kombinationen verwendet werden:
 ### Entwicklung
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 ### Produktion
 
 ```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
 ### Als Systemd-Service
 
-Verwende `service.sh` für Installation als Systemd-Service:
+Verwende `install.sh` für Installation als Systemd-Service:
 
 ```bash
-./install.sh
+sudo ./install.sh
 ```
+
+Das Install-Script:
+- Fragt nach dem Server-Port (Standard: 8080, kann auch als Umgebungsvariable `PORT` gesetzt werden)
+- Prüft, ob `config.yaml` existiert und bietet an, `config.yaml.example` zu kopieren
+- Erstellt den Systemd-Service mit konfiguriertem Port
 
 Der Service startet automatisch beim Booten.
 
@@ -96,8 +101,10 @@ Der Service startet automatisch beim Booten.
 Nach dem Start ist das Web-Interface verfügbar unter:
 
 ```
-http://localhost:8000
+http://localhost:8080
 ```
+
+Der Port kann beim Start mit `--port` angepasst werden oder beim Install-Script konfiguriert werden.
 
 Das Interface zeigt:
 - Status aller konfigurierten Scans
