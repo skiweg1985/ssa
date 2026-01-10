@@ -167,17 +167,29 @@ class ScannerService:
                         ))
                 
                 # Aktualisiere ScanResult mit allen Ergebnissen
-                scan_result.status = "completed"
                 scan_result.results = result_items
                 scan_result.timestamp = datetime.now(timezone.utc)  # Aktualisiere Timestamp
                 
                 total_duration = (datetime.now(timezone.utc) - start_time).total_seconds()
                 successful = sum(1 for r in result_items if r.success)
-                logger.info(
-                    f"Scan '{scan_name}': === Abgeschlossen === "
-                    f"{successful}/{len(result_items)} Pfad(e) erfolgreich, "
-                    f"Gesamtdauer: {total_duration:.1f}s"
-                )
+                
+                # Prüfe ob mindestens ein erfolgreiches Ergebnis vorhanden ist
+                if successful == 0:
+                    # Keine erfolgreichen Ergebnisse - markiere als fehlgeschlagen
+                    scan_result.status = "failed"
+                    scan_result.error = "Alle Pfade fehlgeschlagen - keine erfolgreichen Ergebnisse"
+                    logger.warning(
+                        f"Scan '{scan_name}': === Fehlgeschlagen === "
+                        f"Keine erfolgreichen Ergebnisse ({len(result_items)} Pfad(e) fehlgeschlagen), "
+                        f"Gesamtdauer: {total_duration:.1f}s"
+                    )
+                else:
+                    scan_result.status = "completed"
+                    logger.info(
+                        f"Scan '{scan_name}': === Abgeschlossen === "
+                        f"{successful}/{len(result_items)} Pfad(e) erfolgreich, "
+                        f"Gesamtdauer: {total_duration:.1f}s"
+                    )
                 
             finally:
                 # Logout - in Thread-Pool auslagern, um Event Loop nicht zu blockieren

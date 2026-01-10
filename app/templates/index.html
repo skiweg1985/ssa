@@ -1893,10 +1893,24 @@
                 
                 if (historyData && historyData.results && historyData.results.length > 0) {
                     const chartContainer = document.getElementById('modal-chart-container');
+                    
+                    // Filtere nur erfolgreiche Scans (Status "completed" mit erfolgreichen Ergebnissen)
+                    // Fehlgeschlagene Scans werden in der Historie angezeigt, aber nicht in Diagrammen
+                    const successfulResults = historyData.results.filter(r => {
+                        if (r.status !== "completed") return false;
+                        const hasSuccessfulItems = r.results && r.results.some(item => item.success && item.total_size);
+                        return hasSuccessfulItems;
+                    });
+                    
+                    if (successfulResults.length === 0) {
+                        chartContainer.classList.add('hidden');
+                        return;
+                    }
+                    
                     chartContainer.classList.remove('hidden');
                     
-                    const labels = historyData.results.map(r => formatDate(r.timestamp));
-                    const sizes = historyData.results.map(r => {
+                    const labels = successfulResults.map(r => formatDate(r.timestamp));
+                    const sizes = successfulResults.map(r => {
                         const totalSize = r.results.reduce((sum, item) => 
                             sum + (item.total_size?.bytes || 0), 0);
                         return totalSize / (1024**3);

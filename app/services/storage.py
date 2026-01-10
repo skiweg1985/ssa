@@ -2,12 +2,15 @@
 import json
 import sqlite3
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from collections import defaultdict
 from contextlib import contextmanager
 from app.models.scan import ScanResult, ScanResultItem, TotalSize
+
+logger = logging.getLogger(__name__)
 
 
 class ScanStorage:
@@ -227,6 +230,44 @@ class ScanStorage:
                     
                     timestamp = datetime.fromisoformat(timestamp_str)
                     
+                    # Überspringe Marker-Einträge (werden separat als ScanResult mit Status behandelt)
+                    if folder_path == "__SCAN_STATUS_MARKER__":
+                        # Speichere vorherige Gruppe falls vorhanden
+                        if items_for_result and current_scan:
+                            result = ScanResult(
+                                scan_name=current_scan,
+                                timestamp=current_timestamp,
+                                status=status,
+                                error=scan_error,
+                                results=items_for_result
+                            )
+                            results_for_scan.append(result)
+                            items_for_result = []
+                        
+                        # Neue ScanResult-Gruppe für Marker?
+                        if (current_scan and current_scan != scan_name) or \
+                           (current_timestamp and current_timestamp != timestamp):
+                            # Neue Scan-Gruppe?
+                            if current_scan and current_scan != scan_name:
+                                if len(results_for_scan) > self._max_history:
+                                    results_for_scan = results_for_scan[:self._max_history]
+                                self._results[current_scan] = results_for_scan
+                                results_for_scan = []
+                        
+                        # Erstelle ScanResult für fehlgeschlagenen Scan (ohne erfolgreiche Ergebnisse)
+                        result = ScanResult(
+                            scan_name=scan_name,
+                            timestamp=timestamp,
+                            status=status,
+                            error=scan_error,
+                            results=[]  # Leere results für fehlgeschlagene Scans
+                        )
+                        results_for_scan.append(result)
+                        
+                        current_scan = scan_name
+                        current_timestamp = timestamp
+                        continue
+                    
                     # Neue ScanResult-Gruppe?
                     if (current_scan and current_scan != scan_name) or \
                        (current_timestamp and current_timestamp != timestamp):
@@ -303,21 +344,69 @@ class ScanStorage:
         
         Jeder Ordner/Pfad wird einzeln gespeichert mit eindeutigem Primary Key
         basierend auf nas_host + folder_path + timestamp
+        
+        WICHTIG: Speichert nur erfolgreiche Ergebnisse. Fehlgeschlagene Scans werden
+        trotzdem in der Historie sichtbar sein (durch Status), aber ohne 0-Werte.
         """
         try:
             with self._get_connection() as conn:
-                # Speichere jeden Ordner einzeln
-                for item in result.results:
-                    normalized_path = self._normalize_folder_path(item.folder_name)
+                # Speichere nur erfolgreiche Ergebnisse (um 0-Werte zu vermeiden)
+                successful_items = [item for item in result.results if item.success]
+                
+                if successful_items:
+                    # Speichere nur erfolgreiche Ordner
+                    for item in successful_items:
+                        normalized_path = self._normalize_folder_path(item.folder_name)
+                        primary_key = self._generate_primary_key(
+                            nas_host,
+                            normalized_path,
+                            result.timestamp
+                        )
+                        
+                        total_size_bytes = item.total_size.bytes if item.total_size else None
+                        total_size_formatted = item.total_size.formatted if item.total_size else None
+                        total_size_unit = item.total_size.unit if item.total_size else None
+                        
+                        conn.execute("""
+                            INSERT OR REPLACE INTO scan_results 
+                            (id, nas_host, folder_path, scan_name, timestamp, status, success,
+                             num_dir, num_file, total_size_bytes, total_size_formatted,
+                             total_size_unit, elapsed_time_ms, error, scan_error, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            primary_key,
+                            nas_host,
+                            normalized_path,
+                            scan_name,
+                            result.timestamp.isoformat(),
+                            result.status,
+                            item.success,
+                            item.num_dir,
+                            item.num_file,
+                            total_size_bytes,
+                            total_size_formatted,
+                            total_size_unit,
+                            item.elapsed_time_ms,
+                            item.error,
+                            result.error,
+                            datetime.now(timezone.utc).isoformat()
+                        ))
+                    
+                    conn.commit()
+                else:
+                    # Keine erfolgreichen Ergebnisse - speichere einen Marker für die Historie
+                    # Dieser wird beim Laden als ScanResult mit Status "failed" und leeren results erkannt
+                    logger.info(
+                        f"Scan '{scan_name}': Keine erfolgreichen Ergebnisse - "
+                        f"speichere Status-Marker für Historie (Status: {result.status})"
+                    )
+                    # Verwende einen speziellen Marker-Pfad, der beim Laden gefiltert wird
+                    marker_path = "__SCAN_STATUS_MARKER__"
                     primary_key = self._generate_primary_key(
                         nas_host,
-                        normalized_path,
+                        marker_path,
                         result.timestamp
                     )
-                    
-                    total_size_bytes = item.total_size.bytes if item.total_size else None
-                    total_size_formatted = item.total_size.formatted if item.total_size else None
-                    total_size_unit = item.total_size.unit if item.total_size else None
                     
                     conn.execute("""
                         INSERT OR REPLACE INTO scan_results 
@@ -328,23 +417,22 @@ class ScanStorage:
                     """, (
                         primary_key,
                         nas_host,
-                        normalized_path,
+                        marker_path,
                         scan_name,
                         result.timestamp.isoformat(),
                         result.status,
-                        item.success,
-                        item.num_dir,
-                        item.num_file,
-                        total_size_bytes,
-                        total_size_formatted,
-                        total_size_unit,
-                        item.elapsed_time_ms,
-                        item.error,
+                        False,
+                        None,
+                        None,
+                        None,  # Keine Größen-Daten (keine 0-Werte!)
+                        None,
+                        None,
+                        None,
+                        None,
                         result.error,
                         datetime.now(timezone.utc).isoformat()
                     ))
-                
-                conn.commit()
+                    conn.commit()
                 
                 # Bereinige alte Einträge (behalte nur max_history pro Scan)
                 conn.execute("""
