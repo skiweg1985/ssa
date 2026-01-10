@@ -1300,6 +1300,14 @@
                 filteredData = filteredData.filter(r => new Date(r.timestamp).getTime() >= cutoff);
             }
             
+            // Filter out failed scans (status "failed" or 0 GB)
+            filteredData = filteredData.filter(r => {
+                if (r.status === "failed") return false;
+                const totalSize = r.results.reduce((sum, item) => 
+                    sum + (item.total_size?.bytes || 0), 0);
+                return totalSize > 0;
+            });
+            
             // Sort by timestamp
             filteredData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
