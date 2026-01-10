@@ -29,6 +29,9 @@ async def get_scans():
         scan_statuses = []
         
         for scan_config in config.scans:
+            # Prüfe zuerst, ob Scan gerade läuft
+            is_running = scanner_service.is_scan_running(scan_config.name)
+            
             # Hole letztes Ergebnis
             latest_result = storage.get_latest_result(scan_config.name)
             
@@ -39,7 +42,10 @@ async def get_scans():
             last_run = None
             next_run = None
             
-            if latest_result:
+            # Wenn Scan läuft, setze Status auf "running"
+            if is_running:
+                status = "running"
+            elif latest_result:
                 status = latest_result.status
                 last_run = latest_result.timestamp
             
@@ -89,6 +95,9 @@ async def get_scan(scan_name: str):
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
         
+        # Prüfe zuerst, ob Scan gerade läuft
+        is_running = scanner_service.is_scan_running(scan_name)
+        
         # Hole letztes Ergebnis
         latest_result = storage.get_latest_result(scan_name)
         
@@ -99,7 +108,10 @@ async def get_scan(scan_name: str):
         last_run = None
         next_run = None
         
-        if latest_result:
+        # Wenn Scan läuft, setze Status auf "running"
+        if is_running:
+            status = "running"
+        elif latest_result:
             status = latest_result.status
             last_run = latest_result.timestamp
         

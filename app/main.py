@@ -95,6 +95,11 @@ app.add_middleware(
 # API Routes
 app.include_router(router, prefix="/api", tags=["scans"])
 
+# Static Files
+static_dir = Path(__file__).parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
 
 # HTML-Formular Route
 @app.get("/", response_class=HTMLResponse)

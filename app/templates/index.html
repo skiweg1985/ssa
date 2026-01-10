@@ -6,6 +6,7 @@
     <title>Synology Space Analyzer - Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/css/styles.css">
     <script>
         tailwind.config = {
             theme: {
@@ -23,82 +24,6 @@
             }
         }
     </script>
-    <style>
-        /* Minimal custom CSS für Spezialfälle */
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.7; }
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-        
-        @keyframes slideUp {
-            from {
-                transform: translateY(20px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-        
-        .scan-item-running {
-            animation: pulse 2s infinite;
-        }
-        
-        .modal-overlay {
-            animation: fadeIn 0.3s ease-out;
-        }
-        
-        .modal {
-            animation: slideUp 0.3s ease-out;
-        }
-        
-        /* Focus trap helper */
-        .focus-trap-start,
-        .focus-trap-end {
-            position: absolute;
-            width: 0;
-            height: 0;
-            overflow: hidden;
-        }
-        
-        /* Chart container */
-        .chart-container {
-            position: relative;
-            height: 400px;
-        }
-        
-        @media (max-width: 640px) {
-            .chart-container {
-                height: 300px;
-            }
-        }
-        
-        /* Custom scrollbar */
-        .custom-scrollbar::-webkit-scrollbar {
-            width: 8px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-            background: #f1f5f9;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8;
-        }
-    </style>
 </head>
 <body class="bg-slate-50 min-h-screen">
     <!-- Toast Container -->
@@ -497,6 +422,50 @@
         </div>
     </div>
     
+    <!-- Detail Modal für Job-Details -->
+    <div id="detail-modal" class="modal-overlay fixed inset-0 bg-black bg-opacity-50 z-40 hidden items-center justify-center p-4" role="dialog" aria-modal="true">
+        <div class="modal bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+            <!-- Modal Header -->
+            <div class="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <h2 id="detail-modal-title" class="text-xl font-semibold">📋 Job-Details</h2>
+                    <span id="detail-status-badge" class="status-badge"></span>
+                </div>
+                <button 
+                    class="modal-close bg-white bg-opacity-20 hover:bg-opacity-30 text-white rounded-full w-10 h-10 flex items-center justify-center transition-all focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-primary-500" 
+                    onclick="closeDetailModal()"
+                    aria-label="Modal schließen"
+                >
+                    ×
+                </button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="modal-body flex-1 overflow-y-auto px-6 py-6 custom-scrollbar">
+                <div id="detail-content" class="space-y-6">
+                    <!-- Details werden hier eingefügt -->
+                </div>
+            </div>
+            
+            <!-- Modal Footer -->
+            <div class="border-t border-slate-200 px-6 py-4 bg-slate-50 flex justify-end gap-3">
+                <button 
+                    class="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors" 
+                    onclick="closeDetailModal()"
+                >
+                    Schließen
+                </button>
+                <button 
+                    id="detail-trigger-btn"
+                    class="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors" 
+                    onclick="triggerScanFromDetail()"
+                >
+                    ▶ Scan starten
+                </button>
+            </div>
+        </div>
+    </div>
+    
     <!-- Main Container -->
     <div class="container mx-auto max-w-7xl px-4 py-6">
         <!-- Header -->
@@ -548,10 +517,26 @@
             <div class="flex items-center justify-between mb-6">
                 <h2 class="text-xl font-semibold text-slate-900">📊 Scan-Status</h2>
             </div>
-            <div id="scan-list" class="space-y-4">
-                <div class="flex items-center justify-center py-12">
-                    <div class="text-slate-500">Lade Scans...</div>
-                </div>
+            <div class="overflow-x-auto">
+                <table class="scan-table">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Job-Name</th>
+                            <th>Letzter Lauf</th>
+                            <th>Nächster Lauf</th>
+                            <th>Weitere Infos</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scan-list">
+                        <tr>
+                            <td colspan="6" class="text-center py-12">
+                                <div class="text-slate-500">Lade Scans...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>
@@ -583,7 +568,31 @@
         };
         
         // Lade Scans beim Seitenaufruf
-        document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', async function() {
+            // Initialize modules
+            const { initTable } = await import('/static/js/table.js');
+            const { initModals, showDetailModal } = await import('/static/js/modals.js');
+            
+            initTable({
+                showResults: showResultsForScan,
+                showHistory: showHistoryForScan,
+                showDetail: showDetailModal
+            });
+            
+            initModals({
+                showResults: showResultsForScan,
+                showHistory: showHistoryForScan
+            });
+            
+            // Make functions globally available
+            const { showToast: showToastUtil } = await import('/static/js/utils.js');
+            window.loadScans = loadScans;
+            window.showResultsForScan = showResultsForScan;
+            window.showHistoryForScan = showHistoryForScan;
+            window.showDetailModal = showDetailModal;
+            window.showToast = showToastUtil;
+            window.triggerScanFromDetail = triggerScanFromDetail;
+            
             loadScans();
             startAutoRefresh();
             setupKeyboardShortcuts();
@@ -1422,8 +1431,8 @@
         function startAutoRefresh() {
             autoRefreshInterval = setInterval(() => {
                 const scanList = document.getElementById('scan-list');
-                const scanItems = scanList.querySelectorAll('.scan-item-running');
-                if (scanItems.length > 0) {
+                const scanRows = scanList.querySelectorAll('.scan-row-running');
+                if (scanRows.length > 0) {
                     loadScans(false);
                     if (currentScanName) {
                         loadResultsInModal(currentScanName, false);
@@ -1436,49 +1445,9 @@
         }
         
         async function loadScans(showToast = true) {
-            const scanList = document.getElementById('scan-list');
-            
-            scanList.innerHTML = '<div class="flex items-center justify-center py-12"><div class="text-slate-500">Lade Scans...</div></div>';
-            
-            try {
-                const response = await fetch('/api/scans');
-                const data = await response.json();
-                
-                if (data.scans && data.scans.length > 0) {
-                    scanList.innerHTML = '';
-                    currentScans = data.scans; // Store for Command Palette
-                    
-                    data.scans.forEach(scan => {
-                        const scanItem = createScanItem(scan);
-                        scanList.appendChild(scanItem);
-                    });
-                } else {
-                    currentScans = [];
-                    scanList.innerHTML = `
-                        <div class="flex flex-col items-center justify-center py-16 text-center">
-                            <div class="text-6xl mb-4">📭</div>
-                            <p class="text-slate-600 text-lg">Keine Scans konfiguriert</p>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                currentScans = [];
-                scanList.innerHTML = `
-                    <div class="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
-                        <div class="font-semibold mb-1">Fehler beim Laden der Scans</div>
-                        <div class="text-sm">${error.message}</div>
-                        <button 
-                            class="mt-3 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
-                            onclick="loadScans()"
-                        >
-                            Erneut versuchen
-                        </button>
-                    </div>
-                `;
-                if (showToast) {
-                    showToast('Fehler', 'Fehler beim Laden der Scans', 'error');
-                }
-            }
+            const { renderScanTable } = await import('/static/js/table.js');
+            const { showToast: showToastFunc } = await import('/static/js/utils.js');
+            await renderScanTable(showToast ? showToastFunc : null);
         }
         
         async function reloadConfig() {
@@ -1515,145 +1484,6 @@
             }
         }
         
-        function createScanItem(scan) {
-            const item = document.createElement('div');
-            const statusClass = scan.status === 'running' ? 'scan-item-running' : '';
-            item.className = `bg-slate-50 border-l-4 rounded-lg p-5 transition-all hover:shadow-md ${statusClass} ${
-                scan.status === 'completed' ? 'border-green-500' :
-                scan.status === 'running' ? 'border-yellow-500' :
-                scan.status === 'failed' ? 'border-red-500' :
-                'border-slate-400'
-            }`;
-            
-            const statusConfig = {
-                completed: { icon: '✅', text: 'Abgeschlossen', class: 'bg-green-100 text-green-800' },
-                running: { icon: '🔄', text: 'Läuft', class: 'bg-yellow-100 text-yellow-800' },
-                failed: { icon: '❌', text: 'Fehlgeschlagen', class: 'bg-red-100 text-red-800' },
-                pending: { icon: '⏳', text: 'Ausstehend', class: 'bg-slate-100 text-slate-800' }
-            };
-            const status = statusConfig[scan.status] || statusConfig.pending;
-            
-            const header = document.createElement('div');
-            header.className = 'flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4';
-            
-            const leftSection = document.createElement('div');
-            leftSection.className = 'flex items-start gap-4 flex-1';
-            
-            const statusBadge = document.createElement('span');
-            statusBadge.className = `inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${status.class}`;
-            statusBadge.innerHTML = `<span>${status.icon}</span><span>${status.text}</span>`;
-            
-            const nameSection = document.createElement('div');
-            nameSection.className = 'flex-1';
-            const name = document.createElement('div');
-            name.className = 'font-semibold text-slate-900 text-lg mb-1';
-            name.textContent = scan.scan_name;
-            nameSection.appendChild(name);
-            
-            leftSection.appendChild(statusBadge);
-            leftSection.appendChild(nameSection);
-            
-            const actions = document.createElement('div');
-            actions.className = 'flex flex-wrap gap-2 sm:flex-nowrap';
-            
-            const startBtn = document.createElement('button');
-            startBtn.className = 'px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2';
-            startBtn.innerHTML = '<span>▶</span><span>Starten</span>';
-            startBtn.onclick = () => triggerScan(scan.scan_name);
-            startBtn.disabled = scan.status === 'running' || !scan.enabled;
-            
-            const resultsBtn = document.createElement('button');
-            resultsBtn.className = 'px-4 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors text-sm font-medium flex items-center gap-2';
-            resultsBtn.innerHTML = '<span>📊</span><span>Ergebnisse</span>';
-            resultsBtn.onclick = () => showResultsForScan(scan.scan_name);
-            
-            const historyBtn = document.createElement('button');
-            historyBtn.className = 'px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors text-sm font-medium flex items-center gap-2';
-            historyBtn.innerHTML = '<span>📜</span><span>Historie</span>';
-            historyBtn.onclick = () => showHistoryForScan(scan.scan_name);
-            
-            actions.appendChild(startBtn);
-            actions.appendChild(resultsBtn);
-            actions.appendChild(historyBtn);
-            
-            header.appendChild(leftSection);
-            header.appendChild(actions);
-            
-            const meta = document.createElement('div');
-            meta.className = 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-sm text-slate-600';
-            
-            if (scan.last_run) {
-                const date = new Date(scan.last_run);
-                const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + 
-                               date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                const metaItem = document.createElement('div');
-                metaItem.className = 'flex items-center gap-2';
-                metaItem.innerHTML = `<span>🕐</span><span><strong class="text-slate-700">Letzter Lauf:</strong> ${dateStr}</span>`;
-                meta.appendChild(metaItem);
-            }
-            
-            if (scan.next_run) {
-                const date = new Date(scan.next_run);
-                const dateStr = date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) + ' ' + 
-                               date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-                const metaItem = document.createElement('div');
-                metaItem.className = 'flex items-center gap-2';
-                metaItem.innerHTML = `<span>⏰</span><span><strong class="text-slate-700">Nächster Lauf:</strong> ${dateStr}</span>`;
-                meta.appendChild(metaItem);
-            }
-            
-            if (scan.interval) {
-                const metaItem = document.createElement('div');
-                metaItem.className = 'flex items-center gap-2';
-                metaItem.innerHTML = `<span>⏱️</span><span><strong class="text-slate-700">Intervall:</strong> ${scan.interval}</span>`;
-                meta.appendChild(metaItem);
-            }
-            
-            const enabledItem = document.createElement('div');
-            enabledItem.className = 'flex items-center gap-2';
-            enabledItem.innerHTML = `<span>${scan.enabled ? '✅' : '❌'}</span><span><strong class="text-slate-700">Status:</strong> ${scan.enabled ? 'Aktiviert' : 'Deaktiviert'}</span>`;
-            meta.appendChild(enabledItem);
-            
-            if (scan.nas || (scan.shares && scan.shares.length > 0) || (scan.folders && scan.folders.length > 0) || (scan.paths && scan.paths.length > 0)) {
-                const detailSection = document.createElement('div');
-                detailSection.className = 'mt-3 pt-3 border-t border-slate-200 text-sm text-slate-600';
-                
-                if (scan.nas) {
-                    const protocol = scan.nas.use_https ? 'HTTPS' : 'HTTP';
-                    const port = scan.nas.port || (scan.nas.use_https ? 5001 : 5000);
-                    const nasInfo = document.createElement('div');
-                    nasInfo.className = 'flex items-center gap-2 mb-2';
-                    nasInfo.innerHTML = `<span>🖥️</span><span><strong class="text-slate-700">NAS:</strong> ${scan.nas.host}:${port} (${protocol}, ${scan.nas.username})</span>`;
-                    detailSection.appendChild(nasInfo);
-                }
-                
-                const folders = [];
-                if (scan.shares && scan.shares.length > 0) folders.push(...scan.shares);
-                if (scan.folders && scan.folders.length > 0) folders.push(...scan.folders);
-                if (scan.paths && scan.paths.length > 0) folders.push(...scan.paths);
-                
-                if (folders.length > 0) {
-                    const folderInfo = document.createElement('div');
-                    folderInfo.className = 'flex items-center gap-2';
-                    folderInfo.innerHTML = `<span>📂</span><span><strong class="text-slate-700">Pfade:</strong> ${folders.join(', ')}</span>`;
-                    detailSection.appendChild(folderInfo);
-                }
-                
-                meta.appendChild(detailSection);
-            }
-            
-            item.appendChild(header);
-            item.appendChild(meta);
-            
-            item.style.cursor = 'pointer';
-            item.addEventListener('click', (e) => {
-                if (!e.target.closest('button')) {
-                    showResultsForScan(scan.scan_name);
-                }
-            });
-            
-            return item;
-        }
         
         function showResultsForScan(scanName) {
             currentScanName = scanName;
@@ -1759,6 +1589,13 @@
                 closeModal();
             }
         });
+        
+        async function triggerScanFromDetail() {
+            const modal = document.getElementById('detail-modal');
+            const title = document.getElementById('detail-modal-title');
+            const scanName = title.textContent.replace('📋 ', '');
+            await triggerScan(scanName);
+        }
         
         async function triggerScan(scanName) {
             try {
