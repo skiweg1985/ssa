@@ -286,7 +286,7 @@ export function ScanTable({
             }}>
               <table className="w-full border-collapse">
                 <colgroup>
-                  <col className="w-[200px] sm:w-[220px]" /> {/* Status */}
+                  <col className="w-[250px] sm:w-[275px]" /> {/* Status */}
                   <col className="min-w-[180px]" /> {/* Job-Name - flexible */}
                   <col className="w-[140px] sm:w-[160px]" /> {/* Letzter Lauf */}
                   <col className="w-[140px] sm:w-[160px]" /> {/* Nächster Lauf */}
