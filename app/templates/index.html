@@ -915,10 +915,22 @@
         function renderHistoryList(historyData) {
             const filtered = filterHistoryEntries(historyData);
             
-            // Hilfsfunktion: Findet den letzten erfolgreichen Job vor dem aktuellen Index
-            function findLastSuccessfulJob(historyData, currentIndex) {
+            // Hilfsfunktion: Berechnet die tatsächliche Größe eines Jobs (nur erfolgreiche Ergebnisse)
+            function calculateActualSize(result) {
+                return result.results
+                    .filter(item => item.success === true && item.total_size?.bytes)
+                    .reduce((sum, item) => sum + item.total_size.bytes, 0);
+            }
+            
+            // Hilfsfunktion: Prüft, ob ein Job tatsächliche Daten hat
+            function hasActualData(result) {
+                return result.results.some(item => item.success === true && item.total_size?.bytes);
+            }
+            
+            // Hilfsfunktion: Findet den letzten Job mit tatsächlichen Daten vor dem aktuellen Index
+            function findLastJobWithData(historyData, currentIndex) {
                 for (let i = currentIndex + 1; i < historyData.length; i++) {
-                    if (historyData[i].status === 'completed') {
+                    if (hasActualData(historyData[i])) {
                         return historyData[i];
                     }
                 }
@@ -934,8 +946,8 @@
                 );
                 const isSelected = originalIndex === uiState.selectedHistoryIndex;
                 
-                const totalSize = result.results.reduce((sum, item) => 
-                    sum + (item.total_size?.bytes || 0), 0);
+                // Nur erfolgreiche Ergebnisse berücksichtigen
+                const totalSize = calculateActualSize(result);
                 const size = formatSize({
                     formatted: totalSize / (1024**3),
                     unit: 'GB',
@@ -950,12 +962,11 @@
                 };
                 const status = statusConfig[result.status] || statusConfig.pending;
                 
-                // Delta zur letzten erfolgreichen (nicht zur unmittelbar vorherigen)
+                // Delta zum letzten Job mit tatsächlichen Daten
                 let deltaHtml = '';
-                const lastSuccessful = findLastSuccessfulJob(historyData, originalIndex);
-                if (lastSuccessful) {
-                    const prevSize = lastSuccessful.results.reduce((sum, item) => 
-                        sum + (item.total_size?.bytes || 0), 0);
+                const lastJobWithData = findLastJobWithData(historyData, originalIndex);
+                if (lastJobWithData) {
+                    const prevSize = calculateActualSize(lastJobWithData);
                     const delta = totalSize - prevSize;
                     const deltaGB = delta / (1024**3);
                     if (Math.abs(deltaGB) > 0.01) {
@@ -996,8 +1007,8 @@
                     r.status === result.status
                 );
                 
-                const totalSize = result.results.reduce((sum, item) => 
-                    sum + (item.total_size?.bytes || 0), 0);
+                // Nur erfolgreiche Ergebnisse berücksichtigen
+                const totalSize = calculateActualSize(result);
                 const size = formatSize({
                     formatted: totalSize / (1024**3),
                     unit: 'GB',
@@ -1152,10 +1163,12 @@
         function renderHistoryDetail(result, scanName) {
             const container = document.getElementById('history-detail-container');
             
-            const totalSize = result.results.reduce((sum, item) => 
+            // Nur erfolgreiche Ergebnisse berücksichtigen
+            const successfulResults = result.results.filter(item => item.success === true);
+            const totalSize = successfulResults.reduce((sum, item) => 
                 sum + (item.total_size?.bytes || 0), 0);
-            const totalDirs = result.results.reduce((sum, item) => sum + (item.num_dir || 0), 0);
-            const totalFiles = result.results.reduce((sum, item) => sum + (item.num_file || 0), 0);
+            const totalDirs = successfulResults.reduce((sum, item) => sum + (item.num_dir || 0), 0);
+            const totalFiles = successfulResults.reduce((sum, item) => sum + (item.num_file || 0), 0);
             
             const statusConfig = {
                 completed: { icon: '✅', text: 'Abgeschlossen', class: 'bg-green-100 text-green-800' },
@@ -1313,8 +1326,20 @@
             // Sort by timestamp
             filteredData.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
             
-            // Nur erfolgreiche Jobs für den Graph verwenden (fehlgeschlagene Jobs ausschließen)
-            filteredData = filteredData.filter(r => r.status === 'completed');
+            // Hilfsfunktion: Prüft, ob ein Job tatsächliche Daten hat
+            function hasActualData(result) {
+                return result.results.some(item => item.success === true && item.total_size?.bytes);
+            }
+            
+            // Hilfsfunktion: Berechnet die tatsächliche Größe eines Jobs (nur erfolgreiche Ergebnisse)
+            function calculateActualSize(result) {
+                return result.results
+                    .filter(item => item.success === true && item.total_size?.bytes)
+                    .reduce((sum, item) => sum + item.total_size.bytes, 0);
+            }
+            
+            // Nur Jobs mit tatsächlichen Daten für den Graph verwenden
+            filteredData = filteredData.filter(r => hasActualData(r));
             
             // Downsample to max 60 points
             let dataToRender = filteredData;
@@ -1332,9 +1357,7 @@
             
             const labels = dataToRender.map(r => formatDateShort(r.timestamp));
             const sizes = dataToRender.map(r => {
-                const totalSize = r.results.reduce((sum, item) => 
-                    sum + (item.total_size?.bytes || 0), 0);
-                return totalSize / (1024**3);
+                return calculateActualSize(r) / (1024**3);
             });
             
             const ctx = document.getElementById('history-chart');
@@ -1803,10 +1826,14 @@
                 let html = '';
                 
                 if (result.results && result.results.length > 0) {
-                    const totalSize = result.results.reduce((sum, r) => sum + (r.total_size?.bytes || 0), 0);
-                    const totalDirs = result.results.reduce((sum, r) => sum + (r.num_dir || 0), 0);
-                    const totalFiles = result.results.reduce((sum, r) => sum + (r.num_file || 0), 0);
-                    const avgTime = result.results.reduce((sum, r) => sum + (r.elapsed_time_ms || 0), 0) / result.results.length;
+                    // Nur erfolgreiche Ergebnisse berücksichtigen
+                    const successfulResults = result.results.filter(r => r.success === true);
+                    const totalSize = successfulResults.reduce((sum, r) => sum + (r.total_size?.bytes || 0), 0);
+                    const totalDirs = successfulResults.reduce((sum, r) => sum + (r.num_dir || 0), 0);
+                    const totalFiles = successfulResults.reduce((sum, r) => sum + (r.num_file || 0), 0);
+                    const avgTime = successfulResults.length > 0 
+                        ? successfulResults.reduce((sum, r) => sum + (r.elapsed_time_ms || 0), 0) / successfulResults.length
+                        : 0;
                     
                     html += `
                         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -1908,17 +1935,28 @@
                     const chartContainer = document.getElementById('modal-chart-container');
                     chartContainer.classList.remove('hidden');
                     
-                    // Sortiere nach Timestamp und filtere fehlgeschlagene Jobs heraus
+                    // Sortiere nach Timestamp und filtere Jobs ohne tatsächliche Daten heraus
                     const sortedData = [...historyData.results].sort((a, b) => 
                         new Date(a.timestamp) - new Date(b.timestamp)
                     );
-                    const successfulData = sortedData.filter(r => r.status === 'completed');
+                    
+                    // Hilfsfunktion: Prüft, ob ein Job tatsächliche Daten hat
+                    function hasActualData(result) {
+                        return result.results.some(item => item.success === true && item.total_size?.bytes);
+                    }
+                    
+                    // Hilfsfunktion: Berechnet die tatsächliche Größe eines Jobs (nur erfolgreiche Ergebnisse)
+                    function calculateActualSize(result) {
+                        return result.results
+                            .filter(item => item.success === true && item.total_size?.bytes)
+                            .reduce((sum, item) => sum + item.total_size.bytes, 0);
+                    }
+                    
+                    const successfulData = sortedData.filter(r => hasActualData(r));
                     
                     const labels = successfulData.map(r => formatDate(r.timestamp));
                     const sizes = successfulData.map(r => {
-                        const totalSize = r.results.reduce((sum, item) => 
-                            sum + (item.total_size?.bytes || 0), 0);
-                        return totalSize / (1024**3);
+                        return calculateActualSize(r) / (1024**3);
                     });
                     
                     const ctx = document.getElementById('modal-sizeChart').getContext('2d');
