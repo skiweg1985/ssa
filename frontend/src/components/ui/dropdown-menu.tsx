@@ -1,0 +1,117 @@
+import * as React from "react"
+import { createPortal } from "react-dom"
+import { cn } from "@/lib/cn"
+
+interface DropdownMenuProps {
+  trigger: React.ReactNode
+  children: React.ReactNode
+  align?: "start" | "end"
+}
+
+export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuProps) {
+  const [open, setOpen] = React.useState(false)
+  const [position, setPosition] = React.useState({ top: 0, left: 0 })
+  const triggerRef = React.useRef<HTMLDivElement>(null)
+  const menuRef = React.useRef<HTMLDivElement>(null)
+
+  // Calculate position for fixed positioning
+  React.useEffect(() => {
+    if (open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      setPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: align === "end" ? rect.right + window.scrollX : rect.left + window.scrollX,
+      })
+    }
+  }, [open, align])
+
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        triggerRef.current &&
+        menuRef.current &&
+        !triggerRef.current.contains(event.target as Node) &&
+        !menuRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false)
+      }
+    }
+
+    if (open) {
+      // Use capture phase to catch clicks before they bubble
+      document.addEventListener("mousedown", handleClickOutside, true)
+      return () => document.removeEventListener("mousedown", handleClickOutside, true)
+    }
+  }, [open])
+
+  // Handle keyboard navigation
+  React.useEffect(() => {
+    if (!open) return
+
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape)
+    return () => document.removeEventListener("keydown", handleEscape)
+  }, [open])
+
+  return (
+    <>
+      <div className="relative inline-block" ref={triggerRef}>
+        <div
+          onClick={() => setOpen(!open)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              setOpen(!open)
+            }
+          }}
+        >
+          {trigger}
+        </div>
+      </div>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            className={cn(
+              "fixed z-[100] min-w-[10rem] overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl",
+              align === "end" ? "right-auto" : "left-auto"
+            )}
+            style={{
+              top: `${position.top}px`,
+              left: `${position.left}px`,
+              ...(align === "end" && { transform: "translateX(-100%)" }),
+            }}
+            role="menu"
+          >
+            {children}
+          </div>,
+          document.body
+        )}
+    </>
+  )
+}
+
+export function DropdownMenuItem({
+  children,
+  onClick,
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button
+      className={cn(
+        "w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset transition-colors min-h-[2.5rem]",
+        className
+      )}
+      onClick={onClick}
+      {...props}
+    >
+      {children}
+    </button>
+  )
+}
