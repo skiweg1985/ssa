@@ -4,10 +4,10 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 - **als CLI** für Ad-hoc Analysen
 - **als FastAPI-Server** für geplante Scans + REST API
 
-## Kurzüberblick
+## Funktionen
 
 - **Misst Größen** für Shares/Ordner/Pfade
-- **Optionaler Server** mit Scheduler (aus `config.yaml`) und Ergebnis-API
+- **Server** mit Scheduler (aus `config.yaml`) und Ergebnis-API
 - **Persistente Historie** per SQLite (standardmäßig `data/history.db`)
 
 ## Installation
@@ -16,7 +16,7 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 pip install -r requirements.txt
 ```
 
-## CLI (schnell & interaktiv)
+## CLI
 
 ### Konfiguration (`.env`)
 
@@ -24,15 +24,13 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Minimal:
-
 ```env
 SYNO_HOST=192.168.1.100
 SYNO_USERNAME=admin
 SYNO_PASSWORD=your_password_here
 ```
 
-Optional (bei self-signed Zertifikaten):
+Bei self-signed Zertifikaten:
 
 ```env
 SYNO_VERIFY_SSL=false
@@ -57,7 +55,7 @@ python explore_syno_api.py --list-shares
 python explore_syno_api.py --json --share homes
 ```
 
-## FastAPI-Server (optional)
+## FastAPI-Server
 
 ### Konfiguration (`config.yaml`)
 
@@ -67,7 +65,7 @@ Kopieren und anpassen:
 cp config.yaml.example config.yaml
 ```
 
-Minimal-Beispiel (eine Aufgabe):
+Beispiel (eine Aufgabe):
 
 ```yaml
 scans:
@@ -94,14 +92,14 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000
 - **Web-UI**: `http://localhost:8000`
 - **Health**: `GET /health`
 
-### API (nur das Wesentliche)
+### API
 
 - `GET /api/scans` – alle Scan-Jobs + Status
 - `GET /api/scans/{scan_name}/results` – letztes Ergebnis
 - `POST /api/scans/{scan_name}/trigger` – Scan manuell starten
 - `POST /api/config/reload` – `config.yaml` neu laden
 
-## Sicherheit (kurz)
+## Sicherheit
 
 - Standard ist **SSL-Verifizierung an**.
 - Für self-signed Zertifikate: in `.env` `SYNO_VERIFY_SSL=false` oder in `config.yaml` `verify_ssl: false`.
