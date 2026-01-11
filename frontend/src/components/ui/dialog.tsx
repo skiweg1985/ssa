@@ -50,12 +50,16 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
   return (
     <DialogContext.Provider value={{ onOpenChange }}>
       <div
-        className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in"
+        className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 animate-in fade-in"
         onClick={() => onOpenChange(false)}
       >
         <div
-          className="relative z-[1000] w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
+          className="relative z-[1000] w-full h-[85vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-white rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
           onClick={(e) => e.stopPropagation()}
+          style={{
+            // Für iOS Safari: verwende dvh (dynamic viewport height) wenn verfügbar, fallback zu vh
+            maxHeight: 'min(85dvh, 85vh)',
+          }}
         >
           {children}
         </div>
@@ -67,7 +71,7 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col space-y-1.5 text-center sm:text-left",
+      "flex flex-col space-y-1.5 text-center sm:text-left flex-shrink-0 relative",
       className
     )}
     {...props}
@@ -104,7 +108,16 @@ DialogDescription.displayName = "DialogDescription"
 
 const DialogContent = React.forwardRef<HTMLDivElement, DialogContentProps>(
   ({ className, children, ...props }, ref) => (
-    <div ref={ref} className={cn("flex-1 overflow-y-auto p-6", className)} {...props}>
+    <div 
+      ref={ref} 
+      className={cn("flex-1 overflow-y-auto overflow-x-hidden p-6 min-h-0", className)} 
+      style={{
+        // Für iOS Safari: verbessere Scrolling
+        WebkitOverflowScrolling: 'touch',
+        overscrollBehavior: 'contain',
+      }}
+      {...props}
+    >
       {children}
     </div>
   )
@@ -114,7 +127,7 @@ DialogContent.displayName = "DialogContent"
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 border-t border-slate-200 px-6 py-4 bg-slate-50",
+      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 border-t border-slate-200 px-6 py-4 bg-slate-50 flex-shrink-0",
       className
     )}
     {...props}
@@ -142,13 +155,14 @@ const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
         ref={ref}
         type="button"
         className={cn(
-          "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
+          "absolute right-4 top-4 z-10 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 touch-manipulation",
+          "min-w-[44px] min-h-[44px] flex items-center justify-center", // Mindestgröße für Touch-Targets
           className
         )}
         onClick={handleClick}
         {...props}
       >
-        {children || <X className="h-4 w-4" />}
+        {children || <X className="h-5 w-5" />}
         <span className="sr-only">Close</span>
       </button>
     )

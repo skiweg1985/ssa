@@ -106,4 +106,21 @@
   * {
     max-width: 100%;
   }
+  
+  /* iOS Safari fixes for modals */
+  @supports (-webkit-touch-callout: none) {
+    /* iOS Safari specific styles */
+    .dialog-container {
+      /* Use safe-area-inset for iOS notch support */
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+  }
+  
+  /* Better touch targets on mobile */
+  @media (max-width: 640px) {
+    button, a {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
 }
