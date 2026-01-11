@@ -38,35 +38,35 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
       title: "Scan-Ergebnisse abrufen",
       description: "Gibt die neuesten Ergebnisse eines Scans zurück",
       method: "GET",
-      endpoint: `${API_BASE}/scans/{scan_name}/results`,
+      endpoint: `${API_BASE}/scans/{scan_slug}/results`,
       curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/results"`,
     },
     {
       title: "Scan-Historie abrufen",
       description: "Gibt die komplette Historie aller Ergebnisse eines Scans zurück",
       method: "GET",
-      endpoint: `${API_BASE}/scans/{scan_name}/history`,
+      endpoint: `${API_BASE}/scans/{scan_slug}/history`,
       curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/history"`,
     },
     {
       title: "Scan-Status abrufen",
       description: "Gibt den aktuellen Status eines Scans zurück",
       method: "GET",
-      endpoint: `${API_BASE}/scans/{scan_name}/status`,
+      endpoint: `${API_BASE}/scans/{scan_slug}/status`,
       curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/status"`,
     },
     {
       title: "Scan-Progress abrufen",
       description: "Gibt den Fortschritt eines laufenden Scans zurück",
       method: "GET",
-      endpoint: `${API_BASE}/scans/{scan_name}/progress`,
+      endpoint: `${API_BASE}/scans/{scan_slug}/progress`,
       curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/progress"`,
     },
     {
       title: "Scan manuell starten",
       description: "Startet einen Scan manuell",
       method: "POST",
-      endpoint: `${API_BASE}/scans/{scan_name}/trigger`,
+      endpoint: `${API_BASE}/scans/{scan_slug}/trigger`,
       curl: `curl -X POST "${window.location.origin}${API_BASE}/scans/mein-scan/trigger"`,
     },
   ]
@@ -173,7 +173,7 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
               <div>
                 <strong className="text-slate-900">Prometheus Exporter:</strong>
                 <p className="mt-1">
-                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white px-1.5 py-0.5 rounded border">/api/scans/{`{scan_name}`}/results</code> abruft 
+                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code> abruft 
                   und die Daten als Metriken bereitstellt.
                 </p>
               </div>
@@ -198,11 +198,12 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
             <h3 className="font-semibold text-slate-900 mb-2">📄 Response-Format</h3>
             <p className="text-sm text-slate-600 mb-3">
-              Alle Endpunkte liefern JSON-Daten. Beispiel für <code className="bg-white px-1.5 py-0.5 rounded border">/scans/{`{scan_name}`}/results</code>:
+              Alle Endpunkte liefern JSON-Daten. Beispiel für <code className="bg-white px-1.5 py-0.5 rounded border">{"/scans/{scan_slug}/results"}</code>:
             </p>
             <pre className="text-xs bg-slate-900 text-slate-100 p-3 rounded overflow-x-auto">
               <code>{`{
-  "scan_name": "mein-scan",
+  "scan_slug": "mein-scan",
+  "scan_name": "mein_scan",
   "status": "completed",
   "timestamp": "2024-01-15T10:30:00Z",
   "results": [

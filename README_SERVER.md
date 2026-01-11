@@ -39,13 +39,19 @@ scans:
 
 **Grundlegende Parameter:**
 
-- `name`: Eindeutiger Name des Scans
+- `name`: Eindeutiger Name des Scans (für Anzeige)
+- `slug`: Optional - URL-freundlicher Slug (wird automatisch aus `name` generiert wenn nicht angegeben)
 - `enabled`: Aktiviert/deaktiviert den Scan (`true`/`false`)
 - `interval`: Zeitplan (siehe unten)
 - `nas`: NAS-Verbindungsparameter
 - `shares`: Liste von Freigaben
 - `folders`: Liste von Ordnern (nur mit genau 1 Share)
 - `paths`: Liste vollständiger Pfade
+
+**Hinweis zu Slugs:**
+- Slugs werden automatisch aus dem Namen generiert (URL-freundlich, nur Kleinbuchstaben, Zahlen, Bindestriche)
+- Slugs werden in API-URLs verwendet (z.B. `/api/scans/{scan_slug}/results`)
+- Bei doppelten Slugs wird das neuere Scan verworfen (basierend auf Erstellungsdatum)
 
 **Interval-Formate:**
 
@@ -130,6 +136,7 @@ Gibt Liste aller konfigurierten Scans mit Status zurück.
 {
   "scans": [
     {
+      "scan_slug": "homes-scan",
       "scan_name": "homes_scan",
       "status": "completed",
       "last_run": "2024-01-15T10:30:00Z",
@@ -145,21 +152,24 @@ Gibt Liste aller konfigurierten Scans mit Status zurück.
 #### Einzelnen Scan abrufen
 
 ```http
-GET /api/scans/{scan_name}
+GET /api/scans/{scan_slug}
 ```
 
-Gibt Details eines spezifischen Scans zurück.
+Gibt Details eines spezifischen Scans zurück. Unterstützt auch den Scan-Namen als Fallback.
+
+**Parameter:**
+- `scan_slug`: URL-freundlicher Slug des Scans (z.B. `homes-scan`) oder Scan-Name
 
 #### Scan-Status abrufen
 
 ```http
-GET /api/scans/{scan_name}/status
+GET /api/scans/{scan_slug}/status
 ```
 
 #### Scan-Fortschritt abrufen
 
 ```http
-GET /api/scans/{scan_name}/progress
+GET /api/scans/{scan_slug}/progress
 ```
 
 Gibt den aktuellen Fortschritt eines laufenden Scans zurück.
@@ -167,6 +177,7 @@ Gibt den aktuellen Fortschritt eines laufenden Scans zurück.
 **Response:**
 ```json
 {
+  "scan_slug": "homes-scan",
   "scan_name": "homes_scan",
   "status": "running",
   "progress": {
@@ -207,15 +218,17 @@ Gibt den aktuellen Fortschritt eines laufenden Scans zurück.
 #### Scan-Ergebnisse abrufen
 
 ```http
-GET /api/scans/{scan_name}/results?latest=true
+GET /api/scans/{scan_slug}/results?latest=true
 ```
 
 **Parameter:**
+- `scan_slug`: URL-freundlicher Slug des Scans (z.B. `homes-scan`) oder Scan-Name
 - `latest`: `true` für neuestes Ergebnis (Standard), `false` für alle
 
 **Response:**
 ```json
 {
+  "scan_slug": "homes-scan",
   "scan_name": "homes_scan",
   "timestamp": "2024-01-15T10:30:00Z",
   "status": "completed",
@@ -240,23 +253,29 @@ GET /api/scans/{scan_name}/results?latest=true
 #### Scan-Historie abrufen
 
 ```http
-GET /api/scans/{scan_name}/history
+GET /api/scans/{scan_slug}/history
 ```
 
 Gibt alle gespeicherten Ergebnisse eines Scans zurück.
 
+**Parameter:**
+- `scan_slug`: URL-freundlicher Slug des Scans (z.B. `homes-scan`) oder Scan-Name
+
 #### Scan manuell starten
 
 ```http
-POST /api/scans/{scan_name}/trigger
+POST /api/scans/{scan_slug}/trigger
 ```
 
 Startet einen Scan sofort, unabhängig vom Zeitplan.
 
+**Parameter:**
+- `scan_slug`: URL-freundlicher Slug des Scans (z.B. `homes-scan`) oder Scan-Name
+
 **Response:**
 ```json
 {
-  "scan_name": "homes_scan",
+  "scan_slug": "homes-scan",
   "message": "Scan 'homes_scan' wurde gestartet",
   "triggered": true
 }
@@ -303,12 +322,12 @@ Gibt Statistiken über gespeicherte Ergebnisse zurück:
 #### Alle Ordner abrufen
 
 ```http
-GET /api/storage/folders?nas_host=192.168.1.100&scan_name=homes_scan
+GET /api/storage/folders?nas_host=192.168.1.100&scan_slug=homes-scan
 ```
 
 **Parameter:**
 - `nas_host`: Filter nach NAS-Host
-- `scan_name`: Filter nach Scan-Name
+- `scan_slug`: Filter nach Scan-Slug (URL-freundlich, z.B. `homes-scan`)
 
 #### Bereinigung-Vorschau
 
@@ -322,7 +341,7 @@ Zeigt Vorschau der zu löschenden Einträge ohne zu löschen.
 - `days`: Anzahl Tage (Standard: 90)
 - `nas_host`: Filter nach NAS-Host
 - `folder_path`: Filter nach Ordner-Pfad
-- `scan_name`: Filter nach Scan-Name
+- `scan_slug`: Filter nach Scan-Slug (URL-freundlich, z.B. `homes-scan`)
 
 #### Bereinigung durchführen
 
@@ -343,10 +362,13 @@ Löscht Ergebnisse für spezifische Ordner/Pfade.
 #### Scan-Ergebnisse löschen
 
 ```http
-DELETE /api/storage/scans/{scan_name}
+DELETE /api/storage/scans/{scan_slug}
 ```
 
 Löscht alle Ergebnisse eines Scans.
+
+**Parameter:**
+- `scan_slug`: URL-freundlicher Slug des Scans (z.B. `homes-scan`) oder Scan-Name
 
 #### Alle Ergebnisse löschen
 

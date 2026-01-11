@@ -47,7 +47,8 @@ export function DetailModal({
   async function loadDetails() {
     if (!scan) return
     try {
-      const data = await fetchScan(scan.scan_name)
+      // Verwende slug für API-Aufruf (unterstützt auch name für Rückwärtskompatibilität)
+      const data = await fetchScan(scan.scan_slug)
       setDetailedScan(data)
     } catch (err) {
       console.error("Error loading scan details:", err)
@@ -56,16 +57,17 @@ export function DetailModal({
   }
 
   // Always call hook (React rules) - but only poll when conditions are met
-  const scanName = detailedScan?.scan_name || scan?.scan_name || ""
+  // Verwende slug für Progress-Aufrufe
+  const scanIdentifier = detailedScan?.scan_slug || scan?.scan_slug || detailedScan?.scan_name || scan?.scan_name || ""
   // Poll if scan is running - also poll once if completed to get final progress
   const isRunning = (detailedScan?.status === "running" || scan?.status === "running") && open
-  const { progress } = useScanProgress(scanName, isRunning, 1000)
+  const { progress } = useScanProgress(scanIdentifier, isRunning, 1000)
   
   // Also fetch progress once if scan is completed but we don't have progress yet
   const [completedProgress, setCompletedProgress] = useState<typeof progress>(null)
   useEffect(() => {
-    if ((detailedScan?.status === "completed" || scan?.status === "completed") && open && scanName && !progress && !completedProgress) {
-      fetchScanProgress(scanName).then(data => {
+    if ((detailedScan?.status === "completed" || scan?.status === "completed") && open && scanIdentifier && !progress && !completedProgress) {
+      fetchScanProgress(scanIdentifier).then(data => {
         if (data && (data.status === "completed" || data.progress?.finished)) {
           setCompletedProgress(data)
         }
@@ -73,7 +75,7 @@ export function DetailModal({
         // Ignore errors (404 is expected after grace period)
       })
     }
-  }, [detailedScan?.status, scan?.status, open, scanName, progress, completedProgress])
+  }, [detailedScan?.status, scan?.status, open, scanIdentifier, progress, completedProgress])
   
   // Use progress if available, or completed progress, even if scan status is completed
   const displayProgress = progress || completedProgress
@@ -222,6 +224,12 @@ export function DetailModal({
                     )}
                   </span>
                 </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-slate-600">ID:</span>
+                  <span className="font-mono text-xs text-slate-900 bg-white px-2 py-1 rounded border border-slate-200">
+                    {currentScan.scan_slug}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -290,7 +298,7 @@ export function DetailModal({
             <Button
               variant="primary"
               onClick={() => {
-                onShowResults(currentScan.scan_name)
+                onShowResults(currentScan.scan_slug)
                 onOpenChange(false)
               }}
             >
@@ -300,7 +308,7 @@ export function DetailModal({
             <Button
               variant="secondary"
               onClick={() => {
-                onShowHistory(currentScan.scan_name)
+                onShowHistory(currentScan.scan_slug)
                 onOpenChange(false)
               }}
             >
@@ -318,7 +326,7 @@ export function DetailModal({
         <Button
           variant="primary"
           onClick={() => {
-            onTriggerScan(currentScan.scan_name)
+            onTriggerScan(currentScan.scan_slug)
             onOpenChange(false)
           }}
           disabled={!canRun}

@@ -69,7 +69,7 @@ export function GridCard({
         <div className="flex-1 min-w-0">
           <button
             onClick={() => onShowDetail(scan)}
-            className="font-semibold text-slate-900 hover:text-primary-600 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded truncate block w-full"
+            className="font-normal text-slate-700 hover:text-primary-600 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded truncate block w-full"
             title={scan.scan_name}
           >
             <div className="flex flex-col gap-0.5">

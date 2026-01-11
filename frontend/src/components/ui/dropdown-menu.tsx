@@ -8,6 +8,11 @@ interface DropdownMenuProps {
   align?: "start" | "end"
 }
 
+// Context für Dropdown-Menü-Funktionen
+const DropdownMenuContext = React.createContext<{
+  setOpen: (open: boolean) => void
+} | null>(null)
+
 export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuProps) {
   const [open, setOpen] = React.useState(false)
   const [position, setPosition] = React.useState({ top: 0, left: 0 })
@@ -75,21 +80,23 @@ export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuP
       </div>
       {open &&
         createPortal(
-          <div
-            ref={menuRef}
-            className={cn(
-              "fixed z-[100] min-w-[10rem] overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl",
-              align === "end" ? "right-auto" : "left-auto"
-            )}
-            style={{
-              top: `${position.top}px`,
-              left: `${position.left}px`,
-              ...(align === "end" && { transform: "translateX(-100%)" }),
-            }}
-            role="menu"
-          >
-            {children}
-          </div>,
+          <DropdownMenuContext.Provider value={{ setOpen }}>
+            <div
+              ref={menuRef}
+              className={cn(
+                "fixed z-[100] min-w-[10rem] overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl",
+                align === "end" ? "right-auto" : "left-auto"
+              )}
+              style={{
+                top: `${position.top}px`,
+                left: `${position.left}px`,
+                ...(align === "end" && { transform: "translateX(-100%)" }),
+              }}
+              role="menu"
+            >
+              {children}
+            </div>
+          </DropdownMenuContext.Provider>,
           document.body
         )}
     </>
@@ -102,13 +109,24 @@ export function DropdownMenuItem({
   className,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const context = React.useContext(DropdownMenuContext)
+
+  const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    // Schließe das Menü, wenn ein Item geklickt wird
+    if (context) {
+      context.setOpen(false)
+    }
+    // Rufe den ursprünglichen onClick-Handler auf
+    onClick?.(e)
+  }
+
   return (
     <button
       className={cn(
         "w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset transition-colors min-h-[2.5rem]",
         className
       )}
-      onClick={onClick}
+      onClick={handleClick}
       {...props}
     >
       {children}

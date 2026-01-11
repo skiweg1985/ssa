@@ -114,13 +114,17 @@ class ScanStorage:
     def _init_database(self) -> None:
         """Initialisiert die SQLite-Datenbank mit Tabellen"""
         with self._get_connection() as conn:
+            # Lösche alte Tabelle falls vorhanden (für Migration zu slug/uid)
+            conn.execute("DROP TABLE IF EXISTS scan_results")
+            
             # Haupttabelle: Jeder Ordner/Pfad wird einzeln gespeichert
             # Primary Key = nas_host + folder_path + timestamp
             conn.execute("""
-                CREATE TABLE IF NOT EXISTS scan_results (
+                CREATE TABLE scan_results (
                     id TEXT PRIMARY KEY,
                     nas_host TEXT NOT NULL,
                     folder_path TEXT NOT NULL,
+                    scan_slug TEXT NOT NULL,
                     scan_name TEXT NOT NULL,
                     timestamp TEXT NOT NULL,
                     status TEXT NOT NULL,
@@ -141,8 +145,8 @@ class ScanStorage:
             
             # Indizes für schnelle Abfragen
             conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_scan_name_timestamp 
-                ON scan_results(scan_name, timestamp DESC)
+                CREATE INDEX idx_scan_slug_timestamp 
+                ON scan_results(scan_slug, timestamp DESC)
             """)
             
             conn.execute("""
@@ -200,6 +204,7 @@ class ScanStorage:
                 # Lade alle Ordner-Ergebnisse gruppiert nach Scan und Timestamp
                 cursor = conn.execute("""
                     SELECT 
+                        scan_slug,
                         scan_name,
                         timestamp,
                         nas_host,
@@ -215,16 +220,17 @@ class ScanStorage:
                         error,
                         scan_error
                     FROM scan_results
-                    ORDER BY scan_name, timestamp DESC, folder_path
+                    ORDER BY scan_slug, timestamp DESC, folder_path
                 """)
                 
-                current_scan = None
+                current_scan_slug = None
+                current_scan_name = None
                 current_timestamp = None
                 results_for_scan = []
                 items_for_result = []
                 
                 for row in cursor.fetchall():
-                    (scan_name, timestamp_str, nas_host, folder_path, status, success,
+                    (scan_slug, scan_name, timestamp_str, nas_host, folder_path, status, success,
                      num_dir, num_file, total_size_bytes, total_size_formatted,
                      total_size_unit, elapsed_time_ms, error, scan_error) = row
                     
@@ -233,9 +239,10 @@ class ScanStorage:
                     # Überspringe Marker-Einträge (werden separat als ScanResult mit Status behandelt)
                     if folder_path == "__SCAN_STATUS_MARKER__":
                         # Speichere vorherige Gruppe falls vorhanden
-                        if items_for_result and current_scan:
+                        if items_for_result and current_scan_slug:
                             result = ScanResult(
-                                scan_name=current_scan,
+                                scan_slug=current_scan_slug,
+                                scan_name=current_scan_name,
                                 timestamp=current_timestamp,
                                 status=status,
                                 error=scan_error,
@@ -245,17 +252,18 @@ class ScanStorage:
                             items_for_result = []
                         
                         # Neue ScanResult-Gruppe für Marker?
-                        if (current_scan and current_scan != scan_name) or \
+                        if (current_scan_slug and current_scan_slug != scan_slug) or \
                            (current_timestamp and current_timestamp != timestamp):
                             # Neue Scan-Gruppe?
-                            if current_scan and current_scan != scan_name:
+                            if current_scan_slug and current_scan_slug != scan_slug:
                                 if len(results_for_scan) > self._max_history:
                                     results_for_scan = results_for_scan[:self._max_history]
-                                self._results[current_scan] = results_for_scan
+                                self._results[current_scan_slug] = results_for_scan
                                 results_for_scan = []
                         
                         # Erstelle ScanResult für fehlgeschlagenen Scan (ohne erfolgreiche Ergebnisse)
                         result = ScanResult(
+                            scan_slug=scan_slug,
                             scan_name=scan_name,
                             timestamp=timestamp,
                             status=status,
@@ -264,16 +272,18 @@ class ScanStorage:
                         )
                         results_for_scan.append(result)
                         
-                        current_scan = scan_name
+                        current_scan_slug = scan_slug
+                        current_scan_name = scan_name
                         current_timestamp = timestamp
                         continue
                     
                     # Neue ScanResult-Gruppe?
-                    if (current_scan and current_scan != scan_name) or \
+                    if (current_scan_slug and current_scan_slug != scan_slug) or \
                        (current_timestamp and current_timestamp != timestamp):
                         if items_for_result:
                             result = ScanResult(
-                                scan_name=current_scan,
+                                scan_slug=current_scan_slug,
+                                scan_name=current_scan_name,
                                 timestamp=current_timestamp,
                                 status=status,
                                 error=scan_error,
@@ -283,13 +293,14 @@ class ScanStorage:
                             items_for_result = []
                         
                         # Neue Scan-Gruppe?
-                        if current_scan and current_scan != scan_name:
+                        if current_scan_slug and current_scan_slug != scan_slug:
                             if len(results_for_scan) > self._max_history:
                                 results_for_scan = results_for_scan[:self._max_history]
-                            self._results[current_scan] = results_for_scan
+                            self._results[current_scan_slug] = results_for_scan
                             results_for_scan = []
                     
-                    current_scan = scan_name
+                    current_scan_slug = scan_slug
+                    current_scan_name = scan_name
                     current_timestamp = timestamp
                     
                     # Erstelle ScanResultItem
@@ -313,9 +324,10 @@ class ScanStorage:
                     items_for_result.append(item)
                 
                 # Speichere letzte Gruppen
-                if items_for_result and current_scan:
+                if items_for_result and current_scan_slug:
                     result = ScanResult(
-                        scan_name=current_scan,
+                        scan_slug=current_scan_slug,
+                        scan_name=current_scan_name,
                         timestamp=current_timestamp,
                         status=status,
                         error=scan_error,
@@ -323,10 +335,10 @@ class ScanStorage:
                     )
                     results_for_scan.append(result)
                 
-                if current_scan:
+                if current_scan_slug:
                     if len(results_for_scan) > self._max_history:
                         results_for_scan = results_for_scan[:self._max_history]
-                    self._results[current_scan] = results_for_scan
+                    self._results[current_scan_slug] = results_for_scan
                 
                 # Statistiken
                 cursor = conn.execute("SELECT COUNT(*) FROM scan_results")
@@ -338,15 +350,15 @@ class ScanStorage:
         except Exception as e:
             print(f"Warnung: Fehler beim Laden aus Datenbank: {e}")
     
-    def _save_to_disk(self, scan_name: str, result: ScanResult, nas_host: str) -> None:
+    def _save_to_disk(self, scan_slug: str, scan_name: str, result: ScanResult, nas_host: str) -> None:
         """
         Speichert ein Scan-Ergebnis in der Datenbank
         
-        Jeder Ordner/Pfad wird einzeln gespeichert mit eindeutigem Primary Key
-        basierend auf nas_host + folder_path + timestamp
-        
-        WICHTIG: Speichert nur erfolgreiche Ergebnisse. Fehlgeschlagene Scans werden
-        trotzdem in der Historie sichtbar sein (durch Status), aber ohne 0-Werte.
+        Args:
+            scan_slug: Slug des Scans
+            scan_name: Name des Scans
+            result: Scan-Ergebnis
+            nas_host: Hostname/IP des NAS
         """
         try:
             with self._get_connection() as conn:
@@ -369,14 +381,15 @@ class ScanStorage:
                         
                         conn.execute("""
                             INSERT OR REPLACE INTO scan_results 
-                            (id, nas_host, folder_path, scan_name, timestamp, status, success,
+                            (id, nas_host, folder_path, scan_slug, scan_name, timestamp, status, success,
                              num_dir, num_file, total_size_bytes, total_size_formatted,
                              total_size_unit, elapsed_time_ms, error, scan_error, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             primary_key,
                             nas_host,
                             normalized_path,
+                            scan_slug,
                             scan_name,
                             result.timestamp.isoformat(),
                             result.status,
@@ -395,9 +408,8 @@ class ScanStorage:
                     conn.commit()
                 else:
                     # Keine erfolgreichen Ergebnisse - speichere einen Marker für die Historie
-                    # Dieser wird beim Laden als ScanResult mit Status "failed" und leeren results erkannt
                     logger.info(
-                        f"Scan '{scan_name}': Keine erfolgreichen Ergebnisse - "
+                        f"Scan '{scan_slug}': Keine erfolgreichen Ergebnisse - "
                         f"speichere Status-Marker für Historie (Status: {result.status})"
                     )
                     # Verwende einen speziellen Marker-Pfad, der beim Laden gefiltert wird
@@ -410,14 +422,15 @@ class ScanStorage:
                     
                     conn.execute("""
                         INSERT OR REPLACE INTO scan_results 
-                        (id, nas_host, folder_path, scan_name, timestamp, status, success,
+                        (id, nas_host, folder_path, scan_slug, scan_name, timestamp, status, success,
                          num_dir, num_file, total_size_bytes, total_size_formatted,
                          total_size_unit, elapsed_time_ms, error, scan_error, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         primary_key,
                         nas_host,
                         marker_path,
+                        scan_slug,
                         scan_name,
                         result.timestamp.isoformat(),
                         result.status,
@@ -437,78 +450,81 @@ class ScanStorage:
                 # Bereinige alte Einträge (behalte nur max_history pro Scan)
                 conn.execute("""
                     DELETE FROM scan_results
-                    WHERE scan_name = ? 
+                    WHERE scan_slug = ? 
                     AND timestamp NOT IN (
                         SELECT DISTINCT timestamp FROM scan_results
-                        WHERE scan_name = ?
+                        WHERE scan_slug = ?
                         ORDER BY timestamp DESC
                         LIMIT ?
                     )
-                """, (scan_name, scan_name, self._max_history))
+                """, (scan_slug, scan_slug, self._max_history))
                 
                 conn.commit()
         
         except Exception as e:
-            print(f"Warnung: Fehler beim Speichern von {scan_name}: {e}")
+            print(f"Warnung: Fehler beim Speichern von {scan_slug}: {e}")
     
-    def add_result(self, scan_name: str, result: ScanResult, nas_host: str) -> None:
+    def add_result(self, scan_slug: str, scan_name: str, result: ScanResult, nas_host: str) -> None:
         """
         Fügt ein Scan-Ergebnis hinzu
         
         Args:
+            scan_slug: Slug des Scan-Tasks
             scan_name: Name des Scan-Tasks
             result: Scan-Ergebnis
             nas_host: Hostname/IP des NAS (für Primary Key)
         """
-        self._results[scan_name].append(result)
+        # Verwende slug als Key für in-memory storage
+        self._results[scan_slug].append(result)
         
-        if len(self._results[scan_name]) > self._max_history:
-            self._results[scan_name] = self._results[scan_name][-self._max_history:]
+        if len(self._results[scan_slug]) > self._max_history:
+            self._results[scan_slug] = self._results[scan_slug][-self._max_history:]
         
-        self._save_to_disk(scan_name, result, nas_host)
+        self._save_to_disk(scan_slug, scan_name, result, nas_host)
     
-    def update_latest_result(self, scan_name: str, result: ScanResult, nas_host: str) -> None:
+    def update_latest_result(self, scan_slug: str, scan_name: str, result: ScanResult, nas_host: str) -> None:
         """
         Aktualisiert das neueste Ergebnis für einen Scan
         
         Args:
+            scan_slug: Slug des Scan-Tasks
             scan_name: Name des Scan-Tasks
             result: Aktualisiertes Scan-Ergebnis
             nas_host: Hostname/IP des NAS (für Primary Key)
         """
-        if scan_name not in self._results or not self._results[scan_name]:
-            self.add_result(scan_name, result, nas_host)
+        if scan_slug not in self._results or not self._results[scan_slug]:
+            self.add_result(scan_slug, scan_name, result, nas_host)
         else:
-            latest = self._results[scan_name][-1]
+            latest = self._results[scan_slug][-1]
             if latest.timestamp == result.timestamp:
                 # Update des bestehenden Eintrags
-                self._results[scan_name][-1] = result
-                self._save_to_disk(scan_name, result, nas_host)
+                self._results[scan_slug][-1] = result
+                self._save_to_disk(scan_slug, scan_name, result, nas_host)
             else:
                 # Neuer Scan mit neuem Timestamp
-                self.add_result(scan_name, result, nas_host)
+                self.add_result(scan_slug, scan_name, result, nas_host)
     
-    def get_latest_result(self, scan_name: str) -> Optional[ScanResult]:
-        """Holt das neueste Ergebnis für einen Scan"""
-        if scan_name not in self._results or not self._results[scan_name]:
+    def get_latest_result(self, scan_slug: str) -> Optional[ScanResult]:
+        """Holt das neueste Ergebnis für einen Scan (anhand slug)"""
+        if scan_slug not in self._results or not self._results[scan_slug]:
             return None
-        return self._results[scan_name][-1]
+        return self._results[scan_slug][-1]
     
-    def get_latest_completed_result(self, scan_name: str) -> Optional[ScanResult]:
+    def get_latest_completed_result(self, scan_slug: str) -> Optional[ScanResult]:
         """
         Holt das neueste erfolgreich abgeschlossene Scan-Ergebnis (status='completed')
         
         Args:
-            scan_name: Name des Scan-Tasks
+            scan_slug: Slug des Scan-Tasks
             
         Returns:
             Das neueste erfolgreiche ScanResult oder None wenn keines vorhanden ist
         """
-        if scan_name not in self._results or not self._results[scan_name]:
+        if scan_slug not in self._results or not self._results[scan_slug]:
             return None
         
         # Durchsuche Ergebnisse rückwärts (neueste zuerst) nach dem ersten "completed" Status
-        for result in reversed(self._results[scan_name]):
+        for result in reversed(self._results[scan_slug]):
             if result.status == "completed" and result.results:
                 # Prüfe ob mindestens ein erfolgreiches Ergebnis vorhanden ist
                 if any(item.success and item.total_size and item.total_size.bytes > 0 for item in result.results):
@@ -516,32 +532,32 @@ class ScanStorage:
         
         return None
     
-    def get_all_results(self, scan_name: str) -> List[ScanResult]:
-        """Holt alle Ergebnisse für einen Scan"""
-        return self._results.get(scan_name, [])
+    def get_all_results(self, scan_slug: str) -> List[ScanResult]:
+        """Holt alle Ergebnisse für einen Scan (anhand slug)"""
+        return self._results.get(scan_slug, [])
     
-    def get_results_since(self, scan_name: str, since: datetime) -> List[ScanResult]:
+    def get_results_since(self, scan_slug: str, since: datetime) -> List[ScanResult]:
         """Holt alle Ergebnisse seit einem bestimmten Zeitpunkt"""
-        all_results = self.get_all_results(scan_name)
+        all_results = self.get_all_results(scan_slug)
         return [r for r in all_results if r.timestamp >= since]
     
-    def clear_results(self, scan_name: Optional[str] = None) -> None:
+    def clear_results(self, scan_slug: Optional[str] = None) -> None:
         """Löscht Ergebnisse"""
         with self._get_connection() as conn:
-            if scan_name is None:
+            if scan_slug is None:
                 conn.execute("DELETE FROM scan_results")
                 self._results.clear()
             else:
-                conn.execute("DELETE FROM scan_results WHERE scan_name = ?", (scan_name,))
-                if scan_name in self._results:
-                    del self._results[scan_name]
+                conn.execute("DELETE FROM scan_results WHERE scan_slug = ?", (scan_slug,))
+                if scan_slug in self._results:
+                    del self._results[scan_slug]
             conn.commit()
     
     def delete_folder_results(
         self,
         nas_host: Optional[str] = None,
         folder_path: Optional[str] = None,
-        scan_name: Optional[str] = None
+        scan_slug: Optional[str] = None
     ) -> int:
         """
         Löscht Ergebnisse für spezifische Ordner/Pfade
@@ -549,7 +565,7 @@ class ScanStorage:
         Args:
             nas_host: Optional: Nur für dieses NAS
             folder_path: Normalisierter Pfad des Ordners
-            scan_name: Optional: Nur für diesen Scan
+            scan_slug: Optional: Nur für diesen Scan (anhand slug)
         
         Returns:
             Anzahl gelöschter Einträge
@@ -567,9 +583,9 @@ class ScanStorage:
                 conditions.append("folder_path = ?")
                 params.append(normalized)
             
-            if scan_name:
-                conditions.append("scan_name = ?")
-                params.append(scan_name)
+            if scan_slug:
+                conditions.append("scan_slug = ?")
+                params.append(scan_slug)
             
             if not conditions:
                 return 0
@@ -584,36 +600,36 @@ class ScanStorage:
             conn.commit()
             
             # Aktualisiere RAM-Cache
-            if scan_name and scan_name in self._results:
+            if scan_slug and scan_slug in self._results:
                 normalized = self._normalize_folder_path(folder_path) if folder_path else None
-                for result in self._results[scan_name]:
+                for result in self._results[scan_slug]:
                     result.results = [
                         item for item in result.results
                         if not normalized or self._normalize_folder_path(item.folder_name) != normalized
                     ]
                 # Entferne leere Ergebnisse
-                self._results[scan_name] = [
-                    r for r in self._results[scan_name] 
+                self._results[scan_slug] = [
+                    r for r in self._results[scan_slug] 
                     if r.results
                 ]
             
             return deleted
     
-    def get_all_scan_names(self) -> List[str]:
-        """Gibt alle Scan-Namen zurück"""
+    def get_all_scan_slugs(self) -> List[str]:
+        """Gibt alle Scan-Slugs zurück"""
         return list(self._results.keys())
     
     def get_all_folders(
         self, 
         nas_host: Optional[str] = None,
-        scan_name: Optional[str] = None
+        scan_slug: Optional[str] = None
     ) -> List[Tuple[str, str]]:
         """
         Gibt alle eindeutigen Ordner/Pfade zurück
         
         Args:
             nas_host: Optional: Nur für dieses NAS
-            scan_name: Optional: Nur für diesen Scan
+            scan_slug: Optional: Nur für diesen Scan (anhand slug)
         
         Returns:
             Liste von Tupeln (nas_host, folder_path)
@@ -626,9 +642,9 @@ class ScanStorage:
                 conditions.append("nas_host = ?")
                 params.append(nas_host)
             
-            if scan_name:
-                conditions.append("scan_name = ?")
-                params.append(scan_name)
+            if scan_slug:
+                conditions.append("scan_slug = ?")
+                params.append(scan_slug)
             
             where_clause = " AND ".join(conditions) if conditions else "1=1"
             
@@ -644,7 +660,7 @@ class ScanStorage:
         days: Optional[int] = None,
         nas_host: Optional[str] = None,
         folder_path: Optional[str] = None,
-        scan_name: Optional[str] = None,
+        scan_slug: Optional[str] = None,
         dry_run: bool = False
     ) -> Dict[str, any]:
         """
@@ -654,7 +670,7 @@ class ScanStorage:
             days: Anzahl der Tage (None = verwendet auto_cleanup_days)
             nas_host: Optional: Nur für dieses NAS
             folder_path: Optional: Nur für diesen Ordner
-            scan_name: Optional: Nur für diesen Scan
+            scan_slug: Optional: Nur für diesen Scan (anhand slug)
             dry_run: Wenn True, wird nichts gelöscht, nur Statistiken zurückgegeben
         
         Returns:
@@ -686,9 +702,9 @@ class ScanStorage:
                 conditions.append("folder_path = ?")
                 params.append(normalized)
             
-            if scan_name:
-                conditions.append("scan_name = ?")
-                params.append(scan_name)
+            if scan_slug:
+                conditions.append("scan_slug = ?")
+                params.append(scan_slug)
             
             where_clause = " AND ".join(conditions)
             
@@ -714,14 +730,14 @@ class ScanStorage:
                 conn.commit()
                 
                 # Aktualisiere RAM-Cache
-                for name in list(self._results.keys()):
-                    if scan_name is None or name == scan_name:
-                        self._results[name] = [
-                            r for r in self._results[name] 
+                for slug in list(self._results.keys()):
+                    if scan_slug is None or slug == scan_slug:
+                        self._results[slug] = [
+                            r for r in self._results[slug] 
                             if r.timestamp >= cutoff
                         ]
-                        if not self._results[name]:
-                            del self._results[name]
+                        if not self._results[slug]:
+                            del self._results[slug]
         
         return stats
     
@@ -729,7 +745,7 @@ class ScanStorage:
         self,
         nas_host: Optional[str] = None,
         folder_path: Optional[str] = None,
-        scan_name: Optional[str] = None,
+        scan_slug: Optional[str] = None,
         since: Optional[datetime] = None,
         until: Optional[datetime] = None,
         status: Optional[str] = None
@@ -753,9 +769,9 @@ class ScanStorage:
                 conditions.append("folder_path = ?")
                 params.append(normalized)
             
-            if scan_name:
-                conditions.append("scan_name = ?")
-                params.append(scan_name)
+            if scan_slug:
+                conditions.append("scan_slug = ?")
+                params.append(scan_slug)
             
             if since:
                 conditions.append("timestamp >= ?")

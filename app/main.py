@@ -253,7 +253,7 @@ async def health_check():
         config = load_config()
         running_scans = []
         for scan_config in config.scans:
-            if scanner_service.is_scan_running(scan_config.name):
+            if scanner_service.is_scan_running(scan_config.slug):
                 running_scans.append(scan_config.name)
         
         health_data["scans"] = {
@@ -265,6 +265,17 @@ async def health_check():
     except Exception as e:
         logger.warning(f"Fehler beim Abrufen der Scan-Informationen: {e}")
         health_data["scans"] = {"error": str(e)}
+    
+    # Konfigurations-Warnungen (z.B. Duplikate)
+    try:
+        from app.config.loader import get_config_warnings
+        warnings = get_config_warnings()
+        if warnings:
+            health_data["warnings"] = warnings
+            # Setze Status auf "warning" wenn Warnungen vorhanden sind
+            health_data["status"] = "warning"
+    except Exception as e:
+        logger.warning(f"Fehler beim Abrufen der Konfigurations-Warnungen: {e}")
     
     return health_data
 

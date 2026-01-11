@@ -73,7 +73,7 @@ class SchedulerService:
             job_defaults=job_defaults
         )
         self.config: Optional[ConfigYAML] = None
-        self._job_ids: Dict[str, str] = {}  # Mapping von scan_name zu job_id
+        self._job_ids: Dict[str, str] = {}  # Mapping von scan_slug zu job_id
     
     def load_and_schedule(self, config_path: Optional[str] = None) -> None:
         """
@@ -179,12 +179,11 @@ class SchedulerService:
                 return None
             
             # Erstelle Job
-            job_id = f"scan_{scan_config.name}"
+            job_id = f"scan_{scan_config.slug}"
             
             # Entferne existierenden Job falls vorhanden
-            # KORREKTUR: Prüfe auf scan_name statt job_id in values()
-            if scan_config.name in self._job_ids:
-                self.remove_scan_job(scan_config.name)
+            if scan_config.slug in self._job_ids:
+                self.remove_scan_job(scan_config.slug)
             
             self.scheduler.add_job(
                 func=self._run_scan_job,
@@ -195,7 +194,7 @@ class SchedulerService:
                 replace_existing=True
             )
             
-            self._job_ids[scan_config.name] = job_id
+            self._job_ids[scan_config.slug] = job_id
             
             # Berechne nächsten Lauf
             next_run = self.scheduler.get_job(job_id).next_run_time if self.scheduler.running else None
@@ -225,27 +224,27 @@ class SchedulerService:
             logger.error(f"Fehler beim Hinzufügen des Jobs für Scan '{scan_config.name}': {e}")
             return None
     
-    def remove_scan_job(self, scan_name: str) -> bool:
+    def remove_scan_job(self, scan_slug: str) -> bool:
         """
         Entfernt einen Scan-Job vom Scheduler
         
         Args:
-            scan_name: Name des Scans
+            scan_slug: Slug des Scans
         
         Returns:
             True wenn erfolgreich entfernt
         """
-        if scan_name not in self._job_ids:
+        if scan_slug not in self._job_ids:
             return False
         
-        job_id = self._job_ids[scan_name]
+        job_id = self._job_ids[scan_slug]
         try:
             self.scheduler.remove_job(job_id)
-            del self._job_ids[scan_name]
-            logger.info(f"Job für Scan '{scan_name}' entfernt")
+            del self._job_ids[scan_slug]
+            logger.info(f"Job für Scan '{scan_slug}' entfernt")
             return True
         except Exception as e:
-            logger.error(f"Fehler beim Entfernen des Jobs für Scan '{scan_name}': {e}")
+            logger.error(f"Fehler beim Entfernen des Jobs für Scan '{scan_slug}': {e}")
             return False
     
     async def _run_scan_job(self, scan_config: ScanTaskConfigYAML) -> None:
@@ -303,20 +302,20 @@ class SchedulerService:
         else:
             logger.warning("Scheduler läuft nicht")
     
-    def get_job_info(self, scan_name: str) -> Optional[Dict]:
+    def get_job_info(self, scan_slug: str) -> Optional[Dict]:
         """
         Gibt Informationen über einen Job zurück
         
         Args:
-            scan_name: Name des Scans
+            scan_slug: Slug des Scans
         
         Returns:
             Dictionary mit Job-Informationen oder None
         """
-        if scan_name not in self._job_ids:
+        if scan_slug not in self._job_ids:
             return None
         
-        job_id = self._job_ids[scan_name]
+        job_id = self._job_ids[scan_slug]
         job = self.scheduler.get_job(job_id)
         
         if not job:
@@ -340,32 +339,32 @@ class SchedulerService:
             Dictionary mit Informationen über das Neuladen
         """
         try:
-            old_scan_names = set(self._job_ids.keys()) if self.config else set()
+            old_scan_slugs = set(self._job_ids.keys()) if self.config else set()
             
             # Lade neue Konfiguration
             new_config = load_config(config_path)
             logger.info(f"Konfiguration neu geladen: {len(new_config.scans)} Scan-Tasks gefunden")
             
-            new_scan_names = {scan.name for scan in new_config.scans}
+            new_scan_slugs = {scan.slug for scan in new_config.scans}
             
             # Entferne Jobs für Scans, die nicht mehr in der Config sind
             removed_scans = []
-            for scan_name in old_scan_names:
-                if scan_name not in new_scan_names:
-                    if self.remove_scan_job(scan_name):
-                        removed_scans.append(scan_name)
+            for scan_slug in old_scan_slugs:
+                if scan_slug not in new_scan_slugs:
+                    if self.remove_scan_job(scan_slug):
+                        removed_scans.append(scan_slug)
             
             # Aktualisiere oder füge neue Jobs hinzu
             added_scans = []
             updated_scans = []
             for scan_config in new_config.scans:
                 if scan_config.enabled:
-                    if scan_config.name in old_scan_names:
+                    if scan_config.slug in old_scan_slugs:
                         # Job existiert bereits, prüfe ob sich die Konfiguration geändert hat
                         old_scan_config = None
                         if self.config:
                             for old_scan in self.config.scans:
-                                if old_scan.name == scan_config.name:
+                                if old_scan.slug == scan_config.slug:
                                     old_scan_config = old_scan
                                     break
                         
@@ -388,10 +387,18 @@ class SchedulerService:
                         else:
                             config_changed = True
                         
+                        # Finde alte Scan-Config für Vergleich
+                        old_scan_config = None
+                        if self.config:
+                            for old_scan in self.config.scans:
+                                if old_scan.slug == scan_config.slug:
+                                    old_scan_config = old_scan
+                                    break
+                        
                         if config_changed:
                             # Job existiert bereits, aktualisiere ihn
                             logger.info(f"Konfiguration für Scan '{scan_config.name}' hat sich geändert, aktualisiere Job...")
-                            self.remove_scan_job(scan_config.name)
+                            self.remove_scan_job(scan_config.slug)
                             self.add_scan_job(scan_config)
                             updated_scans.append(scan_config.name)
                         else:
@@ -403,8 +410,8 @@ class SchedulerService:
                         added_scans.append(scan_config.name)
                 else:
                     # Scan ist deaktiviert, entferne Job falls vorhanden
-                    if scan_config.name in old_scan_names:
-                        self.remove_scan_job(scan_config.name)
+                    if scan_config.slug in old_scan_slugs:
+                        self.remove_scan_job(scan_config.slug)
                         removed_scans.append(scan_config.name)
             
             self.config = new_config
@@ -467,13 +474,13 @@ class SchedulerService:
         Gibt Informationen über alle Jobs zurück
         
         Returns:
-            Dictionary mit Job-Informationen
+            Dictionary mit Job-Informationen (Key: scan_slug)
         """
         jobs = {}
-        for scan_name, job_id in self._job_ids.items():
-            job_info = self.get_job_info(scan_name)
+        for scan_slug, job_id in self._job_ids.items():
+            job_info = self.get_job_info(scan_slug)
             if job_info:
-                jobs[scan_name] = job_info
+                jobs[scan_slug] = job_info
         return jobs
 
 

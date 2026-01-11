@@ -70,6 +70,7 @@ export function ScanTable({
       filtered = filtered.filter(
         (scan) =>
           scan.scan_name.toLowerCase().includes(q) ||
+          scan.scan_slug.toLowerCase().includes(q) ||
           scan.nas?.host.toLowerCase().includes(q) ||
           scan.shares?.some((s) => s.toLowerCase().includes(q)) ||
           scan.folders?.some((f) => f.toLowerCase().includes(q))
@@ -230,6 +231,8 @@ export function ScanTable({
                   <Skeleton className="h-4 w-48 rounded-md" />
                   <Skeleton className="h-4 w-32 rounded-md" />
                   <Skeleton className="h-4 w-32 rounded-md" />
+                  <Skeleton className="h-4 w-32 rounded-md" />
+                  <Skeleton className="h-4 w-24 rounded-md" />
                   <Skeleton className="h-4 w-8 rounded-md" />
                   <Skeleton className="h-8 w-24 ml-auto rounded-md" />
                 </div>
@@ -286,10 +289,12 @@ export function ScanTable({
             }}>
               <table className="w-full border-collapse">
                 <colgroup>
-                  <col className="w-[250px] sm:w-[275px]" /> {/* Status */}
-                  <col className="min-w-[180px]" /> {/* Job-Name - flexible */}
-                  <col className="w-[140px] sm:w-[160px]" /> {/* Letzter Lauf */}
-                  <col className="w-[140px] sm:w-[160px]" /> {/* Nächster Lauf */}
+                  <col className="w-[180px] sm:w-[200px]" /> {/* Status - kompakter mit 2-Zeilen-Layout */}
+                  <col className="min-w-[160px]" /> {/* Job-Name - flexible */}
+                  <col className="w-[180px] sm:w-[200px]" /> {/* ID */}
+                  <col className="w-[130px] sm:w-[150px]" /> {/* Letzter Lauf */}
+                  <col className="w-[130px] sm:w-[150px]" /> {/* Nächster Lauf */}
+                  <col className="w-[110px] sm:w-[130px]" /> {/* Intervall */}
                   <col className="w-[60px]" /> {/* Info */}
                   <col className="w-[120px]" /> {/* Aktionen */}
                 </colgroup>
@@ -302,10 +307,16 @@ export function ScanTable({
                       Job-Name
                     </th>
                     <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                      ID
+                    </th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                       Letzter Lauf
                     </th>
                     <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                       Nächster Lauf
+                    </th>
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                      Intervall
                     </th>
                     <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
                       Info
@@ -318,7 +329,7 @@ export function ScanTable({
                 <tbody>
                   {filteredAndSortedScans.map((scan) => (
                     <TableRow
-                      key={scan.scan_name}
+                      key={scan.scan_slug}
                       scan={scan}
                       density={density}
                       onRun={onRun}
@@ -337,7 +348,7 @@ export function ScanTable({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredAndSortedScans.map((scan) => (
                 <GridCard
-                  key={scan.scan_name}
+                  key={scan.scan_slug}
                   scan={scan}
                   onRun={onRun}
                   onShowResults={onShowResults}

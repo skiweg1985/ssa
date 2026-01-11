@@ -25,6 +25,7 @@ export interface ScanResultItem {
 }
 
 export interface ScanResult {
+  scan_slug: string;
   scan_name: string;
   timestamp: string; // ISO 8601 datetime string
   status: 'running' | 'completed' | 'failed';
@@ -33,6 +34,7 @@ export interface ScanResult {
 }
 
 export interface ScanStatus {
+  scan_slug: string;
   scan_name: string;
   status: 'running' | 'completed' | 'failed' | 'pending';
   last_run?: string; // ISO 8601 datetime string
@@ -50,19 +52,20 @@ export interface ScanListResponse {
 }
 
 export interface TriggerResponse {
-  scan_name: string;
+  scan_slug: string;
   message: string;
   triggered: boolean;
 }
 
 export interface ScanHistoryResponse {
-  scan_name: string;
+  scan_slug: string;
   results: ScanResult[];
   total_count: number;
 }
 
 export interface ScanProgress {
-  scan_name: string;
+  scan_slug?: string;
+  scan_name?: string;
   status: 'running' | 'completed';
   progress: {
     num_dir: number;

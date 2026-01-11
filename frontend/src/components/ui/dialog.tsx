@@ -12,7 +12,28 @@ interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
 }
 
+// Context für Dialog-Funktionen
+const DialogContext = React.createContext<{
+  onOpenChange: (open: boolean) => void
+} | null>(null)
+
 const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
+  // Esc-Taste Handler
+  React.useEffect(() => {
+    if (!open) return
+
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onOpenChange(false)
+      }
+    }
+
+    document.addEventListener("keydown", handleEscape)
+    return () => {
+      document.removeEventListener("keydown", handleEscape)
+    }
+  }, [open, onOpenChange])
+
   React.useEffect(() => {
     if (open) {
       document.body.style.overflow = 'hidden'
@@ -27,17 +48,19 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
   if (!open) return null
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in"
-      onClick={() => onOpenChange(false)}
-    >
+    <DialogContext.Provider value={{ onOpenChange }}>
       <div
-        className="relative z-50 w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
-        onClick={(e) => e.stopPropagation()}
+        className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 animate-in fade-in"
+        onClick={() => onOpenChange(false)}
       >
-        {children}
+        <div
+          className="relative z-[1000] w-full max-w-4xl max-h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </DialogContext.Provider>
   )
 }
 
@@ -104,19 +127,32 @@ interface DialogCloseProps extends React.ButtonHTMLAttributes<HTMLButtonElement>
 }
 
 const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
-  ({ className, children, ...props }, ref) => (
-    <button
-      ref={ref}
-      className={cn(
-        "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
-        className
-      )}
-      {...props}
-    >
-      {children || <X className="h-4 w-4" />}
-      <span className="sr-only">Close</span>
-    </button>
-  )
+  ({ className, children, onClick, ...props }, ref) => {
+    const context = React.useContext(DialogContext)
+    
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (context) {
+        context.onOpenChange(false)
+      }
+      onClick?.(e)
+    }
+
+    return (
+      <button
+        ref={ref}
+        type="button"
+        className={cn(
+          "absolute right-4 top-4 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2",
+          className
+        )}
+        onClick={handleClick}
+        {...props}
+      >
+        {children || <X className="h-4 w-4" />}
+        <span className="sr-only">Close</span>
+      </button>
+    )
+  }
 )
 DialogClose.displayName = "DialogClose"
 

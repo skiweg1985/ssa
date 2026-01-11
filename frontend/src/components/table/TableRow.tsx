@@ -36,7 +36,8 @@ export function TableRow({
   // Fetch progress only for running scans
   // Don't fetch for completed scans to avoid 404s after grace period
   const isRunning = scan.status === "running"
-  const { progress } = useScanProgress(scan.scan_name, isRunning, 1000)
+  // Verwende slug für Progress-Aufrufe
+  const { progress } = useScanProgress(scan.scan_slug, isRunning, 1000)
   
   // Determine effective status: use progress status if completed, otherwise use scan status
   const effectiveStatus = (progress?.status === "completed") ? "completed" : scan.status
@@ -46,6 +47,13 @@ export function TableRow({
   // Check if progress info is displayed (with or without percent)
   const hasProgressInfo = isRunning && progress && progress.progress
   const hasProgressPercent = hasProgressInfo && progress.progress.progress_percent !== null && progress.progress.progress_percent !== undefined
+  
+  // Check if progress has meaningful data (not all zeros)
+  const hasProgressData = hasProgressInfo && (
+    (progress.progress.total_size?.bytes || 0) > 0 ||
+    (progress.progress.num_dir || 0) > 0 ||
+    (progress.progress.num_file || 0) > 0
+  )
   
   // Adjust padding based on density and whether progress info is shown
   // When progress info is shown, add extra top padding to prevent "Läuft" from touching the top
@@ -67,7 +75,7 @@ export function TableRow({
       {/* Status */}
       <td className={cn("px-3 sm:px-4", hasProgressInfo && "align-top")}>
         <div className={cn("flex flex-col", hasProgressInfo ? "gap-1.5 pt-0.5" : "gap-1.5")}>
-          <Badge variant={status.variant} className="w-fit">
+          <Badge variant={status.variant} className="w-fit justify-start">
             <StatusIcon
               className={cn(
                 "h-3.5 w-3.5",
@@ -85,36 +93,51 @@ export function TableRow({
               }
             >
               <div className="w-full max-w-[200px] sm:max-w-[220px] cursor-help">
-                {hasProgressPercent && (
-                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden relative">
-                    {(progress.progress.finished || progress.status === "completed") ? (
-                      <div className="h-full bg-emerald-500 rounded-full w-full transition-all duration-500 animate-in fade-in" />
-                    ) : (
-                      <>
-                        <div 
-                          className="h-full bg-primary-500 rounded-full animate-pulse" 
-                          style={{ width: `${Math.min(100, Math.max(0, progress.progress.progress_percent || 0))}%` }} 
-                        />
-                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
-                      </>
+                {hasProgressData ? (
+                  <>
+                    {hasProgressPercent && (
+                      <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden relative mb-1">
+                        {(progress.progress.finished || progress.status === "completed") ? (
+                          <div className="h-full bg-emerald-500 rounded-full w-full transition-all duration-500 animate-in fade-in" />
+                        ) : (
+                          <>
+                            <div 
+                              className="h-full bg-primary-500 rounded-full animate-pulse" 
+                              style={{ width: `${Math.min(100, Math.max(0, progress.progress.progress_percent || 0))}%` }} 
+                            />
+                            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                          </>
+                        )}
+                      </div>
                     )}
+                    <div className={cn("text-[10px] text-slate-500", hasProgressPercent && "mt-0.5")}>
+                      <div className="flex items-center justify-between gap-1 flex-wrap">
+                        <span className="whitespace-nowrap">
+                          {formatSizeCompact(progress.progress.total_size)} • {(progress.progress.num_dir || 0).toLocaleString()} Ordner
+                        </span>
+                        {hasProgressPercent && (
+                          <span className={cn(
+                            "font-semibold flex-shrink-0",
+                            (progress.progress.finished || progress.status === "completed") 
+                              ? "text-emerald-600" 
+                              : "text-primary-600"
+                          )}>
+                            {progress.progress.progress_percent}%
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5">
+                        <span className="whitespace-nowrap">
+                          {(progress.progress.num_file || 0).toLocaleString()} Dateien
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-[10px] text-slate-500 italic">
+                    Warte auf Ergebnisse...
                   </div>
                 )}
-                <div className={cn("text-[10px] text-slate-500 flex items-center justify-between gap-1", hasProgressPercent && "mt-0.5")}>
-                  <span className="truncate flex-1">
-                    {formatSizeCompact(progress.progress.total_size)} • {(progress.progress.num_dir || 0).toLocaleString()} Ordner • {(progress.progress.num_file || 0).toLocaleString()} Dateien
-                  </span>
-                  {hasProgressPercent && (
-                    <span className={cn(
-                      "font-semibold flex-shrink-0",
-                      (progress.progress.finished || progress.status === "completed") 
-                        ? "text-emerald-600" 
-                        : "text-primary-600"
-                    )}>
-                      {progress.progress.progress_percent}%
-                    </span>
-                  )}
-                </div>
               </div>
             </Tooltip>
           )}
@@ -125,11 +148,16 @@ export function TableRow({
       <td className="px-3 sm:px-4 min-w-0">
         <button
           onClick={() => onShowDetail(scan)}
-          className="font-medium text-slate-900 hover:text-primary-600 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded truncate block w-full"
+          className="font-normal text-slate-700 hover:text-primary-600 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded truncate block w-full"
           aria-label={`Details für ${scan.scan_name} anzeigen`}
         >
-          {scan.scan_name}
+          <span className="truncate">{scan.scan_name}</span>
         </button>
+      </td>
+
+      {/* ID */}
+      <td className={cn("px-3 sm:px-4 whitespace-nowrap", density === "compact" && "text-sm")}>
+        <span className="font-mono text-xs text-slate-600">{scan.scan_slug}</span>
       </td>
 
       {/* Last Run */}
@@ -156,6 +184,13 @@ export function TableRow({
         ) : (
           <span className="text-slate-400 text-xs">-</span>
         )}
+      </td>
+
+      {/* Interval */}
+      <td className={cn("px-3 sm:px-4 whitespace-nowrap", density === "compact" && "text-sm")}>
+        <span className="text-xs text-slate-600 font-mono">
+          {scan.interval || "-"}
+        </span>
       </td>
 
       {/* Info */}

@@ -31,6 +31,7 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
   if (!open || !scan) return null
 
   const baseUrl = window.location.origin
+  const scanSlug = scan.scan_slug
   const scanName = scan.scan_name
 
   const apiEndpoints = [
@@ -38,41 +39,41 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
       title: "Scan-Ergebnisse",
       description: "Neueste Ergebnisse dieses Scans abrufen",
       method: "GET",
-      endpoint: `${API_BASE}/scans/${scanName}/results`,
-      url: `${baseUrl}${API_BASE}/scans/${scanName}/results`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanName}/results"`,
+      endpoint: `${API_BASE}/scans/${scanSlug}/results`,
+      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/results`,
+      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/results"`,
     },
     {
       title: "Scan-Historie",
       description: "Komplette Historie aller Ergebnisse dieses Scans",
       method: "GET",
-      endpoint: `${API_BASE}/scans/${scanName}/history`,
-      url: `${baseUrl}${API_BASE}/scans/${scanName}/history`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanName}/history"`,
+      endpoint: `${API_BASE}/scans/${scanSlug}/history`,
+      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/history`,
+      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/history"`,
     },
     {
       title: "Scan-Status",
       description: "Aktuellen Status dieses Scans abrufen",
       method: "GET",
-      endpoint: `${API_BASE}/scans/${scanName}/status`,
-      url: `${baseUrl}${API_BASE}/scans/${scanName}/status`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanName}/status"`,
+      endpoint: `${API_BASE}/scans/${scanSlug}/status`,
+      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/status`,
+      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/status"`,
     },
     {
       title: "Scan-Progress",
       description: "Fortschritt eines laufenden Scans (nur wenn Scan läuft)",
       method: "GET",
-      endpoint: `${API_BASE}/scans/${scanName}/progress`,
-      url: `${baseUrl}${API_BASE}/scans/${scanName}/progress`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanName}/progress"`,
+      endpoint: `${API_BASE}/scans/${scanSlug}/progress`,
+      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/progress`,
+      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/progress"`,
     },
     {
       title: "Scan starten",
       description: "Diesen Scan manuell starten",
       method: "POST",
-      endpoint: `${API_BASE}/scans/${scanName}/trigger`,
-      url: `${baseUrl}${API_BASE}/scans/${scanName}/trigger`,
-      curl: `curl -X POST "${baseUrl}${API_BASE}/scans/${scanName}/trigger"`,
+      endpoint: `${API_BASE}/scans/${scanSlug}/trigger`,
+      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/trigger`,
+      curl: `curl -X POST "${baseUrl}${API_BASE}/scans/${scanSlug}/trigger"`,
     },
   ]
 
@@ -97,7 +98,7 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
               Job-spezifische API-Endpunkte
             </h3>
             <p className="text-sm text-blue-800">
-              Diese URLs und cURL-Befehle sind spezifisch für den Scan-Job <strong>"{scanName}"</strong>. 
+              Diese URLs und cURL-Befehle sind spezifisch für den Scan-Job <strong>"{scanName}"</strong> (ID: <code className="bg-white px-1 py-0.5 rounded text-xs">{scanSlug}</code>). 
               Verwenden Sie diese Endpunkte, um die Ergebnisse dieses Scans in Ihr Monitoring-System zu integrieren.
             </p>
           </div>
@@ -202,7 +203,7 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
                 <strong className="text-slate-900">Monitoring-Script (Bash):</strong>
                 <pre className="mt-1 text-xs bg-white p-2 rounded border border-slate-200 overflow-x-auto">
                   <code>{`# Scan-Ergebnisse abrufen
-RESULT=$(curl -s "${baseUrl}${API_BASE}/scans/${scanName}/results")
+RESULT=$(curl -s "${baseUrl}${API_BASE}/scans/${scanSlug}/results")
 echo "$RESULT" | jq '.results[0].total_size.bytes'`}</code>
                 </pre>
               </div>
@@ -210,7 +211,7 @@ echo "$RESULT" | jq '.results[0].total_size.bytes'`}</code>
                 <strong className="text-slate-900">Python-Integration:</strong>
                 <pre className="mt-1 text-xs bg-white p-2 rounded border border-slate-200 overflow-x-auto">
                   <code>{`import requests
-response = requests.get("${baseUrl}${API_BASE}/scans/${scanName}/results")
+response = requests.get("${baseUrl}${API_BASE}/scans/${scanSlug}/results")
 data = response.json()
 print(f"Gesamtgröße: {data['results'][0]['total_size']['formatted']}")`}</code>
                 </pre>

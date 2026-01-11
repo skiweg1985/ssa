@@ -48,7 +48,8 @@ class ScanResultItem(BaseModel):
 
 class ScanResult(BaseModel):
     """Vollständiges Scan-Ergebnis mit Timestamp"""
-    scan_name: str = Field(..., description="Name des Scan-Tasks")
+    scan_slug: str = Field(..., description="Slug des Scan-Tasks")
+    scan_name: str = Field(..., description="Name des Scan-Tasks (für Anzeige)")
     timestamp: datetime = Field(..., description="Zeitstempel des Scans (ISO 8601)")
     status: str = Field(..., description="Status: 'running', 'completed', 'failed'")
     results: List[ScanResultItem] = Field(default_factory=list, description="Liste der Scan-Ergebnisse")
@@ -66,6 +67,7 @@ class NASConfigPublic(BaseModel):
 
 class ScanStatus(BaseModel):
     """Status eines Scan-Tasks"""
+    scan_slug: str = Field(..., description="Slug des Scan-Tasks")
     scan_name: str = Field(..., description="Name des Scan-Tasks")
     status: str = Field(..., description="Status: 'running', 'completed', 'failed', 'pending'")
     last_run: Optional[datetime] = Field(None, description="Zeitpunkt des letzten Laufs")
@@ -85,13 +87,13 @@ class ScanListResponse(BaseModel):
 
 class TriggerResponse(BaseModel):
     """Response für manuellen Scan-Trigger"""
-    scan_name: str = Field(..., description="Name des Scan-Tasks")
+    scan_slug: str = Field(..., description="Slug des Scan-Tasks")
     message: str = Field(..., description="Status-Meldung")
     triggered: bool = Field(..., description="Ob der Scan erfolgreich gestartet wurde")
 
 
 class ScanHistoryResponse(BaseModel):
     """Response für Scan-Historie"""
-    scan_name: str = Field(..., description="Name des Scan-Tasks")
+    scan_slug: str = Field(..., description="Slug des Scan-Tasks")
     results: List[ScanResult] = Field(..., description="Liste aller Scan-Ergebnisse")
     total_count: int = Field(..., description="Gesamtanzahl der Ergebnisse")

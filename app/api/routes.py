@@ -30,13 +30,13 @@ async def get_scans():
         
         for scan_config in config.scans:
             # Prüfe zuerst, ob Scan gerade läuft
-            is_running = scanner_service.is_scan_running(scan_config.name)
+            is_running = scanner_service.is_scan_running(scan_config.slug)
             
             # Hole letztes Ergebnis
-            latest_result = storage.get_latest_result(scan_config.name)
+            latest_result = storage.get_latest_result(scan_config.slug)
             
             # Hole Job-Info vom Scheduler
-            job_info = scheduler_service.get_job_info(scan_config.name)
+            job_info = scheduler_service.get_job_info(scan_config.slug)
             
             status = "pending"
             last_run = None
@@ -64,6 +64,7 @@ async def get_scans():
                 )
             
             scan_status = ScanStatus(
+                scan_slug=scan_config.slug,
                 scan_name=scan_config.name,
                 status=status,
                 last_run=last_run,
@@ -83,26 +84,27 @@ async def get_scans():
         raise HTTPException(status_code=500, detail=f"Fehler beim Laden der Scans: {str(e)}")
 
 
-@router.get("/scans/{scan_name}", response_model=ScanStatus)
-async def get_scan(scan_name: str):
+@router.get("/scans/{scan_identifier}", response_model=ScanStatus)
+async def get_scan(scan_identifier: str):
     """
     Gibt Details eines spezifischen Scans zurück
+    Unterstützt slug oder name als Identifier
     """
     try:
         config = load_config()
-        scan_config = get_scan_config(config, scan_name)
+        scan_config = get_scan_config(config, scan_identifier)
         
         if not scan_config:
-            raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
         
         # Prüfe zuerst, ob Scan gerade läuft
-        is_running = scanner_service.is_scan_running(scan_name)
+        is_running = scanner_service.is_scan_running(scan_config.slug)
         
         # Hole letztes Ergebnis
-        latest_result = storage.get_latest_result(scan_name)
+        latest_result = storage.get_latest_result(scan_config.slug)
         
         # Hole Job-Info vom Scheduler
-        job_info = scheduler_service.get_job_info(scan_name)
+        job_info = scheduler_service.get_job_info(scan_config.slug)
         
         status = "pending"
         last_run = None
@@ -130,7 +132,8 @@ async def get_scan(scan_name: str):
             )
         
         return ScanStatus(
-            scan_name=scan_name,
+            scan_slug=scan_config.slug,
+            scan_name=scan_config.name,
             status=status,
             last_run=last_run,
             next_run=next_run,
@@ -148,21 +151,21 @@ async def get_scan(scan_name: str):
         raise HTTPException(status_code=500, detail=f"Fehler beim Laden des Scans: {str(e)}")
 
 
-@router.get("/scans/{scan_name}/status", response_model=ScanStatus)
-async def get_scan_status(scan_name: str):
+@router.get("/scans/{scan_identifier}/status", response_model=ScanStatus)
+async def get_scan_status(scan_identifier: str):
     """
     Gibt den Status eines Scans zurück
     """
-    return await get_scan(scan_name)
+    return await get_scan(scan_identifier)
 
 
-@router.get("/scans/{scan_name}/progress")
-async def get_scan_progress(scan_name: str):
+@router.get("/scans/{scan_identifier}/progress")
+async def get_scan_progress(scan_identifier: str):
     """
     Gibt die aktuellen intermediären Status-Informationen eines laufenden Scans zurück.
     
     Args:
-        scan_name: Name des Scans
+        scan_identifier: Slug oder Name des Scans
     
     Returns:
         Dict mit Status-Informationen (num_dir, num_file, total_size, waited, finished, current_path, progress_percent)
@@ -173,30 +176,30 @@ async def get_scan_progress(scan_name: str):
     """
     try:
         config = load_config()
-        scan_config = get_scan_config(config, scan_name)
+        scan_config = get_scan_config(config, scan_identifier)
         
         if not scan_config:
-            raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
         
         # Prüfe ob Scan läuft
-        if not scanner_service.is_scan_running(scan_name):
+        if not scanner_service.is_scan_running(scan_config.slug):
             raise HTTPException(
                 status_code=404,
-                detail=f"Scan '{scan_name}' läuft aktuell nicht"
+                detail=f"Scan '{scan_config.name}' läuft aktuell nicht"
             )
         
         # Hole Status-Informationen
-        progress = scanner_service.get_scan_progress(scan_name)
+        progress = scanner_service.get_scan_progress(scan_config.slug)
         
         if not progress:
             raise HTTPException(
                 status_code=404,
-                detail=f"Keine Status-Informationen für Scan '{scan_name}' verfügbar"
+                detail=f"Keine Status-Informationen für Scan '{scan_config.name}' verfügbar"
             )
         
         # Berechne Fortschritt basierend auf historischem Scan
         progress_percent = None
-        last_completed = storage.get_latest_completed_result(scan_name)
+        last_completed = storage.get_latest_completed_result(scan_config.slug)
         
         if last_completed and last_completed.results:
             # Hole path_status für pro-Ordner Berechnung
@@ -346,7 +349,8 @@ async def get_scan_progress(scan_name: str):
             response_status = "running"
         
         return {
-            "scan_name": scan_name,
+            "scan_slug": scan_config.slug,
+            "scan_name": scan_config.name,
             "status": response_status,
             "progress": progress_with_percent
         }
@@ -357,36 +361,36 @@ async def get_scan_progress(scan_name: str):
         raise HTTPException(status_code=500, detail=f"Fehler beim Abrufen des Status: {str(e)}")
 
 
-@router.get("/scans/{scan_name}/results", response_model=ScanResult)
-async def get_scan_results(scan_name: str, latest: bool = True):
+@router.get("/scans/{scan_identifier}/results", response_model=ScanResult)
+async def get_scan_results(scan_identifier: str, latest: bool = True):
     """
     Gibt die Ergebnisse eines Scans zurück
     
     Args:
-        scan_name: Name des Scans
+        scan_identifier: Slug oder Name des Scans
         latest: Wenn True, nur das neueste Ergebnis. Wenn False, alle Ergebnisse.
     """
     try:
         config = load_config()
-        scan_config = get_scan_config(config, scan_name)
+        scan_config = get_scan_config(config, scan_identifier)
         
         if not scan_config:
-            raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
         
         if latest:
-            result = storage.get_latest_result(scan_name)
+            result = storage.get_latest_result(scan_config.slug)
             if not result:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Keine Ergebnisse für Scan '{scan_name}' gefunden"
+                    detail=f"Keine Ergebnisse für Scan '{scan_config.name}' gefunden"
                 )
             return result
         else:
-            results = storage.get_all_results(scan_name)
+            results = storage.get_all_results(scan_config.slug)
             if not results:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Keine Ergebnisse für Scan '{scan_name}' gefunden"
+                    detail=f"Keine Ergebnisse für Scan '{scan_config.name}' gefunden"
                 )
             # Gibt das neueste zurück (letztes in der Liste)
             return results[-1]
@@ -397,30 +401,30 @@ async def get_scan_results(scan_name: str, latest: bool = True):
         raise HTTPException(status_code=500, detail=f"Fehler beim Laden der Ergebnisse: {str(e)}")
 
 
-@router.get("/scans/{scan_name}/history", response_model=ScanHistoryResponse)
-async def get_scan_history(scan_name: str):
+@router.get("/scans/{scan_identifier}/history", response_model=ScanHistoryResponse)
+async def get_scan_history(scan_identifier: str):
     """
     Gibt die komplette Historie aller Ergebnisse eines Scans zurück
     
     Args:
-        scan_name: Name des Scans
+        scan_identifier: Slug oder Name des Scans
     """
     try:
         config = load_config()
-        scan_config = get_scan_config(config, scan_name)
+        scan_config = get_scan_config(config, scan_identifier)
         
         if not scan_config:
-            raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
         
-        results = storage.get_all_results(scan_name)
+        results = storage.get_all_results(scan_config.slug)
         if not results:
             raise HTTPException(
                 status_code=404,
-                detail=f"Keine Ergebnisse für Scan '{scan_name}' gefunden"
+                detail=f"Keine Ergebnisse für Scan '{scan_config.name}' gefunden"
             )
         
         return ScanHistoryResponse(
-            scan_name=scan_name,
+            scan_slug=scan_config.slug,
             results=results,
             total_count=len(results)
         )
@@ -431,27 +435,27 @@ async def get_scan_history(scan_name: str):
         raise HTTPException(status_code=500, detail=f"Fehler beim Laden der Historie: {str(e)}")
 
 
-@router.post("/scans/{scan_name}/trigger", response_model=TriggerResponse)
-async def trigger_scan(scan_name: str, background_tasks: BackgroundTasks):
+@router.post("/scans/{scan_identifier}/trigger", response_model=TriggerResponse)
+async def trigger_scan(scan_identifier: str, background_tasks: BackgroundTasks):
     """
     Startet einen Scan manuell
     
     Args:
-        scan_name: Name des Scans
+        scan_identifier: Slug oder Name des Scans
         background_tasks: FastAPI BackgroundTasks für asynchrone Ausführung
     """
     try:
         config = load_config()
-        scan_config = get_scan_config(config, scan_name)
+        scan_config = get_scan_config(config, scan_identifier)
         
         if not scan_config:
-            raise HTTPException(status_code=404, detail=f"Scan '{scan_name}' nicht gefunden")
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
         
         # Prüfe ob bereits ein Scan läuft
-        if scanner_service.is_scan_running(scan_name):
+        if scanner_service.is_scan_running(scan_config.slug):
             return TriggerResponse(
-                scan_name=scan_name,
-                message=f"Scan '{scan_name}' läuft bereits",
+                scan_slug=scan_config.slug,
+                message=f"Scan '{scan_config.name}' läuft bereits",
                 triggered=False
             )
         
@@ -459,8 +463,8 @@ async def trigger_scan(scan_name: str, background_tasks: BackgroundTasks):
         background_tasks.add_task(scanner_service.run_scan, scan_config)
         
         return TriggerResponse(
-            scan_name=scan_name,
-            message=f"Scan '{scan_name}' wurde gestartet",
+            scan_slug=scan_config.slug,
+            message=f"Scan '{scan_config.name}' wurde gestartet",
             triggered=True
         )
     
@@ -521,20 +525,20 @@ async def get_storage_stats():
 @router.get("/storage/folders")
 async def get_all_folders(
     nas_host: Optional[str] = None,
-    scan_name: Optional[str] = None
+    scan_slug: Optional[str] = None
 ):
     """
     Gibt alle eindeutigen Ordner/Pfade zurück
     
     Args:
         nas_host: Optional: Filter nach NAS-Host
-        scan_name: Optional: Filter nach Scan-Name
+        scan_slug: Optional: Filter nach Scan-Slug
     
     Returns:
         Liste von Objekten mit nas_host und folder_path
     """
     try:
-        folders = storage.get_all_folders(nas_host=nas_host, scan_name=scan_name)
+        folders = storage.get_all_folders(nas_host=nas_host, scan_slug=scan_slug)
         return {
             "folders": [
                 {"nas_host": nas, "folder_path": folder}
@@ -551,7 +555,7 @@ async def get_cleanup_preview(
     days: int = 90,
     nas_host: Optional[str] = None,
     folder_path: Optional[str] = None,
-    scan_name: Optional[str] = None
+    scan_slug: Optional[str] = None
 ):
     """
     Zeigt Vorschau der Bereinigung ohne zu löschen
@@ -560,7 +564,7 @@ async def get_cleanup_preview(
         days: Anzahl der Tage (Standard: 90)
         nas_host: Optional: Nur für dieses NAS
         folder_path: Optional: Nur für diesen Ordner
-        scan_name: Optional: Nur für diesen Scan
+        scan_slug: Optional: Nur für diesen Scan (anhand slug)
     
     Returns:
         Dictionary mit Vorschau-Statistiken
@@ -570,7 +574,7 @@ async def get_cleanup_preview(
             days=days,
             nas_host=nas_host,
             folder_path=folder_path,
-            scan_name=scan_name,
+            scan_slug=scan_slug,
             dry_run=True
         )
     except Exception as e:
@@ -582,7 +586,7 @@ async def cleanup_storage(
     days: Optional[int] = None,
     nas_host: Optional[str] = None,
     folder_path: Optional[str] = None,
-    scan_name: Optional[str] = None
+    scan_slug: Optional[str] = None
 ):
     """
     Bereinigt alte Scan-Ergebnisse
@@ -591,7 +595,7 @@ async def cleanup_storage(
         days: Anzahl der Tage (None = verwendet Standard aus Storage-Konfiguration)
         nas_host: Optional: Nur für dieses NAS
         folder_path: Optional: Nur für diesen Ordner
-        scan_name: Optional: Nur für diesen Scan
+        scan_slug: Optional: Nur für diesen Scan (anhand slug)
     
     Returns:
         Dictionary mit Statistiken über die Bereinigung
@@ -601,7 +605,7 @@ async def cleanup_storage(
             days=days,
             nas_host=nas_host,
             folder_path=folder_path,
-            scan_name=scan_name,
+            scan_slug=scan_slug,
             dry_run=False
         )
         return {
@@ -617,31 +621,31 @@ async def cleanup_storage(
 async def delete_folder_results(
     nas_host: Optional[str] = None,
     folder_path: Optional[str] = None,
-    scan_name: Optional[str] = None
+    scan_slug: Optional[str] = None
 ):
     """
     Löscht Ergebnisse für spezifische Ordner/Pfade
     
     Args:
         nas_host: Optional: Nur für dieses NAS
-        folder_path: Pfad des Ordners (erforderlich wenn nas_host oder scan_name nicht gesetzt)
-        scan_name: Optional: Nur für diesen Scan
+        folder_path: Pfad des Ordners (erforderlich wenn nas_host oder scan_slug nicht gesetzt)
+        scan_slug: Optional: Nur für diesen Scan (anhand slug)
     
     Returns:
         Dictionary mit Anzahl gelöschter Einträge
     """
     try:
         # Validierung: Mindestens ein Parameter muss gesetzt sein
-        if not nas_host and not folder_path and not scan_name:
+        if not nas_host and not folder_path and not scan_slug:
             raise HTTPException(
                 status_code=400,
-                detail="Mindestens einer der Parameter (nas_host, folder_path, scan_name) muss gesetzt sein"
+                detail="Mindestens einer der Parameter (nas_host, folder_path, scan_slug) muss gesetzt sein"
             )
         
         deleted = storage.delete_folder_results(
             nas_host=nas_host,
             folder_path=folder_path,
-            scan_name=scan_name
+            scan_slug=scan_slug
         )
         
         return {
@@ -655,22 +659,28 @@ async def delete_folder_results(
         raise HTTPException(status_code=500, detail=f"Fehler beim Löschen: {str(e)}")
 
 
-@router.delete("/storage/scans/{scan_name}")
-async def delete_scan_results(scan_name: str):
+@router.delete("/storage/scans/{scan_identifier}")
+async def delete_scan_results(scan_identifier: str):
     """
     Löscht alle Ergebnisse eines Scans
     
     Args:
-        scan_name: Name des Scans
+        scan_identifier: Slug oder Name des Scans
     
     Returns:
         Erfolgsmeldung
     """
     try:
-        storage.clear_results(scan_name=scan_name)
+        config = load_config()
+        scan_config = get_scan_config(config, scan_identifier)
+        
+        if not scan_config:
+            raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
+        
+        storage.clear_results(scan_slug=scan_config.slug)
         return {
             "success": True,
-            "message": f"Alle Ergebnisse für Scan '{scan_name}' wurden gelöscht"
+            "message": f"Alle Ergebnisse für Scan '{scan_config.name}' wurden gelöscht"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler beim Löschen: {str(e)}")

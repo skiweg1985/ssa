@@ -29,46 +29,49 @@ class ScannerService:
     
     def __init__(self):
         """Initialisiert den Scanner Service"""
-        self._running_scans: dict[str, bool] = {}  # Track laufende Scans
-        self._scan_status: dict[str, dict] = {}  # Intermediäre Status-Informationen für laufende Scans
-        self._scan_finished_at: dict[str, datetime] = {}  # Timestamp wann Scan beendet wurde (für Grace Period)
+        self._running_scans: dict[str, bool] = {}  # Track laufende Scans (Key: scan_slug)
+        self._scan_status: dict[str, dict] = {}  # Intermediäre Status-Informationen für laufende Scans (Key: scan_slug)
+        self._scan_finished_at: dict[str, datetime] = {}  # Timestamp wann Scan beendet wurde (für Grace Period, Key: scan_slug)
     
-    def is_scan_running(self, scan_name: str) -> bool:
+    def is_scan_running(self, scan_slug: str) -> bool:
         """
         Prüft ob ein Scan aktuell läuft oder kürzlich beendet wurde.
         
         Ein Scan gilt als "laufend" wenn:
         - Er aktiv läuft, ODER
         - Er innerhalb der letzten 5 Sekunden beendet wurde (Grace Period für Frontend)
+        
+        Args:
+            scan_slug: Slug des Scans
         """
-        if self._running_scans.get(scan_name, False):
+        if self._running_scans.get(scan_slug, False):
             return True
         
         # Prüfe ob Scan kürzlich beendet wurde (Grace Period: 5 Sekunden)
-        if scan_name in self._scan_finished_at:
-            finished_at = self._scan_finished_at[scan_name]
+        if scan_slug in self._scan_finished_at:
+            finished_at = self._scan_finished_at[scan_slug]
             time_since_finished = (datetime.now(timezone.utc) - finished_at).total_seconds()
             if time_since_finished < 5:  # 5 Sekunden Grace Period
                 return True
             else:
                 # Grace Period abgelaufen, entferne Eintrag
-                del self._scan_finished_at[scan_name]
-                if scan_name in self._scan_status:
-                    del self._scan_status[scan_name]
+                del self._scan_finished_at[scan_slug]
+                if scan_slug in self._scan_status:
+                    del self._scan_status[scan_slug]
         
         return False
     
-    def get_scan_progress(self, scan_name: str) -> Optional[dict]:
+    def get_scan_progress(self, scan_slug: str) -> Optional[dict]:
         """
         Gibt die aktuellen intermediären Status-Informationen eines laufenden Scans zurück.
         
         Args:
-            scan_name: Name des Scans
+            scan_slug: Slug des Scans
             
         Returns:
             Dict mit Status-Informationen oder None wenn Scan nicht läuft
         """
-        return self._scan_status.get(scan_name)
+        return self._scan_status.get(scan_slug)
     
     def _normalize_path(self, path: str) -> str:
         """
@@ -88,17 +91,17 @@ class ScannerService:
             normalized = f"/{normalized}"
         return normalized
     
-    def _aggregate_path_status(self, scan_name: str) -> None:
+    def _aggregate_path_status(self, scan_slug: str) -> None:
         """
         Aggregiert die Status-Werte aller Pfade für einen Scan.
         
         Args:
-            scan_name: Name des Scans
+            scan_slug: Slug des Scans
         """
-        if scan_name not in self._scan_status:
+        if scan_slug not in self._scan_status:
             return
         
-        current_status = self._scan_status[scan_name]
+        current_status = self._scan_status[scan_slug]
         
         # Initialisiere path_status falls nicht vorhanden
         if "path_status" not in current_status:
@@ -160,14 +163,16 @@ class ScannerService:
         Returns:
             ScanResult mit Timestamp
         """
+        scan_slug = scan_config.slug
         scan_name = scan_config.name
         start_time = datetime.now(timezone.utc)
         
         # Prüfe ob bereits ein Scan läuft
-        if self.is_scan_running(scan_name):
+        if self.is_scan_running(scan_slug):
             logger.warning(f"Scan '{scan_name}' läuft bereits")
             # Erstelle ein temporäres "running" Result (wird nicht gespeichert)
             return ScanResult(
+                scan_slug=scan_slug,
                 scan_name=scan_name,
                 timestamp=datetime.now(timezone.utc),
                 status="running",
@@ -176,11 +181,11 @@ class ScannerService:
         
         # Markiere Scan als laufend und initialisiere Status
         # Entferne alte Grace-Period-Daten falls vorhanden
-        if scan_name in self._scan_finished_at:
-            del self._scan_finished_at[scan_name]
+        if scan_slug in self._scan_finished_at:
+            del self._scan_finished_at[scan_slug]
         
-        self._running_scans[scan_name] = True
-        self._scan_status[scan_name] = {
+        self._running_scans[scan_slug] = True
+        self._scan_status[scan_slug] = {
             "num_dir": 0,
             "num_file": 0,
             "total_size": 0,
@@ -196,6 +201,7 @@ class ScannerService:
         # WICHTIG: "running" Status wird NICHT gespeichert, nur in-memory gehalten
         timestamp = datetime.now(timezone.utc)
         scan_result = ScanResult(
+            scan_slug=scan_slug,
             scan_name=scan_name,
             timestamp=timestamp,
             status="running",
@@ -228,7 +234,7 @@ class ScannerService:
                 scan_result.error = error_msg
                 scan_result.timestamp = datetime.now(timezone.utc)
                 # Speichere fehlgeschlagenen Scan
-                storage.add_result(scan_name, scan_result, scan_config.nas.host)
+                storage.add_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
                 return scan_result
             
             logger.info(f"Scan '{scan_name}': Login erfolgreich")
@@ -244,14 +250,14 @@ class ScannerService:
                     scan_result.error = error_msg
                     scan_result.timestamp = datetime.now(timezone.utc)
                     # Speichere fehlgeschlagenen Scan
-                    storage.add_result(scan_name, scan_result, scan_config.nas.host)
+                    storage.add_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
                     return scan_result
                 
                 logger.info(f"Scan '{scan_name}': {len(paths)} Pfad(e) zum Scannen gefunden: {paths}")
                 
                 # Speichere erwartete Pfade im Status für korrekte finished-Prüfung (normalisiert)
-                if scan_name in self._scan_status:
-                    self._scan_status[scan_name]["expected_paths"] = [
+                if scan_slug in self._scan_status:
+                    self._scan_status[scan_slug]["expected_paths"] = [
                         self._normalize_path(path) for path in paths
                     ]
                 
@@ -263,8 +269,8 @@ class ScannerService:
                     """Erstellt einen Callback für Status-Updates für einen spezifischen Pfad"""
                     def update_scan_status(status_info: dict):
                         """Aktualisiert den intermediären Status des Scans für einen spezifischen Pfad"""
-                        if scan_name in self._running_scans:
-                            current_status = self._scan_status.get(scan_name, {})
+                        if scan_slug in self._running_scans:
+                            current_status = self._scan_status.get(scan_slug, {})
                             
                             # Initialisiere path_status falls nicht vorhanden
                             if "path_status" not in current_status:
@@ -281,12 +287,12 @@ class ScannerService:
                             }
                             
                             # Aggregiere Werte aus allen Pfaden
-                            self._aggregate_path_status(scan_name)
+                            self._aggregate_path_status(scan_slug)
                             
                             # Aktualisiere current_path
-                            current_status = self._scan_status.get(scan_name, {})
+                            current_status = self._scan_status.get(scan_slug, {})
                             current_status["current_path"] = path_to_scan
-                            self._scan_status[scan_name] = current_status
+                            self._scan_status[scan_slug] = current_status
                     
                     return update_scan_status
                 
@@ -309,8 +315,8 @@ class ScannerService:
                         if result is None:
                             logger.warning(f"Scan '{scan_name}': [{idx}/{len(paths)}] Scan von '{path}' fehlgeschlagen - keine Ergebnisse erhalten")
                             # Markiere Pfad als fertig (fehlgeschlagen) im Status (normalisiert)
-                            if scan_name in self._scan_status:
-                                current_status = self._scan_status.get(scan_name, {})
+                            if scan_slug in self._scan_status:
+                                current_status = self._scan_status.get(scan_slug, {})
                                 if "path_status" not in current_status:
                                     current_status["path_status"] = {}
                                 normalized_path = self._normalize_path(path)
@@ -321,9 +327,9 @@ class ScannerService:
                                     "waited": 0,
                                     "finished": True
                                 }
-                                self._scan_status[scan_name] = current_status
+                                self._scan_status[scan_slug] = current_status
                                 # Re-aggregiere Werte
-                                self._aggregate_path_status(scan_name)
+                                self._aggregate_path_status(scan_slug)
                             
                             result_items.append(ScanResultItem(
                                 folder_name=path,
@@ -333,8 +339,8 @@ class ScannerService:
                             continue
                         
                         # Aktualisiere finalen Status für diesen Pfad mit den Ergebnissen (normalisiert)
-                        if scan_name in self._scan_status:
-                            current_status = self._scan_status.get(scan_name, {})
+                        if scan_slug in self._scan_status:
+                            current_status = self._scan_status.get(scan_slug, {})
                             if "path_status" not in current_status:
                                 current_status["path_status"] = {}
                             normalized_path = self._normalize_path(path)
@@ -345,9 +351,9 @@ class ScannerService:
                                 "waited": 0,
                                 "finished": True
                             }
-                            self._scan_status[scan_name] = current_status
+                            self._scan_status[scan_slug] = current_status
                             # Re-aggregiere Werte
-                            self._aggregate_path_status(scan_name)
+                            self._aggregate_path_status(scan_slug)
                         
                         # Konvertiere Ergebnis in ScanResultItem
                         size_info = api._format_size_with_unit(result['total_size'])
@@ -385,11 +391,11 @@ class ScannerService:
                 scan_result.timestamp = datetime.now(timezone.utc)  # Aktualisiere Timestamp
                 
                 # Stelle sicher, dass finished-Flag gesetzt ist, wenn alle Pfade gescannt wurden
-                if scan_name in self._scan_status:
+                if scan_slug in self._scan_status:
                     # Alle Pfade sind jetzt gescannt, setze finished auf True
-                    self._scan_status[scan_name]["finished"] = True
+                    self._scan_status[scan_slug]["finished"] = True
                     # Re-aggregiere um sicherzustellen, dass alles korrekt ist
-                    self._aggregate_path_status(scan_name)
+                    self._aggregate_path_status(scan_slug)
                 
                 total_duration = (datetime.now(timezone.utc) - start_time).total_seconds()
                 successful = sum(1 for r in result_items if r.success)
@@ -429,16 +435,16 @@ class ScannerService:
         
         finally:
             # Markiere Scan als beendet, aber behalte Status für Grace Period
-            self._running_scans[scan_name] = False
+            self._running_scans[scan_slug] = False
             # Speichere Timestamp für Grace Period (5 Sekunden)
-            if scan_name in self._scan_status:
-                self._scan_finished_at[scan_name] = datetime.now(timezone.utc)
+            if scan_slug in self._scan_status:
+                self._scan_finished_at[scan_slug] = datetime.now(timezone.utc)
                 # Status bleibt erhalten für Grace Period
         
         # Speichere nur abgeschlossene Scans (completed oder failed)
         # "running" Status wird nicht gespeichert
         if scan_result.status != "running":
-            storage.add_result(scan_name, scan_result, scan_config.nas.host)
+            storage.add_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
         
         return scan_result
     

@@ -1,4 +1,5 @@
 """Config Models für YAML-Parsing"""
+from datetime import datetime, timezone
 from typing import Optional, List
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,6 +17,8 @@ class NASConfigYAML(BaseModel):
 class ScanTaskConfigYAML(BaseModel):
     """Scan-Task Konfiguration aus YAML"""
     name: str
+    slug: Optional[str] = None  # Optional: URL-freundlicher Slug (wird automatisch generiert wenn nicht angegeben)
+    created_at: Optional[datetime] = None  # Optional: Erstellungsdatum (wird automatisch gesetzt wenn nicht angegeben)
     nas: NASConfigYAML
     # Listen für mehrere Werte
     shares: Optional[List[str]] = None
@@ -77,3 +80,31 @@ class ConfigYAML(BaseModel):
     """Haupt-Konfiguration aus YAML"""
     scans: list[ScanTaskConfigYAML]
     storage: Optional[StorageConfigYAML] = None  # Optional: Storage-Konfiguration
+    
+    @model_validator(mode='after')
+    def generate_ids(self):
+        """
+        Generiert automatisch Slugs für alle Scans, die keine haben,
+        setzt Erstellungsdatum wenn nicht vorhanden,
+        und stellt sicher, dass alle Slugs eindeutig sind.
+        """
+        from app.utils.slug import generate_slug, ensure_unique_slugs
+        
+        # Setze Erstellungsdatum für alle Scans, die keines haben
+        for scan in self.scans:
+            if scan.created_at is None:
+                scan.created_at = datetime.now(timezone.utc)
+        
+        # Generiere Slugs für alle Scans, die keine haben
+        slugs = []
+        for scan in self.scans:
+            if scan.slug is None:
+                scan.slug = generate_slug(scan.name)
+            slugs.append(scan.slug)
+        
+        # Stelle sicher, dass alle Slugs eindeutig sind
+        unique_slugs = ensure_unique_slugs(slugs)
+        for scan, slug in zip(self.scans, unique_slugs):
+            scan.slug = slug
+        
+        return self
