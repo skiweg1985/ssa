@@ -73,7 +73,7 @@ export function TableRow({
       )}
     >
       {/* Status */}
-      <td className={cn("px-3 sm:px-4", hasProgressInfo && "align-top")}>
+      <td className={cn("px-3 sm:px-4 min-w-[200px] w-[200px]", hasProgressInfo && "align-top")}>
         <div className={cn("flex flex-col min-w-0", hasProgressInfo ? "gap-1.5 pt-0.5" : "gap-1.5")}>
           <Badge variant={status.variant} className="w-fit justify-start min-w-fit whitespace-nowrap overflow-visible">
             <StatusIcon

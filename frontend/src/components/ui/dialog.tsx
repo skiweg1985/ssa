@@ -50,10 +50,10 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
   return (
     <DialogContext.Provider value={{ onOpenChange }}>
       <div
-        className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 animate-in fade-in"
+        className="fixed inset-0 z-[1000] flex items-start sm:items-center justify-center p-0 sm:p-4 bg-black/50 animate-in fade-in"
         style={{
           // Für iOS Safari: Berücksichtige safe-area-insets im Overlay
-          paddingTop: 'env(safe-area-inset-top)',
+          paddingTop: 'max(env(safe-area-inset-top), 1rem)',
           paddingBottom: 'env(safe-area-inset-bottom)',
           paddingLeft: 'env(safe-area-inset-left)',
           paddingRight: 'env(safe-area-inset-right)',
@@ -61,12 +61,12 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
         onClick={() => onOpenChange(false)}
       >
         <div
-          className="relative z-[1000] w-full h-[85vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-white dark:bg-slate-900 rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
+          className="relative z-[1000] w-full h-[92vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
           onClick={(e) => e.stopPropagation()}
           style={{
             // Für iOS Safari: verwende dvh (dynamic viewport height) wenn verfügbar, fallback zu vh
             // Berücksichtige safe-area-insets für die Höhe (Overlay hat bereits Padding)
-            maxHeight: 'min(85dvh, 85vh)',
+            maxHeight: 'min(92dvh, 92vh)',
           }}
         >
           {children}
@@ -108,7 +108,7 @@ const DialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm text-slate-500", className)}
+    className={cn("text-sm text-slate-500 dark:text-slate-400", className)}
     {...props}
   />
 ))
@@ -135,7 +135,7 @@ DialogContent.displayName = "DialogContent"
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 border-t border-slate-200 px-6 py-4 bg-slate-50 flex-shrink-0",
+      "flex flex-row justify-end gap-2 border-t border-slate-200 dark:border-slate-700 px-6 py-4 bg-slate-50 dark:bg-slate-800 flex-shrink-0",
       className
     )}
     {...props}
@@ -163,8 +163,8 @@ const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
         ref={ref}
         type="button"
         className={cn(
-          "absolute right-4 top-4 z-10 rounded-sm opacity-70 ring-offset-white transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 touch-manipulation",
-          "min-w-[44px] min-h-[44px] flex items-center justify-center", // Mindestgröße für Touch-Targets
+          "absolute right-4 top-4 z-10 rounded-sm opacity-70 ring-offset-white dark:ring-offset-slate-900 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 touch-manipulation",
+          "min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-900 dark:text-slate-100", // Mindestgröße für Touch-Targets
           className
         )}
         onClick={handleClick}

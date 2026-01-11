@@ -5,7 +5,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -94,13 +93,10 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-4">
-        <div className="flex items-center justify-between">
-          <DialogTitle className="text-white flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            Storage-Management
-          </DialogTitle>
-          <DialogClose className="text-white hover:bg-white/20" />
-        </div>
+        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+          <Database className="h-5 w-5 flex-shrink-0" />
+          <span className="truncate">Storage-Management</span>
+        </DialogTitle>
       </DialogHeader>
 
       <DialogContent>
@@ -123,8 +119,8 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
           <TabsContent value="stats" className="mt-6">
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-                <span className="ml-2 text-slate-500">Lade Statistiken...</span>
+                <Loader2 className="h-6 w-6 animate-spin text-slate-400 dark:text-slate-500" />
+                <span className="ml-2 text-slate-500 dark:text-slate-400 dark:text-slate-500">Lade Statistiken...</span>
               </div>
             ) : error ? (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
@@ -136,31 +132,31 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
               </div>
             ) : stats ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm text-slate-600 mb-1">Scans</div>
-                  <div className="text-2xl font-bold text-slate-900">{stats.scan_count}</div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500 mb-1">Scans</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.scan_count}</div>
                 </div>
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm text-slate-600 mb-1">NAS-Systeme</div>
-                  <div className="text-2xl font-bold text-slate-900">{stats.nas_count}</div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500 mb-1">NAS-Systeme</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.nas_count}</div>
                 </div>
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm text-slate-600 mb-1">Ordner</div>
-                  <div className="text-2xl font-bold text-slate-900">{stats.folder_count}</div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500 mb-1">Ordner</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.folder_count}</div>
                 </div>
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm text-slate-600 mb-1">Gesamt Ergebnisse</div>
-                  <div className="text-2xl font-bold text-slate-900">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500 mb-1">Gesamt Ergebnisse</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">
                     {stats.total_results_db.toLocaleString()}
                   </div>
                 </div>
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm text-slate-600 mb-1">Datenbank-Größe</div>
-                  <div className="text-2xl font-bold text-slate-900">{stats.db_size_mb.toFixed(2)} MB</div>
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500 mb-1">Datenbank-Größe</div>
+                  <div className="text-2xl font-bold text-slate-900 dark:text-slate-100">{stats.db_size_mb.toFixed(2)} MB</div>
                 </div>
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm text-slate-600 mb-1">Auto-Bereinigung</div>
-                  <div className="text-sm font-semibold text-slate-900">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500 mb-1">Auto-Bereinigung</div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-slate-100">
                     {stats.auto_cleanup_enabled ? (
                       <span className="flex items-center gap-1.5">
                         <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -181,8 +177,8 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
           <TabsContent value="folders" className="mt-6">
             {loading ? (
               <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-                <span className="ml-2 text-slate-500">Lade Ordner...</span>
+                <Loader2 className="h-6 w-6 animate-spin text-slate-400 dark:text-slate-500" />
+                <span className="ml-2 text-slate-500 dark:text-slate-400 dark:text-slate-500">Lade Ordner...</span>
               </div>
             ) : error ? (
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
@@ -194,13 +190,13 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
               </div>
             ) : folders ? (
               <div className="space-y-4">
-                <div className="text-sm text-slate-600">{folders.count} Ordner gefunden</div>
+                <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500">{folders.count} Ordner gefunden</div>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
                   {folders.folders.map((folder, idx) => (
-                    <div key={idx} className="bg-slate-50 rounded-lg p-4 flex items-center justify-between">
+                    <div key={idx} className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 flex items-center justify-between">
                       <div>
-                        <div className="font-semibold text-slate-900">{folder.folder_path}</div>
-                        <div className="text-sm text-slate-600">{folder.nas_host}</div>
+                        <div className="font-semibold text-slate-900 dark:text-slate-100">{folder.folder_path}</div>
+                        <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500">{folder.nas_host}</div>
                       </div>
                       <Button
                         variant="destructive"
@@ -219,7 +215,7 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
           <TabsContent value="cleanup" className="mt-6">
             <div className="space-y-4">
               <div>
-                <label className="text-sm font-semibold text-slate-900 mb-2 block">
+                <label className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2 block">
                   Tage (älter als):
                 </label>
                 <Input
@@ -234,12 +230,12 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
                 Vorschau aktualisieren
               </Button>
               {cleanupPreview && (
-                <div className="bg-slate-50 rounded-lg p-4 space-y-2">
-                  <div className="text-sm text-slate-600">Gesamt Ergebnisse: {cleanupPreview.total_results}</div>
-                  <div className="text-sm text-slate-600">
+                <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-4 space-y-2">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500">Gesamt Ergebnisse: {cleanupPreview.total_results}</div>
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500">
                     Zu löschen: {cleanupPreview.results_to_delete}
                   </div>
-                  <div className="text-sm text-slate-600">
+                  <div className="text-sm text-slate-600 dark:text-slate-400 dark:text-slate-500">
                     Zu behalten: {cleanupPreview.results_to_keep}
                   </div>
                 </div>

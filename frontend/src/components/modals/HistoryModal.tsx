@@ -5,7 +5,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogFooter,
-  DialogClose,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -172,23 +171,20 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
-        <div className="flex items-center justify-between">
-          <DialogTitle className="text-white flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Historie: {scanName}
-          </DialogTitle>
-          <DialogClose className="text-white hover:bg-white/20" />
-        </div>
+        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+          <History className="h-5 w-5 flex-shrink-0" />
+          <span className="truncate">Historie: {scanName}</span>
+        </DialogTitle>
       </DialogHeader>
 
       <DialogContent>
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-            <span className="ml-2 text-slate-500">Lade Historie...</span>
+            <Loader2 className="h-6 w-6 animate-spin text-slate-400 dark:text-slate-500" />
+            <span className="ml-2 text-slate-500 dark:text-slate-400">Lade Historie...</span>
           </div>
         ) : error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-800 dark:text-red-300">
             <div className="font-semibold mb-1">Fehler beim Laden</div>
             <div className="text-sm">{error}</div>
             <Button variant="primary" size="sm" onClick={loadHistory} className="mt-3">
@@ -282,10 +278,10 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
 
               {/* Historie-Liste */}
               <div className="flex items-center justify-between mb-2">
-                <div className="text-sm text-slate-600">
+                <div className="text-sm text-slate-600 dark:text-slate-400">
                   {filteredHistory.length} von {history.total_count} Einträgen
                   {filter === "failed" && (
-                    <span className="ml-2 text-red-600 font-semibold">
+                    <span className="ml-2 text-red-600 dark:text-red-400 font-semibold">
                       ({filteredHistory.length} fehlerhafte)
                     </span>
                   )}
@@ -303,7 +299,7 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
               </div>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {filteredHistory.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500">
+                  <div className="text-center py-8 text-slate-500 dark:text-slate-400">
                     {filter === "failed" 
                       ? "Keine fehlerhaften Scans gefunden" 
                       : "Keine Einträge gefunden"}
@@ -316,23 +312,23 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
                       <button
                         key={idx}
                         onClick={() => setSelectedIndex(originalIdx)}
-                        className="w-full text-left bg-slate-50 rounded-lg p-4 hover:bg-slate-100 transition-colors border border-transparent hover:border-primary-200"
+                        className="w-full text-left bg-slate-50 dark:bg-slate-800 rounded-lg p-4 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors border border-transparent hover:border-primary-200 dark:hover:border-primary-700"
                       >
                         <div className="flex items-center justify-between mb-2">
-                          <div className="font-semibold text-sm">{formatDate(result.timestamp)}</div>
+                          <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">{formatDate(result.timestamp)}</div>
                           <Badge variant={getStatusConfig(result.status).variant}>
                             {getStatusConfig(result.status).text}
                           </Badge>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-slate-600">
+                        <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
                           <span>{result.results.length} Ergebnisse</span>
                           {totalSize > 0 && (
-                            <span className="font-semibold text-slate-900">
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">
                               Gesamt: {formatBytes(totalSize)}
                             </span>
                           )}
                           {result.status === "failed" && result.error && (
-                            <span className="text-red-600 text-xs truncate max-w-xs">
+                            <span className="text-red-600 dark:text-red-400 text-xs truncate max-w-xs">
                               {result.error}
                             </span>
                           )}
@@ -358,21 +354,21 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
               {selectedResult && (
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <div className="text-xs text-slate-600">Zeitstempel</div>
-                      <div className="font-semibold text-sm text-slate-900">
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
+                      <div className="text-xs text-slate-600 dark:text-slate-400">Zeitstempel</div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">
                         {formatDate(selectedResult.timestamp)}
                       </div>
                     </div>
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <div className="text-xs text-slate-600">Status</div>
-                      <div className="font-semibold text-sm text-slate-900">
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
+                      <div className="text-xs text-slate-600 dark:text-slate-400">Status</div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">
                         {getStatusConfig(selectedResult.status).text}
                       </div>
                     </div>
-                    <div className="bg-slate-50 rounded-lg p-2">
-                      <div className="text-xs text-slate-600">Anzahl Ergebnisse</div>
-                      <div className="font-semibold text-sm text-slate-900">
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-lg p-2">
+                      <div className="text-xs text-slate-600 dark:text-slate-400">Anzahl Ergebnisse</div>
+                      <div className="font-semibold text-sm text-slate-900 dark:text-slate-100">
                         {selectedResult.results.length}
                       </div>
                     </div>
@@ -380,35 +376,35 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
 
                   {selectedResult.results.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="font-semibold text-sm text-slate-900">Ergebnisse</h3>
-                      <div className="overflow-x-auto max-h-[300px] overflow-y-auto border border-slate-200 rounded-lg">
+                      <h3 className="font-semibold text-sm text-slate-900 dark:text-slate-100">Ergebnisse</h3>
+                      <div className="overflow-x-auto max-h-[300px] overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-lg">
                         <table className="w-full border-collapse">
-                          <thead className="bg-slate-50 border-b border-slate-200 sticky top-0">
+                          <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0">
                             <tr>
-                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600">Ordner</th>
-                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600">Größe</th>
-                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600">Dateien</th>
-                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600">Ordner</th>
-                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600">Status</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400">Ordner</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400">Größe</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400">Dateien</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400">Ordner</th>
+                              <th className="px-3 py-1.5 text-left text-xs font-semibold text-slate-600 dark:text-slate-400">Status</th>
                             </tr>
                           </thead>
                           <tbody>
                             {selectedResult.results.map((item, idx) => (
-                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50">
-                                <td className="px-3 py-1.5 text-xs">{item.folder_name}</td>
-                                <td className="px-3 py-1.5 text-xs font-mono">
+                              <tr key={idx} className="border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                <td className="px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100">{item.folder_name}</td>
+                                <td className="px-3 py-1.5 text-xs font-mono text-slate-900 dark:text-slate-100">
                                   {item.total_size ? formatSize(item.total_size) : "-"}
                                 </td>
-                                <td className="px-3 py-1.5 text-xs">{item.num_file ?? "-"}</td>
-                                <td className="px-3 py-1.5 text-xs">{item.num_dir ?? "-"}</td>
+                                <td className="px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100">{item.num_file ?? "-"}</td>
+                                <td className="px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100">{item.num_dir ?? "-"}</td>
                                 <td className="px-3 py-1.5 text-xs">
                                   {item.success ? (
-                                    <span className="text-green-600 flex items-center gap-1.5">
+                                    <span className="text-green-600 dark:text-green-400 flex items-center gap-1.5">
                                       <CheckCircle2 className="h-4 w-4" />
                                       Erfolg
                                     </span>
                                   ) : (
-                                    <span className="text-red-600 flex items-center gap-1.5">
+                                    <span className="text-red-600 dark:text-red-400 flex items-center gap-1.5">
                                       <XCircle className="h-4 w-4" />
                                       Fehler
                                     </span>

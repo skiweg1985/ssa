@@ -300,7 +300,7 @@ export function ScanTable({
                 </colgroup>
                 <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-sm">
                   <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider min-w-[200px] w-[200px]">
                       Status
                     </th>
                     <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
