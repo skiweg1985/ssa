@@ -21,10 +21,39 @@ const API_BASE = "/api"
 export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
-  const copyToClipboard = (text: string, index: number) => {
-    navigator.clipboard.writeText(text)
-    setCopiedIndex(index)
-    setTimeout(() => setCopiedIndex(null), 2000)
+  const copyToClipboard = async (text: string, index: number) => {
+    try {
+      // Moderne Clipboard API (benötigt HTTPS oder localhost)
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text)
+        setCopiedIndex(index)
+        setTimeout(() => setCopiedIndex(null), 2000)
+        return
+      }
+      
+      // Fallback: Alte Methode mit execCommand
+      const textArea = document.createElement("textarea")
+      textArea.value = text
+      textArea.style.position = "fixed"
+      textArea.style.left = "-999999px"
+      textArea.style.top = "-999999px"
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      
+      const successful = document.execCommand("copy")
+      document.body.removeChild(textArea)
+      
+      if (successful) {
+        setCopiedIndex(index)
+        setTimeout(() => setCopiedIndex(null), 2000)
+      } else {
+        console.error("Kopieren fehlgeschlagen")
+      }
+    } catch (err) {
+      console.error("Fehler beim Kopieren:", err)
+      // Optional: Fehlermeldung anzeigen
+    }
   }
 
   if (!open || !scan) return null
