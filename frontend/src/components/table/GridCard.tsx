@@ -48,7 +48,7 @@ export function GridCard({
   
   // Check if progress has meaningful data (not all zeros)
   const hasProgressData = hasProgressInfo && (
-    (progress.progress.total_size?.bytes || 0) > 0 ||
+    (progress.progress.total_size || 0) > 0 ||
     (progress.progress.num_dir || 0) > 0 ||
     (progress.progress.num_file || 0) > 0
   )
