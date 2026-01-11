@@ -34,6 +34,13 @@ export function DetailModal({
 }: DetailModalProps) {
   const [detailedScan, setDetailedScan] = useState<ScanStatus | null>(scan)
 
+  // Reset detailedScan immediately when scan prop changes
+  useEffect(() => {
+    if (scan) {
+      setDetailedScan(scan)
+    }
+  }, [scan?.scan_slug]) // Use scan_slug to detect when a different scan is selected
+
   useEffect(() => {
     if (open && scan) {
       loadDetails()
@@ -41,7 +48,7 @@ export function DetailModal({
       // Reset when modal closes
       setDetailedScan(scan)
     }
-  }, [open, scan])
+  }, [open, scan?.scan_slug]) // Use scan_slug to detect scan changes
 
   async function loadDetails() {
     if (!scan) return
@@ -56,14 +63,20 @@ export function DetailModal({
   }
 
   // Always call hook (React rules) - but only poll when conditions are met
-  // Verwende slug für Progress-Aufrufe
-  const scanIdentifier = detailedScan?.scan_slug || scan?.scan_slug || detailedScan?.scan_name || scan?.scan_name || ""
+  // Verwende slug für Progress-Aufrufe - use scan prop directly to ensure correct identifier
+  const scanIdentifier = scan?.scan_slug || scan?.scan_name || detailedScan?.scan_slug || detailedScan?.scan_name || ""
   // Poll if scan is running - also poll once if completed to get final progress
   const isRunning = (detailedScan?.status === "running" || scan?.status === "running") && open
   const { progress } = useScanProgress(scanIdentifier, isRunning, 1000)
   
   // Also fetch progress once if scan is completed but we don't have progress yet
   const [completedProgress, setCompletedProgress] = useState<typeof progress>(null)
+  
+  // Reset completedProgress when scan changes
+  useEffect(() => {
+    setCompletedProgress(null)
+  }, [scan?.scan_slug])
+  
   useEffect(() => {
     if ((detailedScan?.status === "completed" || scan?.status === "completed") && open && scanIdentifier && !progress && !completedProgress) {
       fetchScanProgress(scanIdentifier).then(data => {

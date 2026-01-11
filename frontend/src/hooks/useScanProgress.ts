@@ -7,32 +7,43 @@ export function useScanProgress(scanName: string, isRunning: boolean, interval: 
   const [error, setError] = useState<Error | null>(null)
   const isPollingRef = useRef(false)
   const completedProgressRef = useRef<ScanProgress | null>(null)
+  const previousScanNameRef = useRef<string>("")
+
+  // Reset progress when scan name changes
+  useEffect(() => {
+    if (scanName && scanName !== previousScanNameRef.current) {
+      // Scan name changed - reset all progress
+      completedProgressRef.current = null
+      setProgress(null)
+      setError(null)
+      previousScanNameRef.current = scanName
+    } else if (!scanName) {
+      // No scan name - clear everything
+      completedProgressRef.current = null
+      setProgress(null)
+      setError(null)
+      previousScanNameRef.current = ""
+    }
+  }, [scanName])
 
   useEffect(() => {
     // If scan name changes, clear completed progress ref
     if (!scanName) {
-      completedProgressRef.current = null
-      setProgress(null)
-      setError(null)
       return
     }
     
     if (!isRunning) {
-      // If we have a completed progress, keep it for UI to show final state
-      if (completedProgressRef.current) {
-        setProgress(completedProgressRef.current)
+      // If we have a completed progress for this scan, keep it for UI to show final state
+      const completed = completedProgressRef.current
+      if (completed && (completed.scan_slug === scanName || completed.scan_name === scanName)) {
+        setProgress(completed)
         return
       }
-      // Clear progress when scan is not running and we don't have completed progress
+      // Clear progress when scan is not running and we don't have completed progress for this scan
       // This prevents stale data and avoids unnecessary API calls
       setProgress(null)
       setError(null)
       return
-    }
-    
-    // Reset completed progress ref when starting a new scan (only if not already completed)
-    if (completedProgressRef.current?.status !== "completed") {
-      completedProgressRef.current = null
     }
 
     let intervalId: number | null = null

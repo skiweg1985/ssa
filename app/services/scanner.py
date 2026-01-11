@@ -301,6 +301,12 @@ class ScannerService:
                         logger.info(f"Scan '{scan_name}': [{idx}/{len(paths)}] Starte Scan von '{path}'")
                         path_start_time = datetime.now(timezone.utc)
                         
+                        # Setze current_path direkt beim Start des Pfads (bevor get_dir_size_async aufgerufen wird)
+                        if scan_slug in self._scan_status:
+                            current_status = self._scan_status.get(scan_slug, {})
+                            current_status["current_path"] = path
+                            self._scan_status[scan_slug] = current_status
+                        
                         # Erstelle Callback für diesen spezifischen Pfad
                         path_status_callback = create_path_status_callback(path)
                         
@@ -394,6 +400,8 @@ class ScannerService:
                 if scan_slug in self._scan_status:
                     # Alle Pfade sind jetzt gescannt, setze finished auf True
                     self._scan_status[scan_slug]["finished"] = True
+                    # Setze current_path auf None, da alle Pfade fertig sind
+                    self._scan_status[scan_slug]["current_path"] = None
                     # Re-aggregiere um sicherzustellen, dass alles korrekt ist
                     self._aggregate_path_status(scan_slug)
                 
