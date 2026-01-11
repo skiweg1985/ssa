@@ -114,67 +114,113 @@ class ScanStorage:
     def _init_database(self) -> None:
         """Initialisiert die SQLite-Datenbank mit Tabellen"""
         with self._get_connection() as conn:
-            # Lösche alte Tabelle falls vorhanden (für Migration zu slug/uid)
-            conn.execute("DROP TABLE IF EXISTS scan_results")
-            
-            # Haupttabelle: Jeder Ordner/Pfad wird einzeln gespeichert
-            # Primary Key = nas_host + folder_path + timestamp
-            conn.execute("""
-                CREATE TABLE scan_results (
-                    id TEXT PRIMARY KEY,
-                    nas_host TEXT NOT NULL,
-                    folder_path TEXT NOT NULL,
-                    scan_slug TEXT NOT NULL,
-                    scan_name TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    success BOOLEAN NOT NULL,
-                    num_dir INTEGER,
-                    num_file INTEGER,
-                    total_size_bytes INTEGER,
-                    total_size_formatted REAL,
-                    total_size_unit TEXT,
-                    elapsed_time_ms INTEGER,
-                    error TEXT,
-                    scan_error TEXT,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    UNIQUE(nas_host, folder_path, timestamp)
-                )
+            # Prüfe ob Tabelle bereits existiert
+            cursor = conn.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='scan_results'
             """)
+            table_exists = cursor.fetchone() is not None
             
-            # Indizes für schnelle Abfragen
-            conn.execute("""
-                CREATE INDEX idx_scan_slug_timestamp 
-                ON scan_results(scan_slug, timestamp DESC)
-            """)
-            
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_nas_folder 
-                ON scan_results(nas_host, folder_path)
-            """)
-            
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_folder_path 
-                ON scan_results(folder_path)
-            """)
-            
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_nas_host 
-                ON scan_results(nas_host)
-            """)
-            
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_timestamp 
-                ON scan_results(timestamp DESC)
-            """)
-            
-            conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_status 
-                ON scan_results(status)
-            """)
-            
-            conn.commit()
+            if not table_exists:
+                # Haupttabelle: Jeder Ordner/Pfad wird einzeln gespeichert
+                # Primary Key = nas_host + folder_path + timestamp
+                conn.execute("""
+                    CREATE TABLE scan_results (
+                        id TEXT PRIMARY KEY,
+                        nas_host TEXT NOT NULL,
+                        folder_path TEXT NOT NULL,
+                        scan_slug TEXT NOT NULL,
+                        scan_name TEXT NOT NULL,
+                        timestamp TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        success BOOLEAN NOT NULL,
+                        num_dir INTEGER,
+                        num_file INTEGER,
+                        total_size_bytes INTEGER,
+                        total_size_formatted REAL,
+                        total_size_unit TEXT,
+                        elapsed_time_ms INTEGER,
+                        error TEXT,
+                        scan_error TEXT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE(nas_host, folder_path, timestamp)
+                    )
+                """)
+                
+                # Indizes für schnelle Abfragen
+                conn.execute("""
+                    CREATE INDEX idx_scan_slug_timestamp 
+                    ON scan_results(scan_slug, timestamp DESC)
+                """)
+                
+                conn.execute("""
+                    CREATE INDEX idx_nas_folder 
+                    ON scan_results(nas_host, folder_path)
+                """)
+                
+                conn.execute("""
+                    CREATE INDEX idx_folder_path 
+                    ON scan_results(folder_path)
+                """)
+                
+                conn.execute("""
+                    CREATE INDEX idx_nas_host 
+                    ON scan_results(nas_host)
+                """)
+                
+                conn.execute("""
+                    CREATE INDEX idx_timestamp 
+                    ON scan_results(timestamp DESC)
+                """)
+                
+                conn.execute("""
+                    CREATE INDEX idx_status 
+                    ON scan_results(status)
+                """)
+                
+                conn.commit()
+            else:
+                # Tabelle existiert bereits - erstelle nur fehlende Indizes
+                # Prüfe welche Indizes bereits existieren
+                cursor = conn.execute("""
+                    SELECT name FROM sqlite_master 
+                    WHERE type='index' AND name LIKE 'idx_%'
+                """)
+                existing_indexes = {row[0] for row in cursor.fetchall()}
+                
+                indexes_to_create = {
+                    'idx_scan_slug_timestamp': """
+                        CREATE INDEX IF NOT EXISTS idx_scan_slug_timestamp 
+                        ON scan_results(scan_slug, timestamp DESC)
+                    """,
+                    'idx_nas_folder': """
+                        CREATE INDEX IF NOT EXISTS idx_nas_folder 
+                        ON scan_results(nas_host, folder_path)
+                    """,
+                    'idx_folder_path': """
+                        CREATE INDEX IF NOT EXISTS idx_folder_path 
+                        ON scan_results(folder_path)
+                    """,
+                    'idx_nas_host': """
+                        CREATE INDEX IF NOT EXISTS idx_nas_host 
+                        ON scan_results(nas_host)
+                    """,
+                    'idx_timestamp': """
+                        CREATE INDEX IF NOT EXISTS idx_timestamp 
+                        ON scan_results(timestamp DESC)
+                    """,
+                    'idx_status': """
+                        CREATE INDEX IF NOT EXISTS idx_status 
+                        ON scan_results(status)
+                    """
+                }
+                
+                for index_name, create_sql in indexes_to_create.items():
+                    if index_name not in existing_indexes:
+                        conn.execute(create_sql)
+                
+                conn.commit()
     
     @contextmanager
     def _get_connection(self):
@@ -345,10 +391,12 @@ class ScanStorage:
                 total_count = cursor.fetchone()[0]
                 if total_count > 0:
                     db_size = self._db_path.stat().st_size / (1024 * 1024)
-                    print(f"Geladen: {len(self._results)} Scans, {total_count} Ordner-Einträge, {db_size:.2f} MB")
+                    logger.info(f"Geladen: {len(self._results)} Scans, {total_count} Ordner-Einträge, {db_size:.2f} MB")
+                else:
+                    logger.info("Keine gespeicherten Scan-Ergebnisse gefunden")
         
         except Exception as e:
-            print(f"Warnung: Fehler beim Laden aus Datenbank: {e}")
+            logger.error(f"Fehler beim Laden aus Datenbank: {e}", exc_info=True)
     
     def _save_to_disk(self, scan_slug: str, scan_name: str, result: ScanResult, nas_host: str) -> None:
         """
@@ -462,7 +510,7 @@ class ScanStorage:
                 conn.commit()
         
         except Exception as e:
-            print(f"Warnung: Fehler beim Speichern von {scan_slug}: {e}")
+            logger.error(f"Fehler beim Speichern von {scan_slug}: {e}", exc_info=True)
     
     def add_result(self, scan_slug: str, scan_name: str, result: ScanResult, nas_host: str) -> None:
         """
@@ -823,7 +871,7 @@ class ScanStorage:
                         oldest_entry = row[0]
                         newest_entry = row[1]
             except Exception as e:
-                print(f"Fehler beim Abrufen der Statistiken: {e}")
+                logger.error(f"Fehler beim Abrufen der Statistiken: {e}", exc_info=True)
         
         return {
             'scan_count': len(self._results),
