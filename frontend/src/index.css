@@ -107,7 +107,7 @@
     max-width: 100%;
   }
   
-  /* iOS Safari fixes for modals */
+  /* iOS Safari fixes for modals and safe areas */
   @supports (-webkit-touch-callout: none) {
     /* iOS Safari specific styles */
     .dialog-container {

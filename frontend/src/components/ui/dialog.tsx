@@ -51,13 +51,21 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
     <DialogContext.Provider value={{ onOpenChange }}>
       <div
         className="fixed inset-0 z-[1000] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 animate-in fade-in"
+        style={{
+          // Für iOS Safari: Berücksichtige safe-area-insets im Overlay
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          paddingLeft: 'env(safe-area-inset-left)',
+          paddingRight: 'env(safe-area-inset-right)',
+        }}
         onClick={() => onOpenChange(false)}
       >
         <div
-          className="relative z-[1000] w-full h-[85vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-white rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
+          className="relative z-[1000] w-full h-[85vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-white dark:bg-slate-900 rounded-t-xl sm:rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
           onClick={(e) => e.stopPropagation()}
           style={{
             // Für iOS Safari: verwende dvh (dynamic viewport height) wenn verfügbar, fallback zu vh
+            // Berücksichtige safe-area-insets für die Höhe (Overlay hat bereits Padding)
             maxHeight: 'min(85dvh, 85vh)',
           }}
         >

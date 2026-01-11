@@ -63,7 +63,13 @@ export function Topbar({
       {isRefreshing && (
         <div className="fixed top-0 left-0 right-0 h-1 bg-primary-500 z-[60] animate-pulse" />
       )}
-      <header className="sticky top-0 z-50 w-full border-b border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-slate-900/60">
+      <header 
+        className="sticky top-0 z-50 w-full border-b border-slate-200/80 dark:border-slate-700/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md supports-[backdrop-filter]:bg-white/60 dark:supports-[backdrop-filter]:bg-slate-900/60"
+        style={{
+          // Für iOS Safari: Berücksichtige safe-area-inset-top
+          paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
+        }}
+      >
       <div className="mx-auto max-w-screen-xl px-4 sm:px-6 lg:px-8">
         {/* Responsive layout: single row on lg+, two rows on smaller screens */}
         <div className="flex flex-col lg:flex-row lg:h-16 lg:items-center gap-3 lg:gap-4 py-3 lg:py-0">
@@ -75,10 +81,10 @@ export function Topbar({
                 <Search className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
               </div>
               <div className="min-w-0">
-                <h1 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-50 leading-tight truncate">
+                <h1 className="text-sm sm:text-base font-semibold text-slate-900 dark:text-slate-50 leading-tight truncate whitespace-nowrap">
                   Synology Space Analyzer
                 </h1>
-                <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 leading-tight truncate">Scan-Status Dashboard</p>
+                <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 leading-tight truncate whitespace-nowrap">Scan-Status Dashboard</p>
               </div>
             </div>
 

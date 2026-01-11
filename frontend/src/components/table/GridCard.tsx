@@ -92,7 +92,7 @@ export function GridCard({
 
       {/* Status Badge - Fixed Row */}
       <div className="mb-3 flex-shrink-0">
-        <Badge variant={status.variant} className="w-fit justify-start">
+        <Badge variant={status.variant} className="w-fit justify-start overflow-visible min-w-fit">
           <StatusIcon
             className={cn(
               "h-3.5 w-3.5",

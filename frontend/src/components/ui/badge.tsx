@@ -19,6 +19,7 @@ function Badge({ className, variant = "default", children, ...props }: BadgeProp
     <div
       className={cn(
         "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-medium",
+        "overflow-visible min-w-fit flex-shrink-0",
         variants[variant],
         variant === "running" && "animate-pulse",
         className
