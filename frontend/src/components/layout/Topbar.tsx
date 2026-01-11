@@ -14,7 +14,6 @@ interface TopbarProps {
   onOpenCommandPalette: () => void
   onOpenApiInfo: () => void
   isLoading?: boolean
-  autoRefreshActive?: boolean
   lastUpdated?: Date | null
 }
 
@@ -26,7 +25,6 @@ export function Topbar({
   onOpenCommandPalette,
   onOpenApiInfo,
   isLoading = false,
-  autoRefreshActive = false,
   lastUpdated = null,
 }: TopbarProps) {
   const [localSearch, setLocalSearch] = useState(searchQuery)

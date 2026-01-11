@@ -16,7 +16,6 @@ const DropdownMenuContext = React.createContext<{
 export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuProps) {
   const [open, setOpen] = React.useState(false)
   const [position, setPosition] = React.useState({ top: 0, left: 0 })
-  const [openUpward, setOpenUpward] = React.useState(false)
   const triggerRef = React.useRef<HTMLDivElement>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
 
@@ -33,8 +32,6 @@ export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuP
       
       // Open upward if not enough space below but enough space above
       const shouldOpenUpward = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow
-      
-      setOpenUpward(shouldOpenUpward)
       
       // For fixed positioning, use getBoundingClientRect directly (no scroll offset needed)
       // When opening upward, position menu above the trigger

@@ -87,7 +87,6 @@ function AppContent() {
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onOpenApiInfo={() => setApiInfoModalOpen(true)}
         isLoading={loading}
-        autoRefreshActive={true}
         lastUpdated={lastUpdated}
       />
 
