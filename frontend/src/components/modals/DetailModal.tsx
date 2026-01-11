@@ -220,7 +220,7 @@ export function DetailModal({
                       </span>
                     ) : (
                       <span className="flex items-center gap-1.5">
-                        <XCircle className="h-4 w-4 text-red-600" />
+                        <XCircle className="h-4 w-4 text-red-600 dark:text-red-400" />
                         Deaktiviert
                       </span>
                     )}

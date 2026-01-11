@@ -6,6 +6,7 @@ interface DialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   children: React.ReactNode
+  maxWidth?: "sm" | "md" | "lg" | "xl" | "2xl" | "3xl" | "4xl" | "5xl" | "6xl" | "7xl" | "full"
 }
 
 interface DialogContentProps extends React.HTMLAttributes<HTMLDivElement> {
@@ -17,7 +18,7 @@ const DialogContext = React.createContext<{
   onOpenChange: (open: boolean) => void
 } | null>(null)
 
-const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
+const Dialog = ({ open, onOpenChange, children, maxWidth = "4xl" }: DialogProps) => {
   // Esc-Taste Handler
   React.useEffect(() => {
     if (!open) return
@@ -45,6 +46,21 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
     }
   }, [open])
 
+  // Mapping für max-width Klassen
+  const maxWidthClasses = {
+    sm: "sm:max-w-sm",
+    md: "sm:max-w-md",
+    lg: "sm:max-w-lg",
+    xl: "sm:max-w-xl",
+    "2xl": "sm:max-w-2xl",
+    "3xl": "sm:max-w-3xl",
+    "4xl": "sm:max-w-4xl",
+    "5xl": "sm:max-w-5xl",
+    "6xl": "sm:max-w-6xl",
+    "7xl": "sm:max-w-7xl",
+    full: "",
+  }
+
   if (!open) return null
 
   return (
@@ -61,7 +77,10 @@ const Dialog = ({ open, onOpenChange, children }: DialogProps) => {
         onClick={() => onOpenChange(false)}
       >
         <div
-          className="relative z-[1000] w-full h-[92vh] sm:h-auto sm:max-h-[90vh] sm:max-w-4xl bg-white dark:bg-slate-900 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4"
+          className={cn(
+            "relative z-[1000] w-full h-[92vh] sm:h-auto sm:max-h-[90vh] bg-white dark:bg-slate-900 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4",
+            maxWidthClasses[maxWidth]
+          )}
           onClick={(e) => e.stopPropagation()}
           style={{
             // Für iOS Safari: verwende dvh (dynamic viewport height) wenn verfügbar, fallback zu vh

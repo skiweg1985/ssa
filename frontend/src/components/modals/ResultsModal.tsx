@@ -195,7 +195,7 @@ export function ResultsModal({ open, onOpenChange, scanName }: ResultsModalProps
                 <span className="ml-2 text-slate-500 dark:text-slate-400">Lade Ergebnisse...</span>
               </div>
             ) : error ? (
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+              <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4 text-red-800 dark:text-red-300">
                 <div className="font-semibold mb-1">Fehler beim Laden</div>
                 <div className="text-sm">{error}</div>
                 <Button variant="primary" size="sm" onClick={loadData} className="mt-3">

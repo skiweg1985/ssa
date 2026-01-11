@@ -113,19 +113,19 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <div className="space-y-6">
           {/* Einleitung */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-2 flex items-center gap-2">
               <ExternalLink className="h-4 w-4" />
               API-Integration für Monitoring-Systeme
             </h3>
-            <p className="text-sm text-blue-800 mb-3">
+            <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
               Diese API ermöglicht es Ihnen, Scan-Ergebnisse in externe Monitoring-Systeme wie Prometheus, Grafana, 
               Nagios oder andere Tools zu integrieren. Alle Endpunkte liefern JSON-Daten und können mit Standard-HTTP-Requests 
               abgerufen werden.
             </p>
-            <div className="text-sm text-blue-700 space-y-1">
-              <p><strong>Base URL:</strong> <code className="bg-blue-100 px-1.5 py-0.5 rounded">{window.location.origin}{API_BASE}</code></p>
-              <p><strong>Content-Type:</strong> <code className="bg-blue-100 px-1.5 py-0.5 rounded">application/json</code></p>
+            <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
+              <p><strong>Base URL:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">{window.location.origin}{API_BASE}</code></p>
+              <p><strong>Content-Type:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">application/json</code></p>
             </div>
           </div>
 
@@ -147,15 +147,15 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
                           example.method === "GET" 
-                            ? "bg-green-100 text-green-700" 
-                            : "bg-blue-100 text-blue-700"
+                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" 
+                            : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                         }`}>
                           {example.method}
                         </span>
                         <h4 className="font-semibold text-slate-900 dark:text-slate-100">{example.title}</h4>
                       </div>
                       <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{example.description}</p>
-                      <code className="text-xs text-slate-700 mt-2 block bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
+                      <code className="text-xs text-slate-700 dark:text-slate-300 mt-2 block bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">
                         {example.endpoint}
                       </code>
                     </div>
@@ -201,7 +201,7 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
               <div>
                 <strong className="text-slate-900 dark:text-slate-100">Prometheus Exporter:</strong>
                 <p className="mt-1">
-                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code> abruft 
+                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code> abruft 
                   und die Daten als Metriken bereitstellt.
                 </p>
               </div>
@@ -226,7 +226,7 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
           <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
             <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">📄 Response-Format</h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-              Alle Endpunkte liefern JSON-Daten. Beispiel für <code className="bg-white dark:bg-slate-700 px-1.5 py-0.5 rounded border">{"/scans/{scan_slug}/results"}</code>:
+              Alle Endpunkte liefern JSON-Daten. Beispiel für <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/scans/{scan_slug}/results"}</code>:
             </p>
             <pre className="text-xs bg-slate-900 text-slate-100 p-3 rounded overflow-x-auto">
               <code>{`{

@@ -66,30 +66,30 @@ function ToastItem({
   onRemove: (id: string) => void
 }) {
   const typeStyles = {
-    success: "bg-green-50 border-green-200 text-green-800",
-    error: "bg-red-50 border-red-200 text-red-800",
-    warning: "bg-yellow-50 border-yellow-200 text-yellow-800",
-    info: "bg-blue-50 border-blue-200 text-blue-800",
+    success: "bg-green-50 dark:bg-green-900/90 border-green-200 dark:border-green-700 text-green-800 dark:text-green-200",
+    error: "bg-red-50 dark:bg-red-900/90 border-red-200 dark:border-red-700 text-red-800 dark:text-red-200",
+    warning: "bg-yellow-50 dark:bg-yellow-900/90 border-yellow-200 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200",
+    info: "bg-blue-50 dark:bg-blue-900/90 border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200",
   }
 
   return (
     <div
       className={cn(
-        "bg-white border-l-4 rounded-lg shadow-lg p-4 min-w-[300px] animate-in slide-in-from-right",
+        "bg-white dark:bg-slate-800 border-l-4 rounded-lg shadow-lg p-4 min-w-[300px] animate-in slide-in-from-right backdrop-blur-sm",
         typeStyles[toast.type]
       )}
     >
       <div className="flex justify-between items-start mb-2">
         <span className="font-semibold">{toast.title}</span>
         <button
-          className="text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
+          className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
           onClick={() => onRemove(toast.id)}
           aria-label="Toast schließen"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="text-sm">{toast.message}</div>
+      <div className="text-sm text-slate-700 dark:text-slate-300">{toast.message}</div>
     </div>
   )
 }

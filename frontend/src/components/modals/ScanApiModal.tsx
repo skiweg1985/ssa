@@ -74,7 +74,7 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
           </DialogTitle>
         </DialogHeader>
         <DialogContent>
-          <p className="text-red-600">Kein gültiger Scan-Slug gefunden.</p>
+          <p className="text-red-600 dark:text-red-400">Kein gültiger Scan-Slug gefunden.</p>
         </DialogContent>
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
@@ -132,7 +132,7 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
   ]
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange} maxWidth="3xl">
       <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
         <DialogTitle className="text-white flex items-center gap-2 min-w-0">
           <Link2 className="h-5 w-5 flex-shrink-0" />
@@ -143,13 +143,13 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <div className="space-y-6">
           {/* Info-Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+            <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-2 flex items-center gap-2">
               <ExternalLink className="h-4 w-4" />
               Job-spezifische API-Endpunkte
             </h3>
-            <p className="text-sm text-blue-800">
-              Diese URLs und cURL-Befehle sind spezifisch für den Scan-Job <strong>"{scanName}"</strong> (ID: <code className="bg-white dark:bg-slate-700 px-1 py-0.5 rounded text-xs">{scanSlug}</code>). 
+            <p className="text-sm text-blue-800 dark:text-blue-200">
+              Diese URLs und cURL-Befehle sind spezifisch für den Scan-Job <strong>"{scanName}"</strong> (ID: <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">{scanSlug}</code>). 
               Verwenden Sie diese Endpunkte, um die Ergebnisse dieses Scans in Ihr Monitoring-System zu integrieren.
             </p>
           </div>
@@ -172,8 +172,8 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
                           endpoint.method === "GET" 
-                            ? "bg-green-100 text-green-700" 
-                            : "bg-blue-100 text-blue-700"
+                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" 
+                            : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
                         }`}>
                           {endpoint.method}
                         </span>
@@ -255,16 +255,16 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
             <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
               <div>
                 <strong className="text-slate-900 dark:text-slate-100">Monitoring-Script (Bash):</strong>
-                <pre className="mt-1 text-xs bg-white dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
-                  <code>{`# Scan-Ergebnisse abrufen
+                <pre className="mt-1 text-xs bg-white dark:bg-slate-700 dark:text-slate-300 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
+                  <code className="dark:text-slate-300">{`# Scan-Ergebnisse abrufen
 RESULT=$(curl -s "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
 echo "$RESULT" | jq '.results[0].total_size.bytes'`}</code>
                 </pre>
               </div>
               <div>
                 <strong className="text-slate-900 dark:text-slate-100">Python-Integration:</strong>
-                <pre className="mt-1 text-xs bg-white dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
-                  <code>{`import requests
+                <pre className="mt-1 text-xs bg-white dark:bg-slate-700 dark:text-slate-300 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
+                  <code className="dark:text-slate-300">{`import requests
 response = requests.get("${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
 data = response.json()
 print(f"Gesamtgröße: {data['results'][0]['total_size']['formatted']}")`}</code>
