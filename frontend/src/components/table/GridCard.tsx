@@ -56,12 +56,12 @@ export function GridCard({
   return (
     <div
       className={cn(
-        "border border-slate-200 rounded-lg bg-white p-4 transition-all duration-150",
-        "hover:shadow-md hover:border-slate-300",
+        "border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-4 transition-all duration-150",
+        "hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600",
         "focus-within:ring-2 focus-within:ring-primary-500 focus-within:ring-offset-2",
         "flex flex-col h-full",
-        isRunning && effectiveStatus !== "completed" && "bg-blue-50/30 border-blue-200",
-        effectiveStatus === "completed" && "bg-emerald-50/30 border-emerald-200"
+        isRunning && effectiveStatus !== "completed" && "bg-blue-50/30 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800",
+        effectiveStatus === "completed" && "bg-emerald-50/30 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800"
       )}
     >
       {/* Header with Title and Info Icon - Fixed Top Row */}
@@ -69,12 +69,12 @@ export function GridCard({
         <div className="flex-1 min-w-0">
           <button
             onClick={() => onShowDetail(scan)}
-            className="font-normal text-slate-700 hover:text-primary-600 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded truncate block w-full"
+            className="font-normal text-sm text-slate-700 dark:text-slate-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded truncate block w-full"
             title={scan.scan_name}
           >
             <div className="flex flex-col gap-0.5">
               <span className="truncate">{scan.scan_name}</span>
-              <div className="text-[10px] text-slate-500">
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">
                 <span className="font-mono">ID: {scan.scan_slug}</span>
               </div>
             </div>
@@ -82,7 +82,7 @@ export function GridCard({
         </div>
         <Tooltip content={buildScanTooltipContent(scan)}>
           <button
-            className="text-slate-400 hover:text-slate-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded transition-colors flex-shrink-0 ml-2"
+            className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 rounded transition-colors flex-shrink-0 ml-2"
             aria-label="Weitere Informationen"
           >
             <Info className="h-4 w-4" />
@@ -118,7 +118,7 @@ export function GridCard({
               {hasProgressData ? (
                 <>
                   {hasProgressPercent && (
-                    <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden relative mb-0.5 w-full">
+                    <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative mb-0.5 w-full">
                       {(progress.progress.finished || progress.status === "completed") ? (
                         <div className="h-full bg-emerald-500 rounded-full w-full transition-all duration-500 animate-in fade-in" />
                       ) : (
@@ -127,12 +127,12 @@ export function GridCard({
                             className="h-full bg-primary-500 rounded-full animate-pulse" 
                             style={{ width: `${Math.min(100, Math.max(0, progress.progress.progress_percent || 0))}%` }} 
                           />
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-shimmer" />
+                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 dark:via-white/10 to-transparent animate-shimmer" />
                         </>
                       )}
                     </div>
                   )}
-                  <div className={cn("text-[10px] text-slate-500", hasProgressPercent && "mt-0.5")}>
+                  <div className={cn("text-[10px] text-slate-500 dark:text-slate-400", hasProgressPercent && "mt-0.5")}>
                     <div className="flex items-center justify-between gap-1 flex-wrap">
                       <span className="whitespace-nowrap truncate">
                         {formatSizeCompact(progress.progress.total_size)} • {(progress.progress.num_dir || 0).toLocaleString()} Ordner • {(progress.progress.num_file || 0).toLocaleString()} Dateien
@@ -140,9 +140,9 @@ export function GridCard({
                       {hasProgressPercent && (
                         <span className={cn(
                           "font-semibold flex-shrink-0",
-                          (progress.progress.finished || progress.status === "completed") 
-                            ? "text-emerald-600" 
-                            : "text-primary-600"
+                            (progress.progress.finished || progress.status === "completed") 
+                            ? "text-emerald-600 dark:text-emerald-400" 
+                            : "text-primary-600 dark:text-primary-400"
                         )}>
                           {progress.progress.progress_percent}%
                         </span>
@@ -151,7 +151,7 @@ export function GridCard({
                   </div>
                 </>
               ) : (
-                <div className="text-[10px] text-slate-500 italic">
+                <div className="text-[10px] text-slate-500 dark:text-slate-400 italic">
                   Warte auf Ergebnisse...
                 </div>
               )}
@@ -163,33 +163,33 @@ export function GridCard({
       {/* Details - Fixed Row with 2-column layout */}
       <div className="space-y-2 mb-4 text-xs flex-shrink-0">
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500 flex-shrink-0">Letzter Lauf:</span>
+          <span className="text-slate-500 dark:text-slate-400 flex-shrink-0">Letzter Lauf:</span>
           {scan.last_run ? (
             <Tooltip content={formatDateShort(scan.last_run)}>
-              <span className="text-slate-700 cursor-help font-medium truncate text-right">
+              <span className="text-slate-700 dark:text-slate-300 cursor-help font-medium truncate text-right">
                 {formatRelativeTime(scan.last_run)}
               </span>
             </Tooltip>
           ) : (
-            <span className="text-slate-400">-</span>
+            <span className="text-slate-400 dark:text-slate-500">-</span>
           )}
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-slate-500 flex-shrink-0">Nächster Lauf:</span>
+          <span className="text-slate-500 dark:text-slate-400 flex-shrink-0">Nächster Lauf:</span>
           {scan.next_run ? (
             <Tooltip content={formatDateShort(scan.next_run)}>
-              <span className="text-slate-700 cursor-help font-medium truncate text-right">
+              <span className="text-slate-700 dark:text-slate-300 cursor-help font-medium truncate text-right">
                 {formatRelativeTime(scan.next_run)}
               </span>
             </Tooltip>
           ) : (
-            <span className="text-slate-400">-</span>
+            <span className="text-slate-400 dark:text-slate-500">-</span>
           )}
         </div>
       </div>
 
       {/* Actions - Fixed Bottom Row */}
-      <div className="flex items-center justify-end pt-3 border-t border-slate-100 mt-auto flex-shrink-0">
+      <div className="flex items-center justify-end pt-3 border-t border-slate-100 dark:border-slate-700 mt-auto flex-shrink-0">
         <TableActions
           scan={scan}
           onRun={onRun}

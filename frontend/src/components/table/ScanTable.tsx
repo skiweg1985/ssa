@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react"
+import { useViewMode } from "@/hooks/useViewMode"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -58,7 +59,7 @@ export function ScanTable({
   const [sortField, setSortField] = useState<SortField>("name")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
   const [density] = useState<Density>("normal")
-  const [viewMode, setViewMode] = useState<ViewMode>("list")
+  const { viewMode, setViewMode } = useViewMode()
 
   // Filter and sort scans
   const filteredAndSortedScans = useMemo(() => {
@@ -129,13 +130,13 @@ export function ScanTable({
   const SortIcon = sortDirection === "asc" ? ArrowUp : ArrowDown
 
   return (
-    <Card className="border-slate-200 shadow-sm flex flex-col h-full">
+    <Card className="border-slate-200 dark:border-slate-700 shadow-sm flex flex-col h-full">
       <CardHeader className="pb-4 flex-shrink-0">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
           <div className="space-y-1 min-w-0">
             <CardTitle className="text-base sm:text-lg font-semibold">Scan-Status</CardTitle>
             {lastUpdated && (
-              <CardDescription className="text-xs text-slate-500">
+              <CardDescription className="text-xs text-slate-500 dark:text-slate-400">
                 Aktualisiert {formatTimeAgo(lastUpdated)}
               </CardDescription>
             )}
@@ -158,9 +159,9 @@ export function ScanTable({
         </div>
 
         {/* Filters and Sort - Responsive layout */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-4 sm:mt-6 pt-4 border-t border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-4 sm:mt-6 pt-4 border-t border-slate-100 dark:border-slate-700">
           {/* Status Filter Segmented Control */}
-          <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm overflow-x-auto scrollbar-hide -mx-1 sm:mx-0 sm:overflow-x-visible">
+          <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1 shadow-sm overflow-x-auto scrollbar-hide -mx-1 sm:mx-0 sm:overflow-x-visible">
             <div className="flex items-center gap-1 min-w-max">
               {(["all", "completed", "failed", "running", "pending"] as StatusFilter[]).map((status) => {
                 const isActive = statusFilter === status
@@ -171,8 +172,8 @@ export function ScanTable({
                     className={cn(
                       "relative px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 min-h-[40px] whitespace-nowrap",
                       isActive
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-600 hover:text-slate-900"
+                        ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
                     )}
                     aria-pressed={isActive}
                     aria-label={`Filter: ${statusLabels[status]}`}
@@ -181,7 +182,7 @@ export function ScanTable({
                     {statusCounts[status] > 0 && (
                       <span className={cn(
                         "ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold",
-                        isActive ? "bg-slate-100 text-slate-700" : "bg-slate-200 text-slate-600"
+                        isActive ? "bg-slate-100 dark:bg-slate-600 text-slate-700 dark:text-slate-200" : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400"
                       )}>
                         {statusCounts[status]}
                       </span>
@@ -242,7 +243,7 @@ export function ScanTable({
             <div className="p-6 flex-1 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-                  <div key={i} className="border border-slate-200 rounded-lg p-4 space-y-3 animate-pulse">
+                  <div key={i} className="border border-slate-200 dark:border-slate-700 rounded-lg p-4 space-y-3 animate-pulse">
                     <Skeleton className="h-5 w-3/4 rounded-md" />
                     <Skeleton className="h-6 w-20 rounded-md" />
                     <Skeleton className="h-4 w-full rounded-md" />
@@ -256,11 +257,11 @@ export function ScanTable({
           )
         ) : filteredAndSortedScans.length === 0 ? (
           <div className="text-center py-16 px-6 flex-1 flex flex-col items-center justify-center">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 mb-4">
-              <Clock className="h-6 w-6 text-slate-400" />
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800 mb-4">
+              <Clock className="h-6 w-6 text-slate-400 dark:text-slate-500" />
             </div>
-            <p className="text-sm font-medium text-slate-900 mb-1">Keine Scans gefunden</p>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-sm font-medium text-slate-900 dark:text-slate-50 mb-1">Keine Scans gefunden</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
               {searchQuery || statusFilter !== "all"
                 ? "Versuchen Sie, Ihre Filter anzupassen"
                 : "Es sind noch keine Scans vorhanden"}
@@ -289,7 +290,7 @@ export function ScanTable({
             }}>
               <table className="w-full border-collapse">
                 <colgroup>
-                  <col className="w-[180px] sm:w-[200px]" /> {/* Status - kompakter mit 2-Zeilen-Layout */}
+                  <col className="w-[200px] sm:w-[220px] min-w-[190px]" /> {/* Status - Mindestbreite für mobile */}
                   <col className="min-w-[160px]" /> {/* Job-Name - flexible */}
                   <col className="w-[180px] sm:w-[200px]" /> {/* ID */}
                   <col className="w-[130px] sm:w-[150px]" /> {/* Letzter Lauf */}
@@ -298,30 +299,30 @@ export function ScanTable({
                   <col className="w-[60px]" /> {/* Info */}
                   <col className="w-[120px]" /> {/* Aktionen */}
                 </colgroup>
-                <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm">
-                  <tr className="border-b border-slate-200">
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-sm">
+                  <tr className="border-b border-slate-200 dark:border-slate-700">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Status
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Job-Name
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       ID
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Letzter Lauf
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Nächster Lauf
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Intervall
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Info
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
                       Aktionen
                     </th>
                   </tr>

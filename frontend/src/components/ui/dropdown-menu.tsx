@@ -16,6 +16,7 @@ const DropdownMenuContext = React.createContext<{
 export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuProps) {
   const [open, setOpen] = React.useState(false)
   const [position, setPosition] = React.useState({ top: 0, left: 0 })
+  const [openUpward, setOpenUpward] = React.useState(false)
   const triggerRef = React.useRef<HTMLDivElement>(null)
   const menuRef = React.useRef<HTMLDivElement>(null)
 
@@ -23,9 +24,34 @@ export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuP
   React.useEffect(() => {
     if (open && triggerRef.current) {
       const rect = triggerRef.current.getBoundingClientRect()
+      const viewportHeight = window.innerHeight
+      
+      // Estimate menu height (approximate, will be adjusted after render)
+      const estimatedMenuHeight = 200
+      const spaceBelow = viewportHeight - rect.bottom
+      const spaceAbove = rect.top
+      
+      // Open upward if not enough space below but enough space above
+      const shouldOpenUpward = spaceBelow < estimatedMenuHeight && spaceAbove > spaceBelow
+      
+      setOpenUpward(shouldOpenUpward)
+      
+      // For fixed positioning, use getBoundingClientRect directly (no scroll offset needed)
+      // When opening upward, position menu above the trigger
+      let topPosition: number
+      if (shouldOpenUpward) {
+        topPosition = Math.max(4, rect.top - estimatedMenuHeight - 4)
+      } else {
+        topPosition = rect.bottom + 4
+        // Ensure menu doesn't go below viewport
+        if (topPosition + estimatedMenuHeight > viewportHeight) {
+          topPosition = Math.max(4, viewportHeight - estimatedMenuHeight - 4)
+        }
+      }
+      
       setPosition({
-        top: rect.bottom + window.scrollY + 4,
-        left: align === "end" ? rect.right + window.scrollX : rect.left + window.scrollX,
+        top: topPosition,
+        left: align === "end" ? rect.right : rect.left,
       })
     }
   }, [open, align])
@@ -84,7 +110,7 @@ export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuP
             <div
               ref={menuRef}
               className={cn(
-                "fixed z-[100] min-w-[10rem] overflow-hidden rounded-md border border-slate-200 bg-white shadow-xl",
+                "fixed z-[100] min-w-[10rem] overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl",
                 align === "end" ? "right-auto" : "left-auto"
               )}
               style={{
@@ -123,7 +149,7 @@ export function DropdownMenuItem({
   return (
     <button
       className={cn(
-        "w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset transition-colors min-h-[2.5rem]",
+        "w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-slate-100 dark:focus:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-inset transition-colors min-h-[2.5rem]",
         className
       )}
       onClick={handleClick}

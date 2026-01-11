@@ -78,12 +78,11 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
       <Topbar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onReloadConfig={handleReloadConfig}
-        onRefresh={refetch}
         onOpenStorage={() => setStorageModalOpen(true)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onOpenApiInfo={() => setApiInfoModalOpen(true)}
@@ -95,13 +94,13 @@ function AppContent() {
       {/* Main content area with consistent spacing scale (4/6/8/12/16) */}
       <main className="flex-1 mx-auto w-full max-w-screen-xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 flex flex-col min-h-0">
         {error ? (
-          <div className="mb-6 sm:mb-8 rounded-lg border border-red-200 bg-red-50 p-4 sm:p-6 flex-shrink-0">
+          <div className="mb-6 sm:mb-8 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 p-4 sm:p-6 flex-shrink-0">
             <div className="mb-3 flex items-start gap-3">
               <div className="flex-1 min-w-0">
-                <h3 className="text-sm sm:text-base font-semibold text-red-900 mb-1">
+                <h3 className="text-sm sm:text-base font-semibold text-red-900 dark:text-red-300 mb-1">
                   Fehler beim Laden der Scans
                 </h3>
-                <p className="text-xs sm:text-sm text-red-700 break-words">{error.message}</p>
+                <p className="text-xs sm:text-sm text-red-700 dark:text-red-400 break-words">{error.message}</p>
               </div>
             </div>
             <button
