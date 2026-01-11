@@ -29,9 +29,35 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
 
   if (!open || !scan) return null
 
-  const baseUrl = window.location.origin
-  const scanSlug = scan.scan_slug
-  const scanName = scan.scan_name
+  // Validierung: Stelle sicher, dass baseUrl und scanSlug vorhanden sind
+  const baseUrl = window.location.origin || ""
+  const scanSlug = scan.scan_slug || ""
+  const scanName = scan.scan_name || ""
+
+  // Wenn kein Slug vorhanden ist, zeige Fehlermeldung
+  if (!scanSlug) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
+          <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+            <Link2 className="h-5 w-5 flex-shrink-0" />
+            <span className="truncate">Fehler</span>
+          </DialogTitle>
+        </DialogHeader>
+        <DialogContent>
+          <p className="text-red-600">Kein gültiger Scan-Slug gefunden.</p>
+        </DialogContent>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            Schließen
+          </Button>
+        </DialogFooter>
+      </Dialog>
+    )
+  }
+
+  // Stelle sicher, dass baseUrl nicht leer ist
+  const fullBaseUrl = baseUrl.trim()
 
   const apiEndpoints = [
     {
@@ -39,40 +65,40 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
       description: "Neueste Ergebnisse dieses Scans abrufen",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/results`,
-      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/results`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/results"`,
+      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results`,
+      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results"`,
     },
     {
       title: "Scan-Historie",
       description: "Komplette Historie aller Ergebnisse dieses Scans",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/history`,
-      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/history`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/history"`,
+      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/history`,
+      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/history"`,
     },
     {
       title: "Scan-Status",
       description: "Aktuellen Status dieses Scans abrufen",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/status`,
-      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/status`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/status"`,
+      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/status`,
+      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/status"`,
     },
     {
       title: "Scan-Progress",
       description: "Fortschritt eines laufenden Scans (nur wenn Scan läuft)",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/progress`,
-      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/progress`,
-      curl: `curl -X GET "${baseUrl}${API_BASE}/scans/${scanSlug}/progress"`,
+      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/progress`,
+      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/progress"`,
     },
     {
       title: "Scan starten",
       description: "Diesen Scan manuell starten",
       method: "POST",
       endpoint: `${API_BASE}/scans/${scanSlug}/trigger`,
-      url: `${baseUrl}${API_BASE}/scans/${scanSlug}/trigger`,
-      curl: `curl -X POST "${baseUrl}${API_BASE}/scans/${scanSlug}/trigger"`,
+      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/trigger`,
+      curl: `curl -X POST "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/trigger"`,
     },
   ]
 
@@ -114,26 +140,26 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
                 <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-600">
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                        endpoint.method === "GET" 
-                          ? "bg-green-100 text-green-700" 
-                          : "bg-blue-100 text-blue-700"
-                      }`}>
-                        {endpoint.method}
-                      </span>
-                      <h4 className="font-semibold text-slate-900 dark:text-slate-100">{endpoint.title}</h4>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                          endpoint.method === "GET" 
+                            ? "bg-green-100 text-green-700" 
+                            : "bg-blue-100 text-blue-700"
+                        }`}>
+                          {endpoint.method}
+                        </span>
+                        <h4 className="font-semibold text-slate-900 dark:text-slate-100">{endpoint.title}</h4>
+                      </div>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{endpoint.description}</p>
+                      <code className="text-xs text-slate-700 dark:text-slate-300 mt-2 block bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">
+                        {endpoint.endpoint}
+                      </code>
                     </div>
-                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{endpoint.description}</p>
-                    <code className="text-xs text-slate-700 mt-2 block bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">
-                      {endpoint.endpoint}
-                    </code>
                   </div>
-                </div>
                 </div>
                 
                 {/* URL */}
-                <div className="px-4 py-3 bg-slate-100 border-b border-slate-200 dark:border-slate-600">
+                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">URL:</span>
                     <Button
@@ -155,7 +181,7 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
                       )}
                     </Button>
                   </div>
-                  <code className="text-xs text-slate-700 block mt-1 break-all">
+                  <code className="text-xs text-slate-700 dark:text-slate-300 block mt-1 break-all">
                     {endpoint.url}
                   </code>
                 </div>
@@ -197,12 +223,12 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
               <Lightbulb className="h-4 w-4" />
               Verwendungsbeispiele
             </h3>
-            <div className="space-y-3 text-sm text-slate-700">
+            <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
               <div>
                 <strong className="text-slate-900 dark:text-slate-100">Monitoring-Script (Bash):</strong>
                 <pre className="mt-1 text-xs bg-white dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
                   <code>{`# Scan-Ergebnisse abrufen
-RESULT=$(curl -s "${baseUrl}${API_BASE}/scans/${scanSlug}/results")
+RESULT=$(curl -s "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
 echo "$RESULT" | jq '.results[0].total_size.bytes'`}</code>
                 </pre>
               </div>
@@ -210,7 +236,7 @@ echo "$RESULT" | jq '.results[0].total_size.bytes'`}</code>
                 <strong className="text-slate-900 dark:text-slate-100">Python-Integration:</strong>
                 <pre className="mt-1 text-xs bg-white dark:bg-slate-700 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
                   <code>{`import requests
-response = requests.get("${baseUrl}${API_BASE}/scans/${scanSlug}/results")
+response = requests.get("${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
 data = response.json()
 print(f"Gesamtgröße: {data['results'][0]['total_size']['formatted']}")`}</code>
                 </pre>
