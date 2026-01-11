@@ -16,7 +16,6 @@ type StatusFilter = "all" | "completed" | "failed" | "running" | "pending"
 type SortField = "name" | "last_run" | "next_run"
 type SortDirection = "asc" | "desc"
 type Density = "compact" | "normal"
-type ViewMode = "list" | "grid"
 
 interface ScanTableProps {
   scans: ScanStatus[]
