@@ -6,9 +6,10 @@ interface TooltipProps {
   content: string
   children: React.ReactNode
   side?: "top" | "bottom" | "left" | "right"
+  fullWidth?: boolean
 }
 
-export function Tooltip({ content, children, side = "top" }: TooltipProps) {
+export function Tooltip({ content, children, side = "top", fullWidth = false }: TooltipProps) {
   const [isVisible, setIsVisible] = React.useState(false)
   const [isFocused, setIsFocused] = React.useState(false)
   const [position, setPosition] = React.useState({ top: 0, left: 0 })
@@ -54,7 +55,7 @@ export function Tooltip({ content, children, side = "top" }: TooltipProps) {
     <>
       <div
         ref={triggerRef}
-        className="relative inline-block"
+        className={cn("relative", fullWidth ? "block w-full" : "inline-block")}
         onMouseEnter={() => setIsVisible(true)}
         onMouseLeave={() => setIsVisible(false)}
         onFocus={() => setIsFocused(true)}
