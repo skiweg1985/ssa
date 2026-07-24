@@ -14,6 +14,8 @@ interface GridCardProps {
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
   onShowApiInfo: (scan: ScanStatus) => void
+  onEdit?: (scan: ScanStatus) => void
+  onDelete?: (scan: ScanStatus) => void
 }
 
 const statusIcons = {
@@ -30,6 +32,8 @@ export function GridCard({
   onShowHistory,
   onShowDetail,
   onShowApiInfo,
+  onEdit,
+  onDelete,
 }: GridCardProps) {
   // Fetch progress only for running scans
   // Don't fetch for completed scans to avoid 404s after grace period
@@ -197,6 +201,8 @@ export function GridCard({
           onShowHistory={onShowHistory}
           onShowDetail={onShowDetail}
           onShowApiInfo={onShowApiInfo}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       </div>
     </div>

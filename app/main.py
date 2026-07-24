@@ -11,6 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# .env laden, bevor App-Module Umgebungsvariablen lesen
+# (SSA_ADMIN_PASSWORD, SSA_SECRET_KEY, ...). Bereits gesetzte
+# Umgebungsvariablen haben Vorrang vor der .env.
+load_dotenv()
+
 # Versuche psutil zu importieren (optional für Systemressourcen)
 try:
     import psutil
@@ -18,11 +25,19 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
+from fastapi import Depends
+
 from app.api.routes import router
+from app.api.auth_routes import router as auth_router
+from app.api.nas_routes import router as nas_router
+from app.api.job_routes import router as job_router
+from app.api.token_routes import router as token_router
+from app.api.deps import require_auth
 from app.services.scheduler import scheduler_service
-from app.services.storage import storage
+from app.services.storage import storage, get_storage
 from app.services.scanner import scanner_service
-from app.config.loader import load_config
+from app.services.jobs_store import initialize_jobs_store, jobs_store
+from app.services.security import admin_password_configured
 
 # Logging konfigurieren
 logging.basicConfig(
@@ -57,9 +72,29 @@ async def lifespan(app: FastAPI):
     _server_start_time = datetime.now(timezone.utc)
     logger.info("Starte FastAPI Server...")
     
+    if not admin_password_configured():
+        logger.warning(
+            "=" * 60 + "\n"
+            "WARNUNG: SSA_ADMIN_PASSWORD ist nicht gesetzt!\n"
+            "Der Login ist deaktiviert, bis die Umgebungsvariable gesetzt\n"
+            "und der Server neu gestartet wurde.\n" + "=" * 60
+        )
+
     try:
-        # Lade Konfiguration und starte Scheduler
-        # Storage wird automatisch im Projekt-Root initialisiert (history.db)
+        # Initialisiere Jobs-Store (gleiche DB wie die Scan-Historie)
+        # und importiere config.yaml-Scans einmalig
+        initialize_jobs_store(get_storage().db_path)
+        import_result = jobs_store.import_from_config_yaml()
+        if import_result.get("imported"):
+            logger.info(
+                f"config.yaml importiert: {import_result['jobs']} Job(s), "
+                f"{import_result['connections']} NAS-Verbindung(en)"
+            )
+    except Exception as e:
+        logger.error(f"Fehler beim Initialisieren des Jobs-Stores: {e}")
+
+    try:
+        # Lade Jobs aus der Datenbank und starte Scheduler
         scheduler_service.load_and_schedule()
         scheduler_service.start()
         logger.info("Scheduler gestartet")
@@ -84,77 +119,49 @@ app = FastAPI(
 )
 
 # CORS Middleware
+# Origins konfigurierbar via SSA_CORS_ORIGINS (kommasepariert).
+# Default: Vite-Dev-Server. In Produktion serviert das Backend das Frontend
+# same-origin, dann ist CORS ohnehin nicht nötig.
+_cors_origins = [
+    origin.strip()
+    for origin in os.environ.get("SSA_CORS_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In Produktion sollte dies eingeschränkt werden
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=False,  # Bearer-Token im Header, keine Cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # API Routes
-app.include_router(router, prefix="/api", tags=["scans"])
+# Auth-Endpoints sind offen (Login), alle anderen erfordern ein gültiges Token
+app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+app.include_router(
+    router, prefix="/api", tags=["scans"], dependencies=[Depends(require_auth)]
+)
+app.include_router(
+    nas_router,
+    prefix="/api/nas-connections",
+    tags=["nas-connections"],
+    dependencies=[Depends(require_auth)],
+)
+app.include_router(
+    job_router,
+    prefix="/api/scan-jobs",
+    tags=["scan-jobs"],
+    dependencies=[Depends(require_auth)],
+)
+app.include_router(
+    token_router,
+    prefix="/api/api-tokens",
+    tags=["api-tokens"],
+    dependencies=[Depends(require_auth)],
+)
 
-# Frontend build directory (React app)
-frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    # Mount assets directory
-    assets_dir = frontend_dist / "assets"
-    if assets_dir.exists():
-        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
-    
-    # Serve index.html for root and all non-API routes
-    from fastapi.responses import FileResponse
-    
-    @app.get("/", response_class=HTMLResponse)
-    async def serve_frontend_root():
-        """Serve React frontend index.html"""
-        index_file = frontend_dist / "index.html"
-        if index_file.exists():
-            return FileResponse(str(index_file))
-        logger.error(f"React frontend index.html nicht gefunden in: {index_file}")
-        return HTMLResponse(
-            content="<h1>Fehler: React Frontend nicht gefunden. Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</h1>",
-            status_code=500
-        )
-    
-    @app.get("/{full_path:path}")
-    async def serve_frontend(full_path: str):
-        """
-        Serve the React frontend for all non-API routes.
-        """
-        # Don't interfere with API routes or health endpoint
-        if full_path.startswith("api/") or full_path == "health":
-            from fastapi import HTTPException
-            raise HTTPException(status_code=404, detail="Not found")
-        
-        # Try to serve static file first (for assets, etc.)
-        static_file = frontend_dist / full_path
-        if static_file.exists() and static_file.is_file():
-            return FileResponse(str(static_file))
-        
-        # Otherwise serve index.html (for React Router)
-        index_file = frontend_dist / "index.html"
-        if index_file.exists():
-            return FileResponse(str(index_file))
-        
-        # Frontend not found
-        logger.error(f"React frontend index.html nicht gefunden in: {index_file}")
-        return HTMLResponse(
-            content="<h1>Fehler: React Frontend nicht gefunden. Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</h1>",
-            status_code=500
-        )
-else:
-    # Frontend build not found
-    @app.get("/", response_class=HTMLResponse)
-    async def read_root():
-        logger.error(f"React frontend build nicht gefunden in: {frontend_dist}")
-        return HTMLResponse(
-            content="<h1>Fehler: React Frontend Build nicht gefunden</h1><p>Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</p>",
-            status_code=500
-        )
-
-
+# WICHTIG: /health muss VOR der SPA-Catch-all-Route registriert werden,
+# sonst verschattet /{full_path:path} den Endpoint (Starlette matcht in Reihenfolge).
 @app.get("/health")
 async def health_check():
     """
@@ -248,17 +255,17 @@ async def health_check():
         logger.warning(f"Fehler beim Abrufen der Storage-Statistiken: {e}")
         health_data["storage"] = {"error": str(e)}
     
-    # Anzahl laufender Scans
+    # Anzahl laufender Scans (aus der Datenbank)
     try:
-        config = load_config()
+        jobs = jobs_store.list_jobs()
         running_scans = []
-        for scan_config in config.scans:
-            if scanner_service.is_scan_running(scan_config.slug):
-                running_scans.append(scan_config.name)
-        
+        for job in jobs:
+            if scanner_service.is_scan_running(job["slug"]):
+                running_scans.append(job["name"])
+
         health_data["scans"] = {
-            "total_configured": len(config.scans),
-            "enabled": len([s for s in config.scans if s.enabled]),
+            "total_configured": len(jobs),
+            "enabled": len([j for j in jobs if j["enabled"]]),
             "running": len(running_scans),
             "running_scans": running_scans
         }
@@ -278,6 +285,66 @@ async def health_check():
         logger.warning(f"Fehler beim Abrufen der Konfigurations-Warnungen: {e}")
     
     return health_data
+
+
+# Frontend build directory (React app)
+frontend_dist = Path(__file__).parent.parent / "frontend" / "dist"
+if frontend_dist.exists():
+    # Mount assets directory
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+    
+    # Serve index.html for root and all non-API routes
+    from fastapi.responses import FileResponse
+    
+    @app.get("/", response_class=HTMLResponse)
+    async def serve_frontend_root():
+        """Serve React frontend index.html"""
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        logger.error(f"React frontend index.html nicht gefunden in: {index_file}")
+        return HTMLResponse(
+            content="<h1>Fehler: React Frontend nicht gefunden. Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</h1>",
+            status_code=500
+        )
+    
+    @app.get("/{full_path:path}")
+    async def serve_frontend(full_path: str):
+        """
+        Serve the React frontend for all non-API routes.
+        """
+        # Don't interfere with API routes or health endpoint
+        if full_path.startswith("api/") or full_path == "health":
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        # Try to serve static file first (for assets, etc.)
+        static_file = frontend_dist / full_path
+        if static_file.exists() and static_file.is_file():
+            return FileResponse(str(static_file))
+        
+        # Otherwise serve index.html (for React Router)
+        index_file = frontend_dist / "index.html"
+        if index_file.exists():
+            return FileResponse(str(index_file))
+        
+        # Frontend not found
+        logger.error(f"React frontend index.html nicht gefunden in: {index_file}")
+        return HTMLResponse(
+            content="<h1>Fehler: React Frontend nicht gefunden. Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</h1>",
+            status_code=500
+        )
+else:
+    # Frontend build not found
+    @app.get("/", response_class=HTMLResponse)
+    async def read_root():
+        logger.error(f"React frontend build nicht gefunden in: {frontend_dist}")
+        return HTMLResponse(
+            content="<h1>Fehler: React Frontend Build nicht gefunden</h1><p>Bitte 'npm run build' im frontend/ Verzeichnis ausführen.</p>",
+            status_code=500
+        )
 
 
 if __name__ == "__main__":

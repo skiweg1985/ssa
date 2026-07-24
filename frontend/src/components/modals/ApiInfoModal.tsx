@@ -12,11 +12,12 @@ import { useState } from "react"
 interface ApiInfoModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onOpenApiTokens?: () => void
 }
 
 const API_BASE = "/api"
 
-export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
+export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoModalProps) {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
 
   const copyToClipboard = async (text: string, index: number) => {
@@ -253,6 +254,18 @@ export function ApiInfoModal({ open, onOpenChange }: ApiInfoModalProps) {
       </DialogContent>
 
       <DialogFooter>
+        {onOpenApiTokens && (
+          <Button
+            variant="secondary"
+            onClick={() => {
+              onOpenChange(false)
+              onOpenApiTokens()
+            }}
+            className="mr-auto"
+          >
+            API-Tokens verwalten
+          </Button>
+        )}
         <Button variant="secondary" onClick={() => onOpenChange(false)}>
           Schließen
         </Button>

@@ -14,9 +14,53 @@ from app.models.scan import (
 from app.services.storage import storage
 from app.services.scanner import scanner_service
 from app.services.scheduler import scheduler_service
-from app.config.loader import load_config, get_scan_config
+from app.services.jobs_store import jobs_store
+from app.models.config import NASConfigYAML, ScanTaskConfigYAML
 
 router = APIRouter()
+
+
+def _job_to_view_config(job: dict) -> Optional[ScanTaskConfigYAML]:
+    """
+    Baut eine LESE-Ansicht eines Jobs als ScanTaskConfigYAML mit Dummy-Passwort
+    (keine Entschlüsselung nötig; Passwort wird in Read-Handlern nie verwendet).
+    """
+    connection = jobs_store.get_connection_row(job["nas_connection_id"])
+    if connection is None:
+        return None
+    nas = NASConfigYAML(
+        host=connection["host"],
+        username=connection["username"],
+        password="",
+        port=connection["port"],
+        use_https=bool(connection["use_https"]),
+        verify_ssl=bool(connection["verify_ssl"]),
+    )
+    created_at = None
+    if job.get("created_at"):
+        try:
+            created_at = datetime.fromisoformat(job["created_at"])
+        except ValueError:
+            created_at = None
+    return ScanTaskConfigYAML(
+        name=job["name"],
+        slug=job["slug"],
+        created_at=created_at,
+        nas=nas,
+        shares=job.get("shares"),
+        folders=job.get("folders"),
+        paths=job.get("paths"),
+        interval=job["interval"],
+        enabled=job["enabled"],
+    )
+
+
+def get_scan_config_from_db(identifier: str) -> Optional[ScanTaskConfigYAML]:
+    """DB-basierter Ersatz für get_scan_config (Slug oder Name) - Lese-Ansicht"""
+    job = jobs_store.get_job(identifier)
+    if job is None:
+        return None
+    return _job_to_view_config(job)
 
 
 @router.get("/scans", response_model=ScanListResponse)
@@ -25,10 +69,12 @@ async def get_scans():
     Gibt eine Liste aller konfigurierten Scans mit Status zurück
     """
     try:
-        config = load_config()
         scan_statuses = []
-        
-        for scan_config in config.scans:
+
+        for job in jobs_store.list_jobs():
+            scan_config = _job_to_view_config(job)
+            if scan_config is None:
+                continue
             # Prüfe zuerst, ob Scan gerade läuft
             is_running = scanner_service.is_scan_running(scan_config.slug)
             
@@ -74,7 +120,8 @@ async def get_scans():
                 folders=scan_config.folders,
                 paths=scan_config.paths,
                 nas=nas_config_public,
-                interval=scan_config.interval
+                interval=scan_config.interval,
+                nas_connection_id=job["nas_connection_id"]
             )
             scan_statuses.append(scan_status)
         
@@ -91,12 +138,12 @@ async def get_scan(scan_identifier: str):
     Unterstützt slug oder name als Identifier
     """
     try:
-        config = load_config()
-        scan_config = get_scan_config(config, scan_identifier)
-        
+        job = jobs_store.get_job(scan_identifier)
+        scan_config = _job_to_view_config(job) if job else None
+
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
-        
+
         # Prüfe zuerst, ob Scan gerade läuft
         is_running = scanner_service.is_scan_running(scan_config.slug)
         
@@ -142,7 +189,8 @@ async def get_scan(scan_identifier: str):
             folders=scan_config.folders,
             paths=scan_config.paths,
             nas=nas_config_public,
-            interval=scan_config.interval
+            interval=scan_config.interval,
+            nas_connection_id=job["nas_connection_id"]
         )
     
     except HTTPException:
@@ -175,12 +223,11 @@ async def get_scan_progress(scan_identifier: str):
                          oder None wenn keine Historie vorhanden ist
     """
     try:
-        config = load_config()
-        scan_config = get_scan_config(config, scan_identifier)
-        
+        scan_config = get_scan_config_from_db(scan_identifier)
+
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
-        
+
         # Prüfe ob Scan läuft
         if not scanner_service.is_scan_running(scan_config.slug):
             raise HTTPException(
@@ -371,12 +418,11 @@ async def get_scan_results(scan_identifier: str, latest: bool = True):
         latest: Wenn True, nur das neueste Ergebnis. Wenn False, alle Ergebnisse.
     """
     try:
-        config = load_config()
-        scan_config = get_scan_config(config, scan_identifier)
-        
+        scan_config = get_scan_config_from_db(scan_identifier)
+
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
-        
+
         if latest:
             result = storage.get_latest_result(scan_config.slug)
             if not result:
@@ -410,12 +456,11 @@ async def get_scan_history(scan_identifier: str):
         scan_identifier: Slug oder Name des Scans
     """
     try:
-        config = load_config()
-        scan_config = get_scan_config(config, scan_identifier)
-        
+        scan_config = get_scan_config_from_db(scan_identifier)
+
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
-        
+
         results = storage.get_all_results(scan_config.slug)
         if not results:
             raise HTTPException(
@@ -445,12 +490,14 @@ async def trigger_scan(scan_identifier: str, background_tasks: BackgroundTasks):
         background_tasks: FastAPI BackgroundTasks für asynchrone Ausführung
     """
     try:
-        config = load_config()
-        scan_config = get_scan_config(config, scan_identifier)
-        
-        if not scan_config:
+        job = jobs_store.get_job(scan_identifier)
+
+        if not job:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
-        
+
+        # Volle Konfiguration inkl. entschlüsseltem NAS-Passwort (nur für den Scan-Lauf)
+        scan_config = jobs_store.to_scan_config(job)
+
         # Prüfe ob bereits ein Scan läuft
         if scanner_service.is_scan_running(scan_config.slug):
             return TriggerResponse(
@@ -477,10 +524,11 @@ async def trigger_scan(scan_identifier: str, background_tasks: BackgroundTasks):
 @router.post("/config/reload")
 async def reload_config():
     """
-    Lädt die Konfiguration manuell neu und aktualisiert alle Jobs
+    Synchronisiert den Scheduler neu aus der Datenbank
+    (früher: Neuladen der config.yaml - Jobs leben jetzt in der DB)
     """
     try:
-        result = scheduler_service.reload_config()
+        result = scheduler_service.resync_from_db()
         
         if result["success"]:
             return {
@@ -671,12 +719,11 @@ async def delete_scan_results(scan_identifier: str):
         Erfolgsmeldung
     """
     try:
-        config = load_config()
-        scan_config = get_scan_config(config, scan_identifier)
-        
+        scan_config = get_scan_config_from_db(scan_identifier)
+
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
-        
+
         storage.clear_results(scan_slug=scan_config.slug)
         return {
             "success": True,

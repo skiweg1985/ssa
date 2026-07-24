@@ -16,6 +16,28 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 pip install -r requirements.txt
 ```
 
+### Lokal auf macOS/Linux (venv)
+
+Die App läuft ohne Anpassungen lokal, z.B. auf einem Mac – benötigt wird nur
+Python 3.11+ und Netzwerkzugriff aufs NAS (alle Scans laufen über die
+File Station API, nichts wird lokal gemountet):
+
+```bash
+git clone <repo-url> && cd ssa
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp config.yaml.example config.yaml   # anpassen
+
+# Server starten (Web-UI: http://localhost:8080)
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+```
+
+Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
+`uvicorn`, `pytest` und `python` direkt ohne `.venv/bin/`-Präfix.
+
+`install.sh`/`service.sh` (systemd) sind nur für den Dauerbetrieb unter Linux
+gedacht und werden auf dem Mac nicht benötigt.
+
 ## CLI
 
 Der interaktive CLI-Client ermöglicht Ad-hoc-Analysen von Verzeichnisgrößen.
@@ -78,10 +100,35 @@ starten – das gebaute Frontend (`frontend/dist/`) ist im Repo enthalten.
 > **Für Maintainer:** Wie ein Release erstellt wird (Tag pushen, Workflow,
 > Paketinhalt, Troubleshooting) steht in [RELEASING.md](RELEASING.md).
 
+## Job-Verwaltung im Frontend
+
+Scan-Jobs und NAS-Verbindungen werden **im Web-Frontend** verwaltet:
+
+- **Scan-Jobs**: anlegen/bearbeiten/löschen über „Neuer Scan" bzw. das Aktionsmenü der Tabelle — inkl. Verzeichnisauswahl per NAS-Browser, Intervall-Presets oder Cron.
+- **NAS-Verbindungen**: eigener Bereich (Topbar → Server-Icon) mit „Verbindung testen"; Passwörter werden **verschlüsselt** in der Datenbank gespeichert und nie wieder ans Frontend ausgeliefert.
+- Bestehende `config.yaml`-Scans werden beim **ersten Start einmalig importiert**; danach ist die Datenbank die einzige Quelle.
+
+## Monitoring (PRTG, Zabbix, Grafana …)
+
+Für Monitoring-Systeme gibt es **statische, read-only API-Tokens**, die im
+Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
+
+- Token wird bei Erstellung **einmalig** angezeigt (gespeichert wird nur der Hash).
+- Zugriff: nur `GET` auf `/api/scans*` (Status, Ergebnisse, Historie, Fortschritt)
+  und `/api/storage/stats` — kein Triggern, keine Verwaltung.
+- Verwendung: Header `Authorization: Bearer <token>`.
+- `/health` ist weiterhin ohne Token erreichbar (Up/Down-Checks).
+
+```bash
+curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/scans
+```
+
 ## Sicherheit
 
+- **Login erforderlich**: Das Frontend/die API ist per Passwort geschützt. Setze `SSA_ADMIN_PASSWORD` in der Umgebung (z.B. `.env`); Standard-Benutzer ist `admin` (änderbar via `SSA_ADMIN_USER`). Ohne gesetztes Passwort ist der Login deaktiviert.
+- **Verschlüsselte NAS-Passwörter**: gespeicherte Zugangsdaten werden mit einem Key aus `SSA_SECRET_KEY` bzw. der auto-generierten `data/secret.key` verschlüsselt. Bei Key-Verlust/-Rotation müssen die NAS-Passwörter neu eingegeben werden.
 - Standard ist **SSL-Verifizierung an**.
-- Für self-signed Zertifikate: in `.env` `SYNO_VERIFY_SSL=false` oder in `config.yaml` `verify_ssl: false`.
+- Für self-signed Zertifikate: SSL-Prüfung pro NAS-Verbindung im Frontend deaktivierbar (CLI: `SYNO_VERIFY_SSL=false`).
 
 ## Tests
 

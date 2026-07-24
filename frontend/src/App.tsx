@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { Loader2 } from "lucide-react"
 import { ToastProvider, useToast } from "@/components/ui/toast"
 import { Topbar } from "@/components/layout/Topbar"
 import { CommandPalette } from "@/components/layout/CommandPalette"
@@ -9,11 +10,16 @@ import { DetailModal } from "@/components/modals/DetailModal"
 import { StorageModal } from "@/components/modals/StorageModal"
 import { ApiInfoModal } from "@/components/modals/ApiInfoModal"
 import { ScanApiModal } from "@/components/modals/ScanApiModal"
+import { JobEditorModal } from "@/components/modals/JobEditorModal"
+import { NasConnectionsModal } from "@/components/modals/NasConnectionsModal"
+import { ApiTokensModal } from "@/components/modals/ApiTokensModal"
+import { LoginScreen } from "@/components/auth/LoginScreen"
 import { useScans } from "@/hooks/useScans"
-import { triggerScan, reloadConfig } from "@/lib/api"
+import { useAuth } from "@/hooks/useAuth"
+import { triggerScan, reloadConfig, deleteScanJob } from "@/lib/api"
 import type { ScanStatus } from "@/types/api"
 
-function AppContent() {
+function AppContent({ onLogout }: { onLogout: () => void }) {
   const { scans, loading, error, lastUpdated, refetch } = useScans(true, 5000)
   const { showToast } = useToast()
 
@@ -25,6 +31,10 @@ function AppContent() {
   const [storageModalOpen, setStorageModalOpen] = useState(false)
   const [apiInfoModalOpen, setApiInfoModalOpen] = useState(false)
   const [scanApiModalOpen, setScanApiModalOpen] = useState(false)
+  const [jobEditorOpen, setJobEditorOpen] = useState(false)
+  const [nasConnectionsOpen, setNasConnectionsOpen] = useState(false)
+  const [apiTokensOpen, setApiTokensOpen] = useState(false)
+  const [editingJob, setEditingJob] = useState<ScanStatus | null>(null)
   const [selectedScanName, setSelectedScanName] = useState<string | null>(null)
   const [selectedScan, setSelectedScan] = useState<ScanStatus | null>(null)
 
@@ -41,7 +51,7 @@ function AppContent() {
   const handleReloadConfig = async () => {
     try {
       await reloadConfig()
-      showToast("Erfolg", "Konfiguration wurde neu geladen", "success")
+      showToast("Erfolg", "Scheduler wurde neu synchronisiert", "success")
       setTimeout(() => refetch(), 1000)
     } catch (err) {
       showToast("Fehler", `Fehler beim Neuladen: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
@@ -68,6 +78,30 @@ function AppContent() {
     setScanApiModalOpen(true)
   }
 
+  const handleNewScan = () => {
+    setEditingJob(null)
+    setJobEditorOpen(true)
+  }
+
+  const handleEditJob = (scan: ScanStatus) => {
+    setEditingJob(scan)
+    setJobEditorOpen(true)
+  }
+
+  const handleDeleteJob = async (scan: ScanStatus) => {
+    const deleteHistory = confirm(
+      `Scan-Job '${scan.scan_name}' löschen?\n\nOK = Job UND Verlauf löschen\nAbbrechen = nichts löschen`
+    )
+    if (!deleteHistory) return
+    try {
+      await deleteScanJob(scan.scan_slug, true)
+      showToast("Erfolg", `Scan '${scan.scan_name}' wurde gelöscht`, "success")
+      refetch()
+    } catch (err) {
+      showToast("Fehler", `Löschen fehlgeschlagen: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
+    }
+  }
+
   const handleCommandPaletteSelect = (scanName: string, action: "results" | "history") => {
     setSelectedScanName(scanName)
     if (action === "results") {
@@ -86,6 +120,9 @@ function AppContent() {
         onOpenStorage={() => setStorageModalOpen(true)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onOpenApiInfo={() => setApiInfoModalOpen(true)}
+        onNewScan={handleNewScan}
+        onOpenNasConnections={() => setNasConnectionsOpen(true)}
+        onLogout={onLogout}
         isLoading={loading}
         lastUpdated={lastUpdated}
       />
@@ -123,6 +160,8 @@ function AppContent() {
             onShowHistory={handleShowHistory}
             onShowDetail={handleShowDetail}
             onShowApiInfo={handleShowApiInfo}
+            onEdit={handleEditJob}
+            onDelete={handleDeleteJob}
             searchQuery={searchQuery}
           />
         </div>
@@ -133,6 +172,10 @@ function AppContent() {
         onOpenChange={setCommandPaletteOpen}
         scans={scans}
         onSelectScan={handleCommandPaletteSelect}
+        onNewScan={handleNewScan}
+        onOpenNasConnections={() => setNasConnectionsOpen(true)}
+        onOpenApiTokens={() => setApiTokensOpen(true)}
+        onLogout={onLogout}
       />
 
       {selectedScanName && (
@@ -160,22 +203,60 @@ function AppContent() {
       />
 
       <StorageModal open={storageModalOpen} onOpenChange={setStorageModalOpen} />
-      
-      <ApiInfoModal open={apiInfoModalOpen} onOpenChange={setApiInfoModalOpen} />
-      
-      <ScanApiModal 
-        open={scanApiModalOpen} 
+
+      <ApiInfoModal
+        open={apiInfoModalOpen}
+        onOpenChange={setApiInfoModalOpen}
+        onOpenApiTokens={() => setApiTokensOpen(true)}
+      />
+
+      <ScanApiModal
+        open={scanApiModalOpen}
         onOpenChange={setScanApiModalOpen}
         scan={selectedScan}
       />
+
+      <JobEditorModal
+        open={jobEditorOpen}
+        onOpenChange={setJobEditorOpen}
+        job={editingJob}
+        onSaved={refetch}
+        onManageConnections={() => setNasConnectionsOpen(true)}
+      />
+
+      <NasConnectionsModal
+        open={nasConnectionsOpen}
+        onOpenChange={setNasConnectionsOpen}
+        onChanged={refetch}
+      />
+
+      <ApiTokensModal open={apiTokensOpen} onOpenChange={setApiTokensOpen} />
     </div>
   )
+}
+
+function AuthGate() {
+  const { status, login, logout } = useAuth()
+
+  if (status === "checking") {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+      </div>
+    )
+  }
+
+  if (status === "unauthenticated") {
+    return <LoginScreen onLogin={login} />
+  }
+
+  return <AppContent onLogout={logout} />
 }
 
 export default function App() {
   return (
     <ToastProvider>
-      <AppContent />
+      <AuthGate />
     </ToastProvider>
   )
 }

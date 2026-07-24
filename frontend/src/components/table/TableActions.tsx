@@ -1,4 +1,4 @@
-import { Play, BarChart3, History, MoreVertical, Eye, Link2 } from "lucide-react"
+import { Play, BarChart3, History, MoreVertical, Eye, Link2, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import type { ScanStatus } from "@/types/api"
@@ -10,6 +10,8 @@ interface TableActionsProps {
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
   onShowApiInfo: (scan: ScanStatus) => void
+  onEdit?: (scan: ScanStatus) => void
+  onDelete?: (scan: ScanStatus) => void
 }
 
 export function TableActions({
@@ -19,6 +21,8 @@ export function TableActions({
   onShowHistory,
   onShowDetail,
   onShowApiInfo,
+  onEdit,
+  onDelete,
 }: TableActionsProps) {
   const canRun = scan.status !== "running" && scan.enabled
 
@@ -76,6 +80,24 @@ export function TableActions({
           <Link2 className="h-3.5 w-3.5 mr-2" />
           API-Info
         </DropdownMenuItem>
+        {onEdit && (
+          <DropdownMenuItem
+            onClick={() => onEdit(scan)}
+            className="text-xs min-h-[40px] border-t border-slate-100 dark:border-slate-700"
+          >
+            <Pencil className="h-3.5 w-3.5 mr-2" />
+            Bearbeiten
+          </DropdownMenuItem>
+        )}
+        {onDelete && (
+          <DropdownMenuItem
+            onClick={() => onDelete(scan)}
+            className="text-xs min-h-[40px] text-red-600 dark:text-red-400"
+          >
+            <Trash2 className="h-3.5 w-3.5 mr-2" />
+            Löschen
+          </DropdownMenuItem>
+        )}
       </DropdownMenu>
     </div>
   )

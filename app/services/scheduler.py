@@ -9,7 +9,6 @@ from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.asyncio import AsyncIOExecutor
 
-from app.config.loader import load_config, get_scan_config
 from app.services.scanner import scanner_service
 from app.models.config import ConfigYAML, ScanTaskConfigYAML
 
@@ -77,26 +76,31 @@ class SchedulerService:
     
     def load_and_schedule(self, config_path: Optional[str] = None) -> None:
         """
-        Lädt die Konfiguration und erstellt Jobs für alle aktivierten Scans
-        
-        Args:
-            config_path: Pfad zur config.yaml Datei
+        Lädt alle aktivierten Scan-Jobs aus der Datenbank und plant sie ein.
+
+        (Jobs leben seit der Frontend-Verwaltung in der SQLite-DB;
+        config.yaml wird nur noch einmalig beim ersten Start importiert.)
         """
         try:
-            self.config = load_config(config_path)
-            logger.info(f"Konfiguration geladen: {len(self.config.scans)} Scan-Tasks gefunden")
-            
-            for scan_config in self.config.scans:
-                if scan_config.enabled:
-                    self.add_scan_job(scan_config)
+            from app.services.jobs_store import jobs_store
+
+            jobs = jobs_store.list_jobs()
+            logger.info(f"Jobs aus Datenbank geladen: {len(jobs)} Scan-Task(s) gefunden")
+
+            for job in jobs:
+                if job["enabled"]:
+                    try:
+                        scan_config = jobs_store.to_scan_config(job)
+                        self.add_scan_job(scan_config)
+                    except Exception as e:
+                        logger.error(
+                            f"Job '{job['slug']}' konnte nicht eingeplant werden: {e}"
+                        )
                 else:
-                    logger.info(f"Scan '{scan_config.name}' ist deaktiviert, überspringe")
-            
-            # Richte automatisches Neuladen der Config ein (alle 5 Minuten)
-            self._setup_config_reload_job()
-        
+                    logger.info(f"Scan '{job['name']}' ist deaktiviert, überspringe")
+
         except Exception as e:
-            logger.error(f"Fehler beim Laden der Konfiguration: {e}")
+            logger.error(f"Fehler beim Laden der Jobs aus der Datenbank: {e}")
             raise
     
     def _create_trigger(self, interval_str: str, scan_name: str) -> Optional[Union[CronTrigger, IntervalTrigger]]:
@@ -321,154 +325,78 @@ class SchedulerService:
         if not job:
             return None
         
+        # next_run_time existiert erst, wenn der Scheduler gestartet ist
+        next_run = getattr(job, "next_run_time", None)
+
         return {
             "job_id": job_id,
             "name": job.name,
-            "next_run": job.next_run_time,
+            "next_run": next_run,
             "trigger": str(job.trigger)
         }
     
-    def reload_config(self, config_path: Optional[str] = None) -> Dict[str, any]:
+    def resync_from_db(self) -> Dict[str, any]:
         """
-        Lädt die Konfiguration neu und aktualisiert alle Jobs
-        
-        Args:
-            config_path: Pfad zur config.yaml Datei
-        
+        Synchronisiert die Scheduler-Jobs mit dem aktuellen Stand der Datenbank.
+
+        Entfernt Jobs, die es nicht mehr gibt oder die deaktiviert wurden,
+        und fügt neue/aktivierte Jobs hinzu. Bestehende Jobs werden neu
+        eingeplant (remove + add), damit Intervall-Änderungen greifen.
+
         Returns:
-            Dictionary mit Informationen über das Neuladen
+            Dictionary mit Informationen über die Synchronisierung
         """
         try:
-            old_scan_slugs = set(self._job_ids.keys()) if self.config else set()
-            
-            # Lade neue Konfiguration
-            new_config = load_config(config_path)
-            logger.info(f"Konfiguration neu geladen: {len(new_config.scans)} Scan-Tasks gefunden")
-            
-            new_scan_slugs = {scan.slug for scan in new_config.scans}
-            
-            # Entferne Jobs für Scans, die nicht mehr in der Config sind
+            from app.services.jobs_store import jobs_store
+
+            jobs = jobs_store.list_jobs()
+            old_scan_slugs = set(self._job_ids.keys())
+            enabled_jobs = {job["slug"]: job for job in jobs if job["enabled"]}
+
+            # Entferne Jobs, die nicht mehr existieren oder deaktiviert sind
             removed_scans = []
-            for scan_slug in old_scan_slugs:
-                if scan_slug not in new_scan_slugs:
+            for scan_slug in list(old_scan_slugs):
+                if scan_slug not in enabled_jobs:
                     if self.remove_scan_job(scan_slug):
                         removed_scans.append(scan_slug)
-            
-            # Aktualisiere oder füge neue Jobs hinzu
+
+            # Füge neue hinzu bzw. plane bestehende neu ein
             added_scans = []
             updated_scans = []
-            for scan_config in new_config.scans:
-                if scan_config.enabled:
-                    if scan_config.slug in old_scan_slugs:
-                        # Job existiert bereits, prüfe ob sich die Konfiguration geändert hat
-                        old_scan_config = None
-                        if self.config:
-                            for old_scan in self.config.scans:
-                                if old_scan.slug == scan_config.slug:
-                                    old_scan_config = old_scan
-                                    break
-                        
-                        # Vergleiche Konfigurationen, um zu sehen, ob sich etwas geändert hat
-                        config_changed = False
-                        if old_scan_config:
-                            # Vergleiche relevante Felder (shares, folders, paths, interval, nas)
-                            if (old_scan_config.shares != scan_config.shares or
-                                old_scan_config.folders != scan_config.folders or
-                                old_scan_config.paths != scan_config.paths or
-                                old_scan_config.interval != scan_config.interval or
-                                old_scan_config.nas.host != scan_config.nas.host or
-                                old_scan_config.nas.port != scan_config.nas.port):
-                                config_changed = True
-                                logger.info(
-                                    f"Konfiguration für Scan '{scan_config.name}' hat sich geändert. "
-                                    f"Alt: shares={old_scan_config.shares}, folders={old_scan_config.folders}, paths={old_scan_config.paths} | "
-                                    f"Neu: shares={scan_config.shares}, folders={scan_config.folders}, paths={scan_config.paths}"
-                                )
-                        else:
-                            config_changed = True
-                        
-                        # Finde alte Scan-Config für Vergleich
-                        old_scan_config = None
-                        if self.config:
-                            for old_scan in self.config.scans:
-                                if old_scan.slug == scan_config.slug:
-                                    old_scan_config = old_scan
-                                    break
-                        
-                        if config_changed:
-                            # Job existiert bereits, aktualisiere ihn
-                            logger.info(f"Konfiguration für Scan '{scan_config.name}' hat sich geändert, aktualisiere Job...")
-                            self.remove_scan_job(scan_config.slug)
-                            self.add_scan_job(scan_config)
-                            updated_scans.append(scan_config.name)
-                        else:
-                            logger.debug(f"Konfiguration für Scan '{scan_config.name}' unverändert, überspringe Update")
-                    else:
-                        # Neuer Job
-                        logger.info(f"Neuer Scan '{scan_config.name}' gefunden, füge Job hinzu...")
-                        self.add_scan_job(scan_config)
-                        added_scans.append(scan_config.name)
+            for slug, job in enabled_jobs.items():
+                try:
+                    scan_config = jobs_store.to_scan_config(job)
+                except Exception as e:
+                    logger.error(f"Job '{slug}' konnte nicht geladen werden: {e}")
+                    continue
+                if slug in old_scan_slugs:
+                    self.remove_scan_job(slug)
+                    self.add_scan_job(scan_config)
+                    updated_scans.append(job["name"])
                 else:
-                    # Scan ist deaktiviert, entferne Job falls vorhanden
-                    if scan_config.slug in old_scan_slugs:
-                        self.remove_scan_job(scan_config.slug)
-                        removed_scans.append(scan_config.name)
-            
-            self.config = new_config
-            
+                    self.add_scan_job(scan_config)
+                    added_scans.append(job["name"])
+
             result = {
                 "success": True,
-                "message": "Konfiguration erfolgreich neu geladen",
+                "message": "Scheduler erfolgreich aus der Datenbank synchronisiert",
                 "added_scans": added_scans,
                 "updated_scans": updated_scans,
                 "removed_scans": removed_scans,
-                "total_scans": len(new_config.scans)
+                "total_scans": len(jobs)
             }
-            
-            logger.info(f"Config-Reload abgeschlossen: {result}")
+
+            logger.info(f"Scheduler-Resync abgeschlossen: {result}")
             return result
-            
+
         except Exception as e:
-            logger.error(f"Fehler beim Neuladen der Konfiguration: {e}")
+            logger.error(f"Fehler beim Synchronisieren aus der Datenbank: {e}")
             return {
                 "success": False,
-                "message": f"Fehler beim Neuladen: {str(e)}",
+                "message": f"Fehler beim Synchronisieren: {str(e)}",
                 "error": str(e)
             }
-    
-    def _setup_config_reload_job(self) -> None:
-        """
-        Richtet einen periodischen Job ein, der die Konfiguration automatisch neu lädt
-        (alle 5 Minuten)
-        """
-        try:
-            # Entferne existierenden Config-Reload-Job falls vorhanden
-            if self.scheduler.get_job("config_reload"):
-                self.scheduler.remove_job("config_reload")
-            
-            # Füge neuen Job hinzu (alle 5 Minuten)
-            self.scheduler.add_job(
-                func=self._reload_config_job,
-                trigger=IntervalTrigger(minutes=5),
-                id="config_reload",
-                name="Config Auto-Reload",
-                replace_existing=True
-            )
-            logger.info("Automatisches Config-Reload eingerichtet (alle 5 Minuten)")
-        except Exception as e:
-            logger.error(f"Fehler beim Einrichten des Config-Reload-Jobs: {e}")
-    
-    async def _reload_config_job(self) -> None:
-        """
-        Wird periodisch vom Scheduler aufgerufen, um die Config neu zu laden
-        """
-        logger.info("Automatisches Neuladen der Konfiguration...")
-        result = self.reload_config()
-        if result["success"]:
-            logger.info(f"Automatisches Config-Reload erfolgreich: {result['message']}")
-        else:
-            logger.warning(f"Automatisches Config-Reload fehlgeschlagen: {result['message']}")
-    
+
     def get_all_jobs(self) -> Dict[str, Dict]:
         """
         Gibt Informationen über alle Jobs zurück

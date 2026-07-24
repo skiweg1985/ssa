@@ -45,6 +45,85 @@ export interface ScanStatus {
   paths?: string[];
   nas?: NASConfigPublic;
   interval?: string;
+  nas_connection_id?: number;
+}
+
+// --- Auth ---
+export interface LoginResponse {
+  token: string;
+  username: string;
+  expires_at: string;
+}
+
+// --- NAS-Verbindungen ---
+export interface NASConnectionPublic {
+  id: number;
+  name: string;
+  host: string;
+  port?: number | null;
+  use_https: boolean;
+  verify_ssl: boolean;
+  username: string;
+  job_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NASConnectionPayload {
+  name: string;
+  host: string;
+  username: string;
+  // Bei Update: leer/undefined = gespeichertes Passwort behalten
+  password?: string;
+  port?: number | null;
+  use_https: boolean;
+  verify_ssl: boolean;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface BrowseEntry {
+  name: string;
+  path: string;
+  is_dir: boolean;
+}
+
+export interface BrowseResponse {
+  path?: string | null;
+  entries: BrowseEntry[];
+}
+
+// --- API-Tokens (Monitoring) ---
+export interface ApiTokenPublic {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
+export interface ApiTokenCreated extends ApiTokenPublic {
+  // Klartext-Token: nur einmalig in der Erstellungs-Response enthalten
+  token: string;
+}
+
+// --- Scan-Jobs (Verwaltung) ---
+export interface ScanJobPayload {
+  name: string;
+  nas_connection_id: number;
+  interval: string;
+  enabled: boolean;
+  paths?: string[] | null;
+  shares?: string[] | null;
+  folders?: string[] | null;
+}
+
+export interface ScanJobPublic extends ScanJobPayload {
+  slug: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ScanListResponse {
