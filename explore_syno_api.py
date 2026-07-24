@@ -267,11 +267,11 @@ class SynologyAPI:
                                 min_poll_interval: int, max_poll_interval: int,
                                 last_progress: Optional[float],
                                 no_progress_count: int,
-                                last_status_print: int) -> Tuple[int, Optional[float], int, int]:
+                                last_status_print: int) -> Tuple[int, Optional[float], int, int, Optional[int], Optional[int], Optional[int]]:
         """
         Verarbeitet eine Status-Response und aktualisiert Polling-Parameter.
         Delegiert an DirSizePollingHelper.
-        
+
         Args:
             status_response: Die vollständige Status-Response
             task_id: Die Task-ID
@@ -282,9 +282,10 @@ class SynologyAPI:
             last_progress: Letzter Fortschrittswert
             no_progress_count: Anzahl Polls ohne Fortschritt
             last_status_print: Letzter Zeitpunkt für Status-Print
-            
+
         Returns:
-            Tuple mit (neues_intervall, neuer_last_progress, neuer_no_progress_count, neuer_last_status_print)
+            Tuple mit (neues_intervall, neuer_last_progress, neuer_no_progress_count, neuer_last_status_print,
+                      neuer_last_num_dir, neuer_last_num_file, neuer_last_total_size)
         """
         if not hasattr(self, '_polling_helper'):
             from app.services.dir_size_polling import DirSizePollingHelper
