@@ -224,4 +224,9 @@ pytest
 
 ## Lizenz
 
-Siehe `LICENSE`.
+MIT — siehe [LICENSE](LICENSE).
+
+## Sicherheit melden
+
+Sicherheitslücken bitte **nicht** über öffentliche Issues melden, sondern über
+den privaten Meldeweg — Details in [SECURITY.md](SECURITY.md).
