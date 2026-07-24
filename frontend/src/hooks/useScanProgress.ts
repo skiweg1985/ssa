@@ -114,6 +114,18 @@ export function useScanProgress(scanName: string, isRunning: boolean, interval: 
     }
   }, [scanName, isRunning, interval])
   
-  // Return completed progress if available, even if not currently running
-  return { progress: progress || completedProgressRef.current, error }
+  // Only surface progress that belongs to the currently selected scan.
+  // This prevents a previous scan's (completed) progress from leaking through
+  // for a render where scanName has already changed but the reset effects
+  // above have not run yet.
+  const belongsToScan = (p: ScanProgress | null): boolean =>
+    !!p && (p.scan_slug === scanName || p.scan_name === scanName)
+
+  const current = belongsToScan(progress)
+    ? progress
+    : belongsToScan(completedProgressRef.current)
+      ? completedProgressRef.current
+      : null
+
+  return { progress: current, error }
 }

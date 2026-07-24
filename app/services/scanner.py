@@ -386,6 +386,23 @@ class ScannerService:
                         
                     except Exception as e:
                         logger.exception(f"Scan '{scan_name}': [{idx}/{len(paths)}] Fehler beim Scannen von '{path}': {str(e)}")
+                        # Markiere Pfad als fertig (fehlgeschlagen) im Status (normalisiert),
+                        # damit _aggregate_path_status den Scan trotz Fehler als abgeschlossen erkennt
+                        if scan_slug in self._scan_status:
+                            current_status = self._scan_status.get(scan_slug, {})
+                            if "path_status" not in current_status:
+                                current_status["path_status"] = {}
+                            normalized_path = self._normalize_path(path)
+                            current_status["path_status"][normalized_path] = {
+                                "num_dir": 0,
+                                "num_file": 0,
+                                "total_size": 0,
+                                "waited": 0,
+                                "finished": True
+                            }
+                            self._scan_status[scan_slug] = current_status
+                            # Re-aggregiere Werte
+                            self._aggregate_path_status(scan_slug)
                         result_items.append(ScanResultItem(
                             folder_name=path,
                             success=False,
