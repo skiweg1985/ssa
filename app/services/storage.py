@@ -363,8 +363,14 @@ class ScanStorage:
                             unit=total_size_unit or 'B'
                         )
                     
+                    # WICHTIG: In der DB liegen Pfade normalisiert OHNE fuehrenden Slash.
+                    # Der Scanner (und damit frisch im Speicher gehaltene Ergebnisse)
+                    # verwendet absolute Pfade MIT Slash. Stelle den Slash beim Laden
+                    # wieder her, damit folder_name in der API immer identisch ist
+                    # ("/share/ordner") - egal ob aus Speicher oder nach einem Neustart
+                    # aus der DB (sonst brechen z.B. Monitoring-Filter auf folder_name).
                     item = ScanResultItem(
-                        folder_name=folder_path,
+                        folder_name=folder_path if folder_path.startswith("/") else f"/{folder_path}",
                         success=bool(success),
                         num_dir=num_dir,
                         num_file=num_file,
