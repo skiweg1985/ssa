@@ -271,12 +271,18 @@ class ScanStorage:
                         error,
                         scan_error
                     FROM scan_results
-                    ORDER BY scan_slug, timestamp DESC, folder_path
+                    ORDER BY scan_slug, timestamp ASC, folder_path
                 """)
                 
                 current_scan_slug = None
                 current_scan_name = None
                 current_timestamp = None
+                # WICHTIG: Status/Fehler der AKTUELLEN Gruppe getrennt mitfuehren.
+                # Beim Flush darf nicht der Status der gerade gelesenen (naechsten)
+                # Zeile verwendet werden - sonst erbt ein erfolgreicher Lauf den
+                # Status eines nachfolgenden Fehllaufs.
+                current_status = None
+                current_scan_error = None
                 results_for_scan = []
                 items_for_result = []
                 
@@ -295,8 +301,8 @@ class ScanStorage:
                                 scan_slug=current_scan_slug,
                                 scan_name=current_scan_name,
                                 timestamp=current_timestamp,
-                                status=status,
-                                error=scan_error,
+                                status=current_status or "completed",
+                                error=current_scan_error,
                                 results=items_for_result
                             )
                             results_for_scan.append(result)
@@ -308,7 +314,7 @@ class ScanStorage:
                             # Neue Scan-Gruppe?
                             if current_scan_slug and current_scan_slug != scan_slug:
                                 if len(results_for_scan) > self._max_history:
-                                    results_for_scan = results_for_scan[:self._max_history]
+                                    results_for_scan = results_for_scan[-self._max_history:]
                                 self._results[current_scan_slug] = results_for_scan
                                 results_for_scan = []
                         
@@ -326,6 +332,8 @@ class ScanStorage:
                         current_scan_slug = scan_slug
                         current_scan_name = scan_name
                         current_timestamp = timestamp
+                        current_status = status
+                        current_scan_error = scan_error
                         continue
                     
                     # Neue ScanResult-Gruppe?
@@ -336,8 +344,8 @@ class ScanStorage:
                                 scan_slug=current_scan_slug,
                                 scan_name=current_scan_name,
                                 timestamp=current_timestamp,
-                                status=status,
-                                error=scan_error,
+                                status=current_status or "completed",
+                                error=current_scan_error,
                                 results=items_for_result
                             )
                             results_for_scan.append(result)
@@ -346,13 +354,15 @@ class ScanStorage:
                         # Neue Scan-Gruppe?
                         if current_scan_slug and current_scan_slug != scan_slug:
                             if len(results_for_scan) > self._max_history:
-                                results_for_scan = results_for_scan[:self._max_history]
+                                results_for_scan = results_for_scan[-self._max_history:]
                             self._results[current_scan_slug] = results_for_scan
                             results_for_scan = []
                     
                     current_scan_slug = scan_slug
                     current_scan_name = scan_name
                     current_timestamp = timestamp
+                    current_status = status
+                    current_scan_error = scan_error
                     
                     # Erstelle ScanResultItem
                     total_size = None
@@ -386,15 +396,15 @@ class ScanStorage:
                         scan_slug=current_scan_slug,
                         scan_name=current_scan_name,
                         timestamp=current_timestamp,
-                        status=status,
-                        error=scan_error,
+                        status=current_status or "completed",
+                        error=current_scan_error,
                         results=items_for_result
                     )
                     results_for_scan.append(result)
                 
                 if current_scan_slug:
                     if len(results_for_scan) > self._max_history:
-                        results_for_scan = results_for_scan[:self._max_history]
+                        results_for_scan = results_for_scan[-self._max_history:]
                     self._results[current_scan_slug] = results_for_scan
                 
                 # Statistiken
@@ -585,10 +595,12 @@ class ScanStorage:
         # Durchsuche Ergebnisse rückwärts (neueste zuerst) nach dem ersten "completed" Status
         for result in reversed(self._results[scan_slug]):
             if result.status == "completed" and result.results:
-                # Prüfe ob mindestens ein erfolgreiches Ergebnis vorhanden ist
-                if any(item.success and item.total_size and item.total_size.bytes > 0 for item in result.results):
+                # Mindestens ein erfolgreich gescannter Ordner genügt.
+                # WICHTIG: Größe 0 ist ein gültiger Messwert (leerer Ordner) -
+                # ein "> 0"-Kriterium würde solche Scans fälschlich verwerfen.
+                if any(item.success for item in result.results):
                     return result
-        
+
         return None
     
     def get_all_results(self, scan_slug: str) -> List[ScanResult]:

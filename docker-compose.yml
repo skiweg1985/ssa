@@ -29,5 +29,22 @@ services:
       # Optional: bestehende config.yaml fuer den einmaligen Erst-Import mounten
       # - ./config.yaml:/app/config.yaml:ro
 
+    # --- Haertung ---
+    # Der Container laeuft als unprivilegierter Benutzer (UID 1000, siehe Dockerfile).
+    #
+    # BESTEHENDE INSTALLATION: Ein Datenvolume aus einer aelteren Version gehoert
+    # noch root. Einmalig uebereignen, sonst startet der Container nicht:
+    #   docker compose down
+    #   docker run --rm -v ssa_ssa-data:/data alpine chown -R 1000:1000 /data
+    #   docker compose up -d
+    read_only: true          # Root-Dateisystem unveraenderlich
+    tmpfs:
+      - /tmp                 # einziger beschreibbarer Pfad ausser dem Datenvolume
+    cap_drop:
+      - ALL                  # die App braucht keine Linux-Capabilities
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+
 volumes:
   ssa-data:

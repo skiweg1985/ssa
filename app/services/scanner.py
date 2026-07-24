@@ -456,7 +456,8 @@ class ScannerService:
             logger.exception(f"Scan '{scan_name}': {error_msg}")
             scan_result.status = "failed"
             scan_result.error = error_msg
-            scan_result.timestamp = datetime.utcnow()  # Aktualisiere Timestamp
+            # tz-bewusst, damit Zeitdifferenzen (z.B. Alters-Metriken) nicht scheitern
+            scan_result.timestamp = datetime.now(timezone.utc)
         
         finally:
             # Markiere Scan als beendet, aber behalte Status für Grace Period

@@ -11,18 +11,21 @@ on:
   # Manueller Start zum Testen (erzeugt kein Release, nur die Artefakte)
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
+    # Schreibrechte nur fuer diesen Job (Release + Assets anlegen)
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          # gh nutzt GITHUB_TOKEN, die Checkout-Credentials werden nicht gebraucht
+          persist-credentials: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: "20"
           cache: "npm"
@@ -68,7 +71,7 @@ jobs:
           ls -la
 
       - name: Artefakte hochladen (immer, auch bei workflow_dispatch)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: ${{ steps.package.outputs.stage }}
           path: |
