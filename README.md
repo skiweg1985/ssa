@@ -16,6 +16,28 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 pip install -r requirements.txt
 ```
 
+### Lokal auf macOS/Linux (venv)
+
+Die App läuft ohne Anpassungen lokal, z.B. auf einem Mac – benötigt wird nur
+Python 3.11+ und Netzwerkzugriff aufs NAS (alle Scans laufen über die
+File Station API, nichts wird lokal gemountet):
+
+```bash
+git clone <repo-url> && cd ssa
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp config.yaml.example config.yaml   # anpassen
+
+# Server starten (Web-UI: http://localhost:8080)
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+```
+
+Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
+`uvicorn`, `pytest` und `python` direkt ohne `.venv/bin/`-Präfix.
+
+`install.sh`/`service.sh` (systemd) sind nur für den Dauerbetrieb unter Linux
+gedacht und werden auf dem Mac nicht benötigt.
+
 ## CLI
 
 Der interaktive CLI-Client ermöglicht Ad-hoc-Analysen von Verzeichnisgrößen.
