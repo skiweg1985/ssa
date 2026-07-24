@@ -844,7 +844,7 @@ class TestProcessStatusResponse:
         no_progress_count = 0
         last_status_print = 0
         
-        new_interval, new_last_progress, new_no_progress_count, new_last_status_print = api_instance._process_status_response(
+        new_interval, new_last_progress, new_no_progress_count, new_last_status_print, _, _, _ = api_instance._process_status_response(
             status_response, task_id, waited, current_poll_interval,
             min_poll_interval, max_poll_interval, last_progress,
             no_progress_count, last_status_print
@@ -874,7 +874,7 @@ class TestProcessStatusResponse:
         no_progress_count = 3
         last_status_print = 0
         
-        new_interval, new_last_progress, new_no_progress_count, new_last_status_print = api_instance._process_status_response(
+        new_interval, new_last_progress, new_no_progress_count, new_last_status_print, _, _, _ = api_instance._process_status_response(
             status_response, task_id, waited, current_poll_interval,
             min_poll_interval, max_poll_interval, last_progress,
             no_progress_count, last_status_print
@@ -900,7 +900,7 @@ class TestProcessStatusResponse:
         no_progress_count = 1
         last_status_print = 0
         
-        new_interval, new_last_progress, new_no_progress_count, new_last_status_print = api_instance._process_status_response(
+        new_interval, new_last_progress, new_no_progress_count, new_last_status_print, _, _, _ = api_instance._process_status_response(
             status_response, task_id, waited, current_poll_interval,
             min_poll_interval, max_poll_interval, last_progress,
             no_progress_count, last_status_print
@@ -923,7 +923,7 @@ class TestProcessStatusResponse:
         no_progress_count = 1
         last_status_print = 0
         
-        new_interval, new_last_progress, new_no_progress_count, new_last_status_print = api_instance._process_status_response(
+        new_interval, new_last_progress, new_no_progress_count, new_last_status_print, _, _, _ = api_instance._process_status_response(
             status_response, task_id, waited, current_poll_interval,
             min_poll_interval, max_poll_interval, last_progress,
             no_progress_count, last_status_print
