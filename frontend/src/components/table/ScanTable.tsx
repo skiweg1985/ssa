@@ -26,6 +26,8 @@ interface ScanTableProps {
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
   onShowApiInfo: (scan: ScanStatus) => void
+  onEdit?: (scan: ScanStatus) => void
+  onDelete?: (scan: ScanStatus) => void
   searchQuery: string
 }
 
@@ -52,6 +54,8 @@ export function ScanTable({
   onShowHistory,
   onShowDetail,
   onShowApiInfo,
+  onEdit,
+  onDelete,
   searchQuery,
 }: ScanTableProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
@@ -337,6 +341,8 @@ export function ScanTable({
                       onShowHistory={onShowHistory}
                       onShowDetail={onShowDetail}
                       onShowApiInfo={onShowApiInfo}
+          onEdit={onEdit}
+          onDelete={onDelete}
                     />
                   ))}
                 </tbody>
@@ -355,6 +361,8 @@ export function ScanTable({
                   onShowHistory={onShowHistory}
                   onShowDetail={onShowDetail}
                   onShowApiInfo={onShowApiInfo}
+          onEdit={onEdit}
+          onDelete={onDelete}
                 />
               ))}
             </div>

@@ -11,26 +11,149 @@ import type {
   FoldersResponse,
   CleanupPreview,
   CleanupResponse,
+  LoginResponse,
+  NASConnectionPublic,
+  NASConnectionPayload,
+  TestConnectionResponse,
+  BrowseResponse,
+  ScanJobPayload,
+  ScanJobPublic,
 } from "@/types/api";
 
 const API_BASE = '/api';
 
+// --- Auth token handling (localStorage) ---
+const TOKEN_KEY = 'syno-space-analyzer-auth-token';
+
+export function getToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setToken(token: string): void {
+  try {
+    localStorage.setItem(TOKEN_KEY, token);
+  } catch {
+    // localStorage nicht verfügbar - Session gilt nur für diesen Tab
+  }
+}
+
+export function clearToken(): void {
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = getToken();
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
   });
 
   if (!response.ok) {
-    const error = new Error(`HTTP error! status: ${response.status}`);
+    // Bei abgelaufener/ungültiger Sitzung global ausloggen (außer beim Login selbst)
+    if (response.status === 401 && !endpoint.startsWith('/auth/login')) {
+      clearToken();
+      window.dispatchEvent(new Event('ssa:unauthorized'));
+    }
+    let detail = '';
+    try {
+      const body = await response.json();
+      if (body && typeof body.detail === 'string') detail = body.detail;
+    } catch {
+      // Response ohne JSON-Body
+    }
+    const error = new Error(detail || `HTTP error! status: ${response.status}`);
     (error as any).status = response.status;
     throw error;
   }
 
+  // 204 No Content
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
+}
+
+// --- Auth endpoints ---
+export async function login(username: string, password: string): Promise<LoginResponse> {
+  return fetchAPI<LoginResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function fetchMe(): Promise<{ username: string }> {
+  return fetchAPI<{ username: string }>('/auth/me');
+}
+
+// --- NAS connection endpoints ---
+export async function fetchNasConnections(): Promise<NASConnectionPublic[]> {
+  return fetchAPI<NASConnectionPublic[]>('/nas-connections');
+}
+
+export async function createNasConnection(payload: NASConnectionPayload): Promise<NASConnectionPublic> {
+  return fetchAPI<NASConnectionPublic>('/nas-connections', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateNasConnection(id: number, payload: NASConnectionPayload): Promise<NASConnectionPublic> {
+  return fetchAPI<NASConnectionPublic>(`/nas-connections/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteNasConnection(id: number): Promise<void> {
+  return fetchAPI<void>(`/nas-connections/${id}`, { method: 'DELETE' });
+}
+
+export async function testNasConnection(payload: Partial<NASConnectionPayload> & { id?: number }): Promise<TestConnectionResponse> {
+  return fetchAPI<TestConnectionResponse>('/nas-connections/test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function browseNas(id: number, path?: string): Promise<BrowseResponse> {
+  return fetchAPI<BrowseResponse>(`/nas-connections/${id}/browse`, {
+    method: 'POST',
+    body: JSON.stringify({ path: path ?? null }),
+  });
+}
+
+// --- Scan job endpoints ---
+export async function createScanJob(payload: ScanJobPayload): Promise<ScanJobPublic> {
+  return fetchAPI<ScanJobPublic>('/scan-jobs', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateScanJob(slug: string, payload: ScanJobPayload): Promise<ScanJobPublic> {
+  return fetchAPI<ScanJobPublic>(`/scan-jobs/${slug}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteScanJob(slug: string, deleteHistory: boolean = false): Promise<void> {
+  return fetchAPI<void>(`/scan-jobs/${slug}?delete_history=${deleteHistory}`, {
+    method: 'DELETE',
+  });
 }
 
 // Scan endpoints

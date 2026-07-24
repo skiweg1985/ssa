@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Search, Settings, Database, X, BookOpen, Moon, Sun } from "lucide-react"
+import { Search, Settings, Database, X, BookOpen, Moon, Sun, Plus, Server, LogOut } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useDebounce } from "@/hooks/useDebounce"
@@ -13,6 +13,9 @@ interface TopbarProps {
   onOpenStorage: () => void
   onOpenCommandPalette: () => void
   onOpenApiInfo: () => void
+  onNewScan: () => void
+  onOpenNasConnections: () => void
+  onLogout: () => void
   isLoading?: boolean
   lastUpdated?: Date | null
 }
@@ -24,6 +27,9 @@ export function Topbar({
   onOpenStorage,
   onOpenCommandPalette,
   onOpenApiInfo,
+  onNewScan,
+  onOpenNasConnections,
+  onLogout,
   isLoading = false,
   lastUpdated = null,
 }: TopbarProps) {
@@ -135,6 +141,37 @@ export function Topbar({
                 <Database className="h-4 w-4" />
                 <span className="hidden sm:inline ml-1.5">Storage</span>
               </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onOpenNasConnections}
+                className="h-10 min-h-[40px] px-2 sm:px-3"
+                title="NAS-Verbindungen"
+                aria-label="NAS-Verbindungen"
+              >
+                <Server className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onLogout}
+                className="h-10 min-h-[40px] px-2 sm:px-3"
+                title="Abmelden"
+                aria-label="Abmelden"
+              >
+                <LogOut className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onNewScan}
+                className="h-10 min-h-[40px] px-2.5 sm:px-3"
+                title="Neuen Scan anlegen"
+                aria-label="Neuen Scan anlegen"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline ml-1.5">Neu</span>
+              </Button>
             </div>
           </div>
 
@@ -222,6 +259,38 @@ export function Topbar({
             >
               <Database className="h-4 w-4" />
               <span className="hidden sm:inline ml-2">Storage</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onOpenNasConnections}
+              className="h-10 min-h-[40px]"
+              title="NAS-Verbindungen"
+              aria-label="NAS-Verbindungen"
+            >
+              <Server className="h-4 w-4" />
+              <span className="hidden xl:inline ml-2">NAS</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onLogout}
+              className="h-10 min-h-[40px]"
+              title="Abmelden"
+              aria-label="Abmelden"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onNewScan}
+              className="h-10 min-h-[40px]"
+              title="Neuen Scan anlegen"
+              aria-label="Neuen Scan anlegen"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="ml-1.5">Neuer Scan</span>
             </Button>
           </div>
         </div>

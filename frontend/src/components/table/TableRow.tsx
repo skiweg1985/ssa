@@ -15,6 +15,8 @@ interface TableRowProps {
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
   onShowApiInfo: (scan: ScanStatus) => void
+  onEdit?: (scan: ScanStatus) => void
+  onDelete?: (scan: ScanStatus) => void
 }
 
 const statusIcons = {
@@ -32,6 +34,8 @@ export function TableRow({
   onShowHistory,
   onShowDetail,
   onShowApiInfo,
+  onEdit,
+  onDelete,
 }: TableRowProps) {
   // Fetch progress only for running scans
   // Don't fetch for completed scans to avoid 404s after grace period
@@ -214,6 +218,8 @@ export function TableRow({
           onShowHistory={onShowHistory}
           onShowDetail={onShowDetail}
           onShowApiInfo={onShowApiInfo}
+          onEdit={onEdit}
+          onDelete={onDelete}
         />
       </td>
     </tr>

@@ -78,10 +78,20 @@ starten – das gebaute Frontend (`frontend/dist/`) ist im Repo enthalten.
 > **Für Maintainer:** Wie ein Release erstellt wird (Tag pushen, Workflow,
 > Paketinhalt, Troubleshooting) steht in [RELEASING.md](RELEASING.md).
 
+## Job-Verwaltung im Frontend
+
+Scan-Jobs und NAS-Verbindungen werden **im Web-Frontend** verwaltet:
+
+- **Scan-Jobs**: anlegen/bearbeiten/löschen über „Neuer Scan" bzw. das Aktionsmenü der Tabelle — inkl. Verzeichnisauswahl per NAS-Browser, Intervall-Presets oder Cron.
+- **NAS-Verbindungen**: eigener Bereich (Topbar → Server-Icon) mit „Verbindung testen"; Passwörter werden **verschlüsselt** in der Datenbank gespeichert und nie wieder ans Frontend ausgeliefert.
+- Bestehende `config.yaml`-Scans werden beim **ersten Start einmalig importiert**; danach ist die Datenbank die einzige Quelle.
+
 ## Sicherheit
 
+- **Login erforderlich**: Das Frontend/die API ist per Passwort geschützt. Setze `SSA_ADMIN_PASSWORD` in der Umgebung (z.B. `.env`); Standard-Benutzer ist `admin` (änderbar via `SSA_ADMIN_USER`). Ohne gesetztes Passwort ist der Login deaktiviert.
+- **Verschlüsselte NAS-Passwörter**: gespeicherte Zugangsdaten werden mit einem Key aus `SSA_SECRET_KEY` bzw. der auto-generierten `data/secret.key` verschlüsselt. Bei Key-Verlust/-Rotation müssen die NAS-Passwörter neu eingegeben werden.
 - Standard ist **SSL-Verifizierung an**.
-- Für self-signed Zertifikate: in `.env` `SYNO_VERIFY_SSL=false` oder in `config.yaml` `verify_ssl: false`.
+- Für self-signed Zertifikate: SSL-Prüfung pro NAS-Verbindung im Frontend deaktivierbar (CLI: `SYNO_VERIFY_SSL=false`).
 
 ## Tests
 

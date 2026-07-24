@@ -4,6 +4,17 @@
 # WICHTIG: `config.yaml` enthält sensible Daten und wird typischerweise nicht committed.
 #
 # Hinweis: Ergebnisse werden standardmäßig in `data/history.db` (SQLite) gespeichert.
+#
+# ==============================================================================
+# HINWEIS: Scans werden inzwischen im Web-Frontend verwaltet!
+# ==============================================================================
+# Der `scans:`-Block dieser Datei wird nur noch EINMALIG beim allerersten
+# Server-Start in die Datenbank importiert (inkl. NAS-Verbindungen).
+# Danach ist die Datenbank die einzige Quelle - Änderungen an dieser Datei
+# haben keine Wirkung mehr. Jobs werden im Frontend angelegt/bearbeitet.
+#
+# Empfehlung: Nach dem ersten erfolgreichen Start die Klartext-Passwörter
+# aus dieser Datei entfernen (sie liegen dann verschlüsselt in der DB).
 
 scans:
   # Beispiel 1: Scan einer kompletten Freigabe
