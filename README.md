@@ -73,6 +73,31 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 # Health: GET /health
 ```
 
+## Docker / Compose
+
+Die App kann komplett als Container laufen — das Image baut das Frontend
+selbst (Multi-Stage), es wird also weder Node noch Python auf dem Host benötigt:
+
+```bash
+# Passwort setzen (oder in .env neben der docker-compose.yml legen)
+echo 'SSA_ADMIN_PASSWORD=dein-passwort' > .env
+
+docker compose up -d
+# Web-UI: http://localhost:8080 (Login: admin / dein Passwort)
+```
+
+- **Persistenz:** Das Volume `ssa-data` (→ `/app/data`) enthält die SQLite-DB
+  (Historie, Jobs, verschlüsselte NAS-Creds) und den auto-generierten
+  `secret.key`. Nicht löschen, sonst müssen NAS-Passwörter neu eingegeben werden.
+- **Erst-Import:** Eine bestehende `config.yaml` kann optional read-only nach
+  `/app/config.yaml` gemountet werden (auskommentierte Zeile in der
+  `docker-compose.yml`) — sie wird beim ersten Start einmalig importiert.
+- **Healthcheck** ist im Image integriert (`/health`).
+- Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -e SSA_ADMIN_PASSWORD=... -v ssa-data:/app/data ssa`
+
+Der CI-Workflow baut das Image bei jedem PR und führt einen Boot-Smoke-Test
+durch (Health, Login, Auth-Durchsetzung, Frontend-Auslieferung).
+
 ## Download & Start (fertiges Paket)
 
 Wer die App ohne Node/Build laufen lassen will, lädt das fertige Paket vom
