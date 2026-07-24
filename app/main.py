@@ -11,6 +11,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
+from dotenv import load_dotenv
+
+# .env laden, bevor App-Module Umgebungsvariablen lesen
+# (SSA_ADMIN_PASSWORD, SSA_SECRET_KEY, ...). Bereits gesetzte
+# Umgebungsvariablen haben Vorrang vor der .env.
+load_dotenv()
+
 # Versuche psutil zu importieren (optional für Systemressourcen)
 try:
     import psutil
