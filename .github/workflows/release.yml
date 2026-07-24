@@ -1,0 +1,88 @@
+name: Release
+
+# Baut das Frontend, schnürt Backend + gebautes Frontend zu einem
+# lauffähigen Paket und hängt es als Download-Asset an ein GitHub Release.
+# Wird ausgelöst, sobald ein Tag der Form v* gepusht wird (z.B. v1.2.0).
+
+on:
+  push:
+    tags:
+      - "v*"
+  # Manueller Start zum Testen (erzeugt kein Release, nur die Artefakte)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Frontend bauen
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Paket schnüren
+        id: package
+        run: |
+          # Version aus dem Tag (Fallback für workflow_dispatch)
+          VERSION="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            VERSION="dev-${GITHUB_SHA::7}"
+          fi
+          STAGE="ssa-${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "stage=${STAGE}" >> "$GITHUB_OUTPUT"
+
+          mkdir -p "dist-pkg/${STAGE}"
+
+          # Backend + Laufzeit-Dateien
+          cp -r app "dist-pkg/${STAGE}/"
+          cp explore_syno_api.py requirements.txt "dist-pkg/${STAGE}/"
+          cp config.yaml.example .env.example "dist-pkg/${STAGE}/"
+          cp README.md README_CLI.md README_SERVER.md "dist-pkg/${STAGE}/"
+          cp install.sh service.sh uninstall.sh "dist-pkg/${STAGE}/"
+
+          # Frisch gebautes Frontend (das Backend erwartet frontend/dist neben app/)
+          mkdir -p "dist-pkg/${STAGE}/frontend"
+          cp -r frontend/dist "dist-pkg/${STAGE}/frontend/dist"
+
+          # __pycache__ nicht mitpacken
+          find "dist-pkg/${STAGE}" -type d -name __pycache__ -prune -exec rm -rf {} +
+
+          cd dist-pkg
+          tar -czf "${STAGE}.tar.gz" "${STAGE}"
+          zip -rq "${STAGE}.zip" "${STAGE}"
+          ls -la
+
+      - name: Artefakte hochladen (immer, auch bei workflow_dispatch)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.package.outputs.stage }}
+          path: |
+            dist-pkg/${{ steps.package.outputs.stage }}.tar.gz
+            dist-pkg/${{ steps.package.outputs.stage }}.zip
+
+      - name: GitHub Release erstellen
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.package.outputs.version }}"
+          gh release create "${VERSION}" \
+            --title "${VERSION}" \
+            --generate-notes \
+            "dist-pkg/ssa-${VERSION}.tar.gz" \
+            "dist-pkg/ssa-${VERSION}.zip"

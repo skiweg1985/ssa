@@ -51,6 +51,30 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 # Health: GET /health
 ```
 
+## Download & Start (fertiges Paket)
+
+Wer die App ohne Node/Build laufen lassen will, lädt das fertige Paket vom
+neuesten [GitHub Release](../../releases/latest) (`ssa-<version>.tar.gz` oder
+`.zip`) – Backend inkl. bereits gebautem Frontend:
+
+```bash
+tar -xzf ssa-<version>.tar.gz && cd ssa-<version>
+pip install -r requirements.txt
+cp config.yaml.example config.yaml   # anpassen
+uvicorn app.main:app --host 0.0.0.0 --port 8080
+```
+
+Die Release-Pakete werden per GitHub-Actions-Workflow
+(`.github/workflows/release.yml`) automatisch erstellt, sobald ein Tag der
+Form `v*` gepusht wird:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Alternativ funktioniert weiterhin der klassische Weg: Repo klonen und direkt
+starten – das gebaute Frontend (`frontend/dist/`) ist im Repo enthalten.
+
 ## Sicherheit
 
 - Standard ist **SSL-Verifizierung an**.
