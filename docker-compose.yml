@@ -1,0 +1,33 @@
+# ==============================================================================
+# Synology Space Analyzer - Compose-Stack
+#
+# Start:   SSA_ADMIN_PASSWORD=geheim docker compose up -d
+# (oder SSA_ADMIN_PASSWORD in eine .env-Datei neben dieser Datei legen)
+#
+# Web-UI danach unter http://localhost:8080 (Login: admin / dein Passwort)
+# ==============================================================================
+
+services:
+  ssa:
+    build: .
+    image: ssa:latest
+    container_name: ssa
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # PFLICHT: Login-Passwort (ohne ist der Login deaktiviert)
+      SSA_ADMIN_PASSWORD: ${SSA_ADMIN_PASSWORD:?SSA_ADMIN_PASSWORD muss gesetzt sein (z.B. in .env)}
+      # Optional:
+      # SSA_ADMIN_USER: admin
+      # SSA_SECRET_KEY: langer-zufaelliger-string   # sonst auto data/secret.key im Volume
+      # SSA_TOKEN_TTL_HOURS: "168"
+    volumes:
+      # Persistente Daten: SQLite (Historie, Jobs, verschluesselte NAS-Creds)
+      # und der auto-generierte secret.key
+      - ssa-data:/app/data
+      # Optional: bestehende config.yaml fuer den einmaligen Erst-Import mounten
+      # - ./config.yaml:/app/config.yaml:ro
+
+volumes:
+  ssa-data:

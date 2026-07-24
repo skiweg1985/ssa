@@ -54,3 +54,60 @@ jobs:
       - name: Build (tsc + vite)
         working-directory: frontend
         run: npm run build
+
+  docker:
+    name: Docker (build + smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Image bauen
+        run: docker build -t ssa:ci .
+
+      - name: Container starten
+        run: |
+          docker run -d --name ssa-ci \
+            -e SSA_ADMIN_PASSWORD=ci-test-passwort \
+            -p 8080:8080 \
+            ssa:ci
+
+      - name: Smoke-Test (Health + Login + Auth-Durchsetzung)
+        run: |
+          # Auf /health warten (max. 60s)
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/health > /dev/null; then
+              echo "Health OK nach ${i} Versuchen"
+              break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "::error::/health nicht erreichbar"
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Ohne Token muss /api/scans 401 liefern
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/scans)
+          [ "$STATUS" = "401" ] || { echo "::error::Erwartet 401 ohne Token, bekam $STATUS"; exit 1; }
+
+          # Login muss ein Token liefern
+          TOKEN=$(curl -sf -X POST http://localhost:8080/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"admin","password":"ci-test-passwort"}' \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+          [ -n "$TOKEN" ] || { echo "::error::Login lieferte kein Token"; exit 1; }
+
+          # Mit Token muss /api/scans 200 liefern (und das Frontend ausgeliefert werden)
+          curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/scans > /dev/null
+          curl -sf http://localhost:8080/ | grep -qi '<div id="root">' \
+            || { echo "::error::Frontend index.html wird nicht ausgeliefert"; exit 1; }
+          echo "Smoke-Test bestanden"
+
+      - name: Container-Logs (bei Fehler)
+        if: failure()
+        run: docker logs ssa-ci || true
+
+      - name: Aufraeumen
+        if: always()
+        run: docker rm -f ssa-ci || true
