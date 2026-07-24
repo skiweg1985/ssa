@@ -12,5 +12,6 @@ cryptography>=41.0
 jinja2>=3.1.0
 pytest>=7.4.0
 pytest-mock>=3.12.0
+httpx2>=0.1.0  # von starlette.testclient (FastAPI TestClient) benötigt
 psutil>=5.9.0
 
