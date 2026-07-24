@@ -38,6 +38,18 @@ export function CommandPalette({
     }
   }, [open])
 
+  const filteredScans = scans.filter((scan) => {
+    if (!debouncedQuery) return true
+    const q = debouncedQuery.toLowerCase()
+    return (
+      scan.scan_name.toLowerCase().includes(q) ||
+      scan.nas?.host.toLowerCase().includes(q) ||
+      scan.shares?.some((s) => s.toLowerCase().includes(q)) ||
+      scan.folders?.some((f) => f.toLowerCase().includes(q)) ||
+      scan.status.toLowerCase().includes(q)
+    )
+  })
+
   useEffect(() => {
     if (!open) return
 
@@ -62,19 +74,10 @@ export function CommandPalette({
 
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [open, selectedIndex, onOpenChange, onSelectScan])
-
-  const filteredScans = scans.filter((scan) => {
-    if (!debouncedQuery) return true
-    const q = debouncedQuery.toLowerCase()
-    return (
-      scan.scan_name.toLowerCase().includes(q) ||
-      scan.nas?.host.toLowerCase().includes(q) ||
-      scan.shares?.some((s) => s.toLowerCase().includes(q)) ||
-      scan.folders?.some((f) => f.toLowerCase().includes(q)) ||
-      scan.status.toLowerCase().includes(q)
-    )
-  })
+    // filteredScans gehoert zwingend in die Deps: sonst arbeitet der
+    // Enter-Handler mit einer veralteten Liste (Suchbegriff tippen ohne
+    // Pfeiltaste -> es wuerde der falsche Scan geoeffnet).
+  }, [open, selectedIndex, onOpenChange, onSelectScan, filteredScans])
 
   if (!open) return null
 

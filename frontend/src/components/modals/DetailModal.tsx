@@ -12,7 +12,7 @@ import { getStatusConfig, formatDate, getScanFolders, formatSizeCompact } from "
 import { useScanProgress } from "@/hooks/useScanProgress"
 import type { ScanStatus } from "@/types/api"
 import { Play, BarChart3, History, FolderOpen, CheckCircle2, XCircle, Settings, Server, FileText, Calendar } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { cn } from "@/lib/cn"
 
 interface DetailModalProps {
@@ -42,26 +42,28 @@ export function DetailModal({
     }
   }, [scan])
 
-  useEffect(() => {
-    if (open && scan) {
-      loadDetails()
-    } else if (!open) {
-      // Reset when modal closes
-      setDetailedScan(scan)
-    }
-  }, [open, scan?.scan_slug]) // Use scan_slug to detect scan changes
+  const scanSlug = scan?.scan_slug
 
-  async function loadDetails() {
-    if (!scan) return
+  // Nur am Slug haengen, NICHT am ganzen scan-Objekt: sonst wuerde bei jedem
+  // Poll-Tick (alle 5s) neu nachgeladen. Den Prop-Stand haelt der Effect oben
+  // synchron, hier geht es allein um die Detaildaten vom Server.
+  const loadDetails = useCallback(async () => {
+    if (!scanSlug) return
     try {
       // Verwende slug für API-Aufruf (unterstützt auch name für Rückwärtskompatibilität)
-      const data = await fetchScan(scan.scan_slug)
+      const data = await fetchScan(scanSlug)
       setDetailedScan(data)
     } catch (err) {
+      // detailedScan bleibt auf dem Prop-Stand - der Sync-Effect oben hat ihn gesetzt
       console.error("Error loading scan details:", err)
-      setDetailedScan(scan)
     }
-  }
+  }, [scanSlug])
+
+  useEffect(() => {
+    if (open && scanSlug) {
+      loadDetails()
+    }
+  }, [open, scanSlug, loadDetails])
 
   // Always call hook (React rules) - but only poll when conditions are met
   // Verwende slug für Progress-Aufrufe - use scan prop directly to ensure correct identifier

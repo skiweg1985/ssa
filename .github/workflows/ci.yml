@@ -59,9 +59,19 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Lint (ESLint)
+        working-directory: frontend
+        run: npm run lint
+
       - name: Build (tsc + vite)
         working-directory: frontend
         run: npm run build
+
+      - name: Security-Audit (Produktionsabhaengigkeiten)
+        working-directory: frontend
+        # Nur Runtime-Deps sind hart: was im Browser landet, muss sauber sein.
+        # Dev-/Build-Tooling wird separat gepflegt (Vite-Major offen).
+        run: npm audit --omit=dev --audit-level=high
 
   docker:
     name: Docker (build + smoke)

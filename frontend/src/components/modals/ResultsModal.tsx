@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import {
   Dialog,
   DialogHeader,
@@ -30,13 +30,7 @@ export function ResultsModal({ open, onOpenChange, scanName }: ResultsModalProps
   const [error, setError] = useState<string | null>(null)
   const [selectedHistoryIndex, setSelectedHistoryIndex] = useState<number | null>(null)
 
-  useEffect(() => {
-    if (open && scanName) {
-      loadData()
-    }
-  }, [open, scanName, activeTab])
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -52,7 +46,13 @@ export function ResultsModal({ open, onOpenChange, scanName }: ResultsModalProps
     } finally {
       setLoading(false)
     }
-  }
+  }, [scanName, activeTab])
+
+  useEffect(() => {
+    if (open && scanName) {
+      loadData()
+    }
+  }, [open, scanName, loadData])
 
   function exportResults() {
     if (!result) return

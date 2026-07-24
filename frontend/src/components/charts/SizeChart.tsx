@@ -7,6 +7,7 @@ import {
   Tooltip,
   Legend,
   ArcElement,
+  type ChartOptions,
 } from "chart.js"
 import { Bar, Doughnut } from "react-chartjs-2"
 import type { ScanResult } from "@/types/api"
@@ -69,69 +70,73 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
     ],
   }
 
-  const chartOptions = {
+  // Gemeinsame Tooltip-Beschriftung fuer beide Chart-Typen.
+  // Bar liefert parsed als {x, y}, Doughnut einen nackten Zahlenwert - deshalb
+  // wird der Byte-Wert je Chart-Typ extrahiert und hier nur noch formatiert.
+  const tooltipLabel = (bytes: number, dataIndex: number): string => {
+    const item = validResults[dataIndex]
+    let label = formatBytes(bytes)
+    if (item?.num_file !== undefined) {
+      label += ` (${item.num_file} Dateien`
+      if (item.num_dir !== undefined) {
+        label += `, ${item.num_dir} Ordner`
+      }
+      label += ")"
+    }
+    return label
+  }
+
+  const commonOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    layout: {
-      padding: {
-        bottom: 20,
-      },
-    },
-    plugins: {
-      legend: {
-        display: false,
-      },
-      tooltip: {
-        callbacks: {
-          label: function (context: any) {
-            const bytes = context.parsed.y
-            const item = validResults[context.dataIndex]
-            let label = formatBytes(bytes)
-            if (item.num_file !== undefined) {
-              label += ` (${item.num_file} Dateien`
-              if (item.num_dir !== undefined) {
-                label += `, ${item.num_dir} Ordner`
-              }
-              label += ")"
-            }
-            return label
-          },
-        },
-      },
-    },
-    scales:
-      type === "bar"
-        ? {
-            y: {
-              beginAtZero: true,
-              ticks: {
-                callback: function (value: any) {
-                  return formatBytes(value)
-                },
-              },
-            },
-            x: {
-              ticks: {
-                maxRotation: 0,
-                minRotation: 0,
-                autoSkip: false,
-              },
-            },
-          }
-        : undefined,
+    layout: { padding: { bottom: 20 } },
   }
 
   if (type === "doughnut") {
+    const doughnutOptions: ChartOptions<"doughnut"> = {
+      ...commonOptions,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (context) => tooltipLabel(context.parsed, context.dataIndex),
+          },
+        },
+      },
+    }
     return (
       <div style={{ height: `${height}px` }}>
-        <Doughnut data={chartData} options={chartOptions} />
+        <Doughnut data={chartData} options={doughnutOptions} />
       </div>
     )
   }
 
+  const barOptions: ChartOptions<"bar"> = {
+    ...commonOptions,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (context) => tooltipLabel(context.parsed.y ?? 0, context.dataIndex),
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: (value) => formatBytes(Number(value)),
+        },
+      },
+      x: {
+        ticks: { maxRotation: 0, minRotation: 0, autoSkip: false },
+      },
+    },
+  }
+
   return (
     <div style={{ height: `${height}px` }}>
-      <Bar data={chartData} options={chartOptions} />
+      <Bar data={chartData} options={barOptions} />
     </div>
   )
 }
