@@ -40,7 +40,24 @@ COPY --from=frontend-build /build/dist ./frontend/dist
 
 # Persistente Daten (SQLite-Historie, Jobs, verschluesselte Creds, secret.key)
 # -> als Volume mounten, sonst gehen sie beim Container-Neubau verloren
+RUN mkdir -p /app/data
+
+# Unprivilegierter Benutzer mit FIXER UID/GID 1000 - fix, damit die Rechte auf
+# gemounteten Volumes vorhersagbar sind.
+#
+# WICHTIG bei bestehenden Installationen: Ein bereits vorhandenes Datenvolume
+# gehoert noch root und muss einmalig uebereignet werden, sonst kann die App
+# secret.key/history.db nicht mehr schreiben:
+#   docker compose down
+#   docker run --rm -v ssa_ssa-data:/data alpine chown -R 1000:1000 /data
+#   docker compose up -d
+RUN groupadd --gid 1000 ssa \
+    && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin ssa \
+    && chown -R ssa:ssa /app
+
 VOLUME /app/data
+
+USER ssa
 
 EXPOSE 8080
 
