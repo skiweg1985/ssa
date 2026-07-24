@@ -11,6 +11,7 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 API_TOKEN_ALLOWED_PREFIXES = (
     "/api/scans",
     "/api/storage/stats",
+    "/api/prtg",
 )
 
 
@@ -62,8 +63,8 @@ async def require_auth(
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    "API-Token erlaubt nur Lesezugriff auf "
-                    "Scan-Status/Ergebnisse und Storage-Statistiken"
+                    "API-Token erlaubt nur Lesezugriff auf Scan-Status/Ergebnisse, "
+                    "Storage-Statistiken und PRTG-Sensordaten"
                 ),
             )
         return f"api-token:{token_info['name']}"

@@ -334,7 +334,52 @@ class SchedulerService:
             "next_run": next_run,
             "trigger": str(job.trigger)
         }
-    
+
+    def get_expected_interval_seconds(self, scan_slug: str) -> Optional[float]:
+        """
+        Ermittelt das erwartete Scan-Intervall eines Jobs in Sekunden.
+
+        Wird für die Alters-Schwellwerte der PRTG-Sensoren gebraucht
+        ("Scan ist überfällig"). Reihenfolge:
+        1. Kurzform-Intervall aus der Job-Konfiguration ("30m", "6h", ...)
+        2. Cron-Trigger: Differenz zweier aufeinanderfolgender Feuerzeiten
+        3. None, wenn sich kein Intervall bestimmen lässt
+
+        Args:
+            scan_slug: Slug des Scans
+
+        Returns:
+            Intervall in Sekunden oder None
+        """
+        # 1. Kurzform direkt aus der Job-Konfiguration
+        try:
+            from app.services.jobs_store import jobs_store
+
+            job = jobs_store.get_job(scan_slug)
+            if job:
+                delta = parse_interval_string(job["interval"])
+                if delta is not None:
+                    return delta.total_seconds()
+        except Exception as e:
+            logger.debug(f"Intervall aus Job-Konfiguration nicht ermittelbar: {e}")
+
+        # 2. Cron: zwei aufeinanderfolgende Feuerzeiten differenzieren
+        try:
+            job_id = self._job_ids.get(scan_slug)
+            if job_id:
+                job = self.scheduler.get_job(job_id)
+                if job is not None:
+                    now = datetime.now(timezone.utc)
+                    first = job.trigger.get_next_fire_time(None, now)
+                    if first is not None:
+                        second = job.trigger.get_next_fire_time(first, first)
+                        if second is not None:
+                            return (second - first).total_seconds()
+        except Exception as e:
+            logger.debug(f"Intervall aus Trigger nicht ermittelbar: {e}")
+
+        return None
+
     def resync_from_db(self) -> Dict[str, any]:
         """
         Synchronisiert die Scheduler-Jobs mit dem aktuellen Stand der Datenbank.
