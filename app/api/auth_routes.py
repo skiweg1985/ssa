@@ -2,9 +2,10 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.deps import require_auth
+from app.services.rate_limit import client_key, login_rate_limiter
 from app.models.admin import LoginRequest, LoginResponse, MeResponse
 from app.services.security import (
     admin_password_configured,
@@ -19,12 +20,27 @@ router = APIRouter()
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, http_request: Request):
     """
     Anmeldung mit Benutzername + Passwort (aus der Server-Umgebung).
 
     Liefert ein Bearer-Token für alle weiteren API-Aufrufe.
+    Fehlversuche sind pro Client-IP begrenzt (Brute-Force-Schutz).
     """
+    key = client_key(http_request)
+
+    allowed, retry_after = login_rate_limiter.check(key)
+    if not allowed:
+        logger.warning(f"Login-Versuch waehrend aktiver Sperre von {key} abgewiesen")
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "Zu viele fehlgeschlagene Anmeldeversuche. "
+                f"Bitte in {retry_after} Sekunden erneut versuchen."
+            ),
+            headers={"Retry-After": str(retry_after)},
+        )
+
     if not admin_password_configured():
         raise HTTPException(
             status_code=503,
@@ -34,10 +50,24 @@ async def login(request: LoginRequest):
             ),
         )
     if not verify_admin(request.username, request.password):
+        blocked, duration = login_rate_limiter.register_failure(key)
+        logger.warning(f"Fehlgeschlagener Login von {key}")
+        if blocked:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    "Zu viele fehlgeschlagene Anmeldeversuche. "
+                    f"Bitte in {duration} Sekunden erneut versuchen."
+                ),
+                headers={"Retry-After": str(duration)},
+            )
         raise HTTPException(
             status_code=401,
             detail="Benutzername oder Passwort falsch",
         )
+
+    # Erfolg: Zaehler zuruecksetzen, damit legitime Nutzer nie ausgesperrt werden
+    login_rate_limiter.register_success(key)
 
     token = create_token(request.username)
     expiry = get_token_expiry(token)
