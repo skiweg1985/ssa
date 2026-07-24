@@ -12,6 +12,7 @@ import { ApiInfoModal } from "@/components/modals/ApiInfoModal"
 import { ScanApiModal } from "@/components/modals/ScanApiModal"
 import { JobEditorModal } from "@/components/modals/JobEditorModal"
 import { NasConnectionsModal } from "@/components/modals/NasConnectionsModal"
+import { ApiTokensModal } from "@/components/modals/ApiTokensModal"
 import { LoginScreen } from "@/components/auth/LoginScreen"
 import { useScans } from "@/hooks/useScans"
 import { useAuth } from "@/hooks/useAuth"
@@ -32,6 +33,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [scanApiModalOpen, setScanApiModalOpen] = useState(false)
   const [jobEditorOpen, setJobEditorOpen] = useState(false)
   const [nasConnectionsOpen, setNasConnectionsOpen] = useState(false)
+  const [apiTokensOpen, setApiTokensOpen] = useState(false)
   const [editingJob, setEditingJob] = useState<ScanStatus | null>(null)
   const [selectedScanName, setSelectedScanName] = useState<string | null>(null)
   const [selectedScan, setSelectedScan] = useState<ScanStatus | null>(null)
@@ -172,6 +174,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
         onSelectScan={handleCommandPaletteSelect}
         onNewScan={handleNewScan}
         onOpenNasConnections={() => setNasConnectionsOpen(true)}
+        onOpenApiTokens={() => setApiTokensOpen(true)}
         onLogout={onLogout}
       />
 
@@ -201,7 +204,11 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 
       <StorageModal open={storageModalOpen} onOpenChange={setStorageModalOpen} />
 
-      <ApiInfoModal open={apiInfoModalOpen} onOpenChange={setApiInfoModalOpen} />
+      <ApiInfoModal
+        open={apiInfoModalOpen}
+        onOpenChange={setApiInfoModalOpen}
+        onOpenApiTokens={() => setApiTokensOpen(true)}
+      />
 
       <ScanApiModal
         open={scanApiModalOpen}
@@ -222,6 +229,8 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
         onOpenChange={setNasConnectionsOpen}
         onChanged={refetch}
       />
+
+      <ApiTokensModal open={apiTokensOpen} onOpenChange={setApiTokensOpen} />
     </div>
   )
 }

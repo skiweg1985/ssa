@@ -183,6 +183,16 @@ def decrypt_secret(ciphertext: str) -> str:
         ) from e
 
 
+def generate_api_token() -> str:
+    """Erzeugt ein neues statisches API-Token (für Monitoring-Systeme)"""
+    return f"ssa_{secrets.token_urlsafe(32)}"
+
+
+def hash_api_token(token: str) -> str:
+    """Hash eines API-Tokens für die Speicherung (Klartext wird nie gespeichert)"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def get_admin_user() -> str:
     """Konfigurierter Admin-Benutzername (SSA_ADMIN_USER, Default 'admin')"""
     return os.environ.get("SSA_ADMIN_USER", "admin")

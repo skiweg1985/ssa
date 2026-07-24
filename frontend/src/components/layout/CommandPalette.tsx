@@ -11,6 +11,7 @@ interface CommandPaletteProps {
   onSelectScan: (scanName: string, action: "results" | "history") => void
   onNewScan?: () => void
   onOpenNasConnections?: () => void
+  onOpenApiTokens?: () => void
   onLogout?: () => void
 }
 
@@ -21,6 +22,7 @@ export function CommandPalette({
   onSelectScan,
   onNewScan,
   onOpenNasConnections,
+  onOpenApiTokens,
   onLogout,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState("")
@@ -131,6 +133,17 @@ export function CommandPalette({
                   className="w-full text-left px-4 py-2.5 rounded-lg transition-colors hover:bg-slate-50 text-sm font-medium text-slate-700"
                 >
                   🖥️ NAS-Verbindungen verwalten
+                </button>
+              )}
+              {onOpenApiTokens && (
+                <button
+                  onClick={() => {
+                    onOpenChange(false)
+                    onOpenApiTokens()
+                  }}
+                  className="w-full text-left px-4 py-2.5 rounded-lg transition-colors hover:bg-slate-50 text-sm font-medium text-slate-700"
+                >
+                  🔑 API-Tokens für Monitoring
                 </button>
               )}
               {onLogout && (

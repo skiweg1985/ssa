@@ -96,6 +96,19 @@ export interface BrowseResponse {
   entries: BrowseEntry[];
 }
 
+// --- API-Tokens (Monitoring) ---
+export interface ApiTokenPublic {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at?: string | null;
+}
+
+export interface ApiTokenCreated extends ApiTokenPublic {
+  // Klartext-Token: nur einmalig in der Erstellungs-Response enthalten
+  token: string;
+}
+
 // --- Scan-Jobs (Verwaltung) ---
 export interface ScanJobPayload {
   name: string;

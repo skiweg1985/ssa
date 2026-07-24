@@ -86,6 +86,21 @@ Scan-Jobs und NAS-Verbindungen werden **im Web-Frontend** verwaltet:
 - **NAS-Verbindungen**: eigener Bereich (Topbar → Server-Icon) mit „Verbindung testen"; Passwörter werden **verschlüsselt** in der Datenbank gespeichert und nie wieder ans Frontend ausgeliefert.
 - Bestehende `config.yaml`-Scans werden beim **ersten Start einmalig importiert**; danach ist die Datenbank die einzige Quelle.
 
+## Monitoring (PRTG, Zabbix, Grafana …)
+
+Für Monitoring-Systeme gibt es **statische, read-only API-Tokens**, die im
+Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
+
+- Token wird bei Erstellung **einmalig** angezeigt (gespeichert wird nur der Hash).
+- Zugriff: nur `GET` auf `/api/scans*` (Status, Ergebnisse, Historie, Fortschritt)
+  und `/api/storage/stats` — kein Triggern, keine Verwaltung.
+- Verwendung: Header `Authorization: Bearer <token>`.
+- `/health` ist weiterhin ohne Token erreichbar (Up/Down-Checks).
+
+```bash
+curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/scans
+```
+
 ## Sicherheit
 
 - **Login erforderlich**: Das Frontend/die API ist per Passwort geschützt. Setze `SSA_ADMIN_PASSWORD` in der Umgebung (z.B. `.env`); Standard-Benutzer ist `admin` (änderbar via `SSA_ADMIN_USER`). Ohne gesetztes Passwort ist der Login deaktiviert.

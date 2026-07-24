@@ -156,6 +156,73 @@ class TestJobApiValidation:
         )
         assert response.status_code == 422
 
+    def test_api_token_lifecycle_and_scope(self, client, auth_headers):
+        """API-Token: erstellen -> read-only Zugriff -> Scope-Grenzen -> widerrufen"""
+        # Erstellen (nur mit Login möglich)
+        response = client.post(
+            "/api/api-tokens", headers=auth_headers, json={"name": "PRTG"}
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["token"].startswith("ssa_")
+        token_headers = {"Authorization": f"Bearer {body['token']}"}
+        token_id = body["id"]
+
+        # Liste enthält NIE den Klartext-Token
+        listing = client.get("/api/api-tokens", headers=auth_headers).json()
+        assert all("token" not in t for t in listing)
+        assert listing[0]["name"] == "PRTG"
+
+        # GET auf Monitoring-Endpoints erlaubt
+        assert client.get("/api/scans", headers=token_headers).status_code == 200
+        assert client.get("/api/storage/stats", headers=token_headers).status_code == 200
+
+        # Schreibende/verwaltende Zugriffe verboten (403)
+        assert (
+            client.post(
+                "/api/scan-jobs",
+                headers=token_headers,
+                json={
+                    "name": "X",
+                    "nas_connection_id": 1,
+                    "paths": ["/x"],
+                    "interval": "1h",
+                    "enabled": True,
+                },
+            ).status_code
+            == 403
+        )
+        assert (
+            client.get("/api/nas-connections", headers=token_headers).status_code == 403
+        )
+        assert client.get("/api/api-tokens", headers=token_headers).status_code == 403
+        assert (
+            client.post(
+                "/api/scans/egal/trigger", headers=token_headers
+            ).status_code
+            == 403
+        )
+
+        # last_used_at wurde gesetzt
+        listing = client.get("/api/api-tokens", headers=auth_headers).json()
+        assert listing[0]["last_used_at"] is not None
+
+        # Widerrufen -> Token sofort ungültig
+        assert (
+            client.delete(
+                f"/api/api-tokens/{token_id}", headers=auth_headers
+            ).status_code
+            == 204
+        )
+        assert client.get("/api/scans", headers=token_headers).status_code == 401
+
+    def test_api_token_duplicate_name_409(self, client, auth_headers):
+        client.post("/api/api-tokens", headers=auth_headers, json={"name": "Doppelt"})
+        response = client.post(
+            "/api/api-tokens", headers=auth_headers, json={"name": "Doppelt"}
+        )
+        assert response.status_code == 409
+
     def test_connection_response_never_contains_password(self, client, auth_headers):
         response = client.post(
             "/api/nas-connections",

@@ -119,6 +119,13 @@ class JobsStore:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS api_tokens (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    token_hash TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL,
+                    last_used_at TEXT
+                );
                 """
             )
             conn.commit()
@@ -481,6 +488,85 @@ class JobsStore:
             conn.commit()
             if cursor.rowcount == 0:
                 raise NotFoundError(f"Scan-Job '{slug}' nicht gefunden")
+
+    # ------------------------------------------------------------------
+    # API-Tokens (statisch, read-only - für Monitoring-Systeme wie PRTG)
+    # ------------------------------------------------------------------
+
+    def list_api_tokens(self) -> List[Dict[str, Any]]:
+        """Alle API-Tokens (nur Metadaten, nie der Token selbst)"""
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, name, created_at, last_used_at FROM api_tokens "
+                "ORDER BY created_at"
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def create_api_token(self, name: str) -> Dict[str, Any]:
+        """
+        Erzeugt ein neues API-Token.
+
+        Returns:
+            Dict mit Metadaten UND dem Klartext-Token ('token') -
+            der Klartext ist nur in dieser Response verfügbar, gespeichert
+            wird ausschließlich der SHA-256-Hash.
+        """
+        from app.services.security import generate_api_token, hash_api_token
+
+        token = generate_api_token()
+        now = _now_iso()
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "INSERT INTO api_tokens (name, token_hash, created_at) "
+                "VALUES (?, ?, ?)",
+                (name, hash_api_token(token), now),
+            )
+            conn.commit()
+            new_id = cursor.lastrowid
+        return {
+            "id": new_id,
+            "name": name,
+            "created_at": now,
+            "last_used_at": None,
+            "token": token,
+        }
+
+    def delete_api_token(self, token_id: int) -> None:
+        with self._get_connection() as conn:
+            cursor = conn.execute(
+                "DELETE FROM api_tokens WHERE id = ?", (token_id,)
+            )
+            conn.commit()
+            if cursor.rowcount == 0:
+                raise NotFoundError(f"API-Token {token_id} nicht gefunden")
+
+    def verify_api_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """
+        Prüft ein präsentiertes API-Token gegen die gespeicherten Hashes.
+        Aktualisiert bei Erfolg last_used_at. Liefert die Token-Metadaten oder None.
+        """
+        import hmac as hmac_mod
+
+        from app.services.security import hash_api_token
+
+        presented_hash = hash_api_token(token)
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, name, token_hash FROM api_tokens"
+            ).fetchall()
+            match = None
+            for row in rows:
+                # Konstante Vergleichszeit pro Eintrag
+                if hmac_mod.compare_digest(row["token_hash"], presented_hash):
+                    match = row
+            if match is None:
+                return None
+            conn.execute(
+                "UPDATE api_tokens SET last_used_at = ? WHERE id = ?",
+                (_now_iso(), match["id"]),
+            )
+            conn.commit()
+            return {"id": match["id"], "name": match["name"]}
 
     # ------------------------------------------------------------------
     # Bridge zu den bestehenden Pydantic-Modellen (Scanner/Scheduler)

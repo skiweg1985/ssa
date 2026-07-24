@@ -24,6 +24,7 @@ from app.api.routes import router
 from app.api.auth_routes import router as auth_router
 from app.api.nas_routes import router as nas_router
 from app.api.job_routes import router as job_router
+from app.api.token_routes import router as token_router
 from app.api.deps import require_auth
 from app.services.scheduler import scheduler_service
 from app.services.storage import storage, get_storage
@@ -143,6 +144,12 @@ app.include_router(
     job_router,
     prefix="/api/scan-jobs",
     tags=["scan-jobs"],
+    dependencies=[Depends(require_auth)],
+)
+app.include_router(
+    token_router,
+    prefix="/api/api-tokens",
+    tags=["api-tokens"],
     dependencies=[Depends(require_auth)],
 )
 

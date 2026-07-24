@@ -97,6 +97,26 @@ class BrowseResponse(BaseModel):
 
 
 # ----------------------------------------------------------------------
+# API-Tokens (Monitoring)
+# ----------------------------------------------------------------------
+
+class ApiTokenCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class ApiTokenPublic(BaseModel):
+    id: int
+    name: str
+    created_at: str
+    last_used_at: Optional[str] = None
+
+
+class ApiTokenCreated(ApiTokenPublic):
+    """Nur bei der Erstellung: enthält einmalig den Klartext-Token"""
+    token: str
+
+
+# ----------------------------------------------------------------------
 # Scan-Jobs
 # ----------------------------------------------------------------------
 

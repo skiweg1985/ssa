@@ -18,6 +18,8 @@ import type {
   BrowseResponse,
   ScanJobPayload,
   ScanJobPublic,
+  ApiTokenPublic,
+  ApiTokenCreated,
 } from "@/types/api";
 
 const API_BASE = '/api';
@@ -133,6 +135,22 @@ export async function browseNas(id: number, path?: string): Promise<BrowseRespon
     method: 'POST',
     body: JSON.stringify({ path: path ?? null }),
   });
+}
+
+// --- API token endpoints (Monitoring) ---
+export async function fetchApiTokens(): Promise<ApiTokenPublic[]> {
+  return fetchAPI<ApiTokenPublic[]>('/api-tokens');
+}
+
+export async function createApiToken(name: string): Promise<ApiTokenCreated> {
+  return fetchAPI<ApiTokenCreated>('/api-tokens', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function deleteApiToken(id: number): Promise<void> {
+  return fetchAPI<void>(`/api-tokens/${id}`, { method: 'DELETE' });
 }
 
 // --- Scan job endpoints ---
