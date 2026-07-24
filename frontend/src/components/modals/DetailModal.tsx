@@ -34,12 +34,13 @@ export function DetailModal({
 }: DetailModalProps) {
   const [detailedScan, setDetailedScan] = useState<ScanStatus | null>(scan)
 
-  // Reset detailedScan immediately when scan prop changes
+  // Sync detailedScan whenever the scan prop changes - including same-slug updates
+  // (e.g. status running -> completed) so the header badge/metadata never go stale
   useEffect(() => {
     if (scan) {
       setDetailedScan(scan)
     }
-  }, [scan?.scan_slug]) // Use scan_slug to detect when a different scan is selected
+  }, [scan])
 
   useEffect(() => {
     if (open && scan) {

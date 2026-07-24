@@ -1,0 +1,16 @@
+# Dependencies (regenerierbar via `npm ci`)
+node_modules/
+
+# Vite Cache
+.vite/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+*.local
+
+# HINWEIS: frontend/dist/ wird bewusst NICHT ignoriert –
+# das Backend serviert den committeten Build direkt (siehe FRONTEND_MIGRATION.md).
