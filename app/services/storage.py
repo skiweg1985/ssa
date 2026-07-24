@@ -271,7 +271,7 @@ class ScanStorage:
                         error,
                         scan_error
                     FROM scan_results
-                    ORDER BY scan_slug, timestamp DESC, folder_path
+                    ORDER BY scan_slug, timestamp ASC, folder_path
                 """)
                 
                 current_scan_slug = None
@@ -308,7 +308,7 @@ class ScanStorage:
                             # Neue Scan-Gruppe?
                             if current_scan_slug and current_scan_slug != scan_slug:
                                 if len(results_for_scan) > self._max_history:
-                                    results_for_scan = results_for_scan[:self._max_history]
+                                    results_for_scan = results_for_scan[-self._max_history:]
                                 self._results[current_scan_slug] = results_for_scan
                                 results_for_scan = []
                         
@@ -346,7 +346,7 @@ class ScanStorage:
                         # Neue Scan-Gruppe?
                         if current_scan_slug and current_scan_slug != scan_slug:
                             if len(results_for_scan) > self._max_history:
-                                results_for_scan = results_for_scan[:self._max_history]
+                                results_for_scan = results_for_scan[-self._max_history:]
                             self._results[current_scan_slug] = results_for_scan
                             results_for_scan = []
                     
@@ -394,7 +394,7 @@ class ScanStorage:
                 
                 if current_scan_slug:
                     if len(results_for_scan) > self._max_history:
-                        results_for_scan = results_for_scan[:self._max_history]
+                        results_for_scan = results_for_scan[-self._max_history:]
                     self._results[current_scan_slug] = results_for_scan
                 
                 # Statistiken
