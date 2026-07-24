@@ -1,0 +1,56 @@
+name: CI
+
+# Verifiziert bei jedem Pull Request (und Push auf main), dass Backend-Tests
+# durchlaufen und das Frontend baubar ist. Reines Sicherheitsnetz – erstellt
+# keine Artefakte (das übernimmt release.yml bei Tags).
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Tests ausführen
+        run: pytest -q
+
+  frontend:
+    name: Frontend (build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Abhängigkeiten installieren
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (tsc + vite)
+        working-directory: frontend
+        run: npm run build
