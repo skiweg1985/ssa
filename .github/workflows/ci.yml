@@ -34,7 +34,8 @@ jobs:
       - name: Abhängigkeiten installieren
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # requirements-dev.txt zieht requirements.txt selbst mit rein
+          pip install -r requirements-dev.txt
 
       - name: Tests ausführen
         run: pytest -q
@@ -106,6 +107,19 @@ jobs:
             exit 1
           }
           echo "Container laeuft als UID $UID_IN_CONTAINER (non-root)"
+
+      - name: Kein Test-Werkzeug im Produktions-Image
+        run: |
+          # requirements.txt ist Runtime-only; pytest & Co. gehoeren in
+          # requirements-dev.txt. Wenn sie hier importierbar sind, ist die
+          # Trennung wieder kaputt.
+          for MODULE in pytest pytest_mock httpx2; do
+            if docker exec ssa-ci python -c "import ${MODULE}" 2>/dev/null; then
+              echo "::error::${MODULE} ist im Produktions-Image installiert - Test-Deps gehoeren nach requirements-dev.txt"
+              exit 1
+            fi
+          done
+          echo "Image enthaelt kein Test-Werkzeug"
 
       - name: Smoke-Test (Health + Login + Auth-Durchsetzung)
         run: |

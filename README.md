@@ -16,6 +16,12 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 pip install -r requirements.txt
 ```
 
+Die Abhängigkeiten sind auf exakte Versionen gepinnt (`==`), damit jede
+Installation dieselben Pakete bekommt. `requirements.txt` enthält
+ausschließlich die **Laufzeit**-Abhängigkeiten – das Test-Werkzeug steht in
+`requirements-dev.txt` und landet damit weder im Docker-Image noch im
+Release-Paket (siehe [Tests](#tests)).
+
 ### Lokal auf macOS/Linux (venv)
 
 Die App läuft ohne Anpassungen lokal, z.B. auf einem Mac – benötigt wird nur
@@ -228,7 +234,11 @@ curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/prtg/scans/design-sc
 
 ## Tests
 
+Zum Testen zusätzlich die Entwicklungs-Abhängigkeiten installieren
+(`requirements-dev.txt` zieht `requirements.txt` selbst mit):
+
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 
