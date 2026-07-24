@@ -75,6 +75,9 @@ git tag v1.0.0 && git push origin v1.0.0
 Alternativ funktioniert weiterhin der klassische Weg: Repo klonen und direkt
 starten – das gebaute Frontend (`frontend/dist/`) ist im Repo enthalten.
 
+> **Für Maintainer:** Wie ein Release erstellt wird (Tag pushen, Workflow,
+> Paketinhalt, Troubleshooting) steht in [RELEASING.md](RELEASING.md).
+
 ## Sicherheit
 
 - Standard ist **SSL-Verifizierung an**.
