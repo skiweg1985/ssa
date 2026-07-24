@@ -70,7 +70,12 @@ class ScanStorage:
         # Führe automatische Bereinigung beim Start aus
         if self._auto_cleanup_enabled:
             self.cleanup_old_results(self._auto_cleanup_days)
-    
+
+    @property
+    def db_path(self) -> Path:
+        """Pfad zur SQLite-Datenbankdatei"""
+        return self._db_path
+
     def _normalize_folder_path(self, folder_path: str) -> str:
         """
         Normalisiert einen Ordner-Pfad für konsistente Speicherung

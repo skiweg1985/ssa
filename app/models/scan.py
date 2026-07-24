@@ -78,6 +78,7 @@ class ScanStatus(BaseModel):
     paths: Optional[List[str]] = Field(None, description="Konfigurierte Paths")
     nas: Optional[NASConfigPublic] = Field(None, description="NAS-Konfiguration (ohne Passwort)")
     interval: Optional[str] = Field(None, description="Cron-Format Intervall")
+    nas_connection_id: Optional[int] = Field(None, description="ID der NAS-Verbindung (für die Job-Verwaltung)")
 
 
 class ScanListResponse(BaseModel):
