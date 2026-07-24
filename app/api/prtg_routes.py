@@ -7,6 +7,7 @@ Zwei Sensoren:
 Beide liefern immer HTTP 200 (außer bei Auth-Fehlern): PRTG erwartet Probleme
 im Antwortkörper (`prtg.error`) bzw. über Kanal-Schwellwerte, nicht als HTTP-Status.
 """
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -260,9 +261,13 @@ async def prtg_scan(
         )
         return ok_response(channels, text=text)
 
-    except Exception as e:
+    except Exception:
+        # Details nur ins Log - die Antwort erreicht Inhaber eines eingeschränkten
+        # Monitoring-Tokens und soll keine internen Fehlertexte preisgeben.
         logger.exception(f"Fehler beim Erzeugen der PRTG-Daten für '{scan_identifier}'")
-        return error_response(f"Fehler beim Auslesen der Scan-Daten: {e}")
+        return error_response(
+            "Scan-Daten konnten nicht ausgelesen werden - Details siehe Server-Log"
+        )
 
 
 # ----------------------------------------------------------------------
@@ -288,7 +293,8 @@ async def prtg_server(
 
         # Systemressourcen nur wenn psutil verfügbar ist. Fehlende Kanäle sind
         # besser als 0-Werte, die als "0 % CPU" fehlgedeutet würden.
-        system = collect_system_raw()
+        # In einem Thread, weil psutil.cpu_percent bewusst 100 ms blockiert.
+        system = await asyncio.to_thread(collect_system_raw)
         if system is not None:
             channels.extend(
                 [
@@ -405,6 +411,8 @@ async def prtg_server(
 
         return ok_response(channels, text=summary)
 
-    except Exception as e:
+    except Exception:
         logger.exception("Fehler beim Erzeugen der PRTG-Serverdaten")
-        return error_response(f"Fehler beim Auslesen der Serverdaten: {e}")
+        return error_response(
+            "Serverdaten konnten nicht ausgelesen werden - Details siehe Server-Log"
+        )
