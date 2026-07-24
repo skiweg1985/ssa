@@ -1,4 +1,5 @@
 """FastAPI Main Application"""
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -7,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -164,7 +166,10 @@ async def health_check():
     Die Daten kommen aus app/services/health.py - dieselbe Quelle nutzen
     die PRTG-Sensor-Endpoints unter /api/prtg.
     """
-    return collect_health()
+    # In einem Thread: psutil.cpu_percent blockiert bewusst 100 ms und die
+    # Storage-Statistiken lesen synchron aus SQLite. Direkt im async-Handler
+    # wuerde das parallele Anfragen im Worker serialisieren.
+    return await asyncio.to_thread(collect_health)
 
 
 # Frontend build directory (React app)
@@ -190,6 +195,38 @@ if frontend_dist.exists():
             status_code=500
         )
     
+    def _resolve_static_file(full_path: str) -> Optional[Path]:
+        """
+        Löst einen angefragten Pfad sicher innerhalb von frontend/dist auf.
+
+        SICHERHEIT: Der Pfad kommt vom Client und kann Dot-Segmente enthalten
+        (auch URL-kodiert als %2e%2e%2f, was der ASGI-Server nicht normalisiert).
+        Ohne strikte Eingrenzung liesse sich damit jede Datei des Containers
+        lesen - im Docker-Layout u.a. data/secret.key und die SQLite-DB.
+
+        Returns:
+            Den aufgelösten Pfad, wenn er eine reguläre Datei INNERHALB von
+            frontend/dist ist, sonst None.
+        """
+        try:
+            base = frontend_dist.resolve(strict=True)
+            candidate = (base / full_path).resolve()
+        except (OSError, ValueError, RuntimeError):
+            return None
+
+        # Muss unterhalb des Frontend-Verzeichnisses liegen (schliesst auch
+        # Symlinks aus, die aus dem Verzeichnis herausführen - resolve()
+        # folgt ihnen, is_relative_to() lehnt das Ziel dann ab).
+        if not candidate.is_relative_to(base):
+            logger.warning(
+                f"Pfadzugriff ausserhalb des Frontend-Verzeichnisses abgelehnt: {full_path!r}"
+            )
+            return None
+
+        if not candidate.is_file():
+            return None
+        return candidate
+
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         """
@@ -199,12 +236,12 @@ if frontend_dist.exists():
         if full_path.startswith("api/") or full_path == "health":
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Not found")
-        
-        # Try to serve static file first (for assets, etc.)
-        static_file = frontend_dist / full_path
-        if static_file.exists() and static_file.is_file():
+
+        # Statische Datei ausliefern - nur innerhalb von frontend/dist
+        static_file = _resolve_static_file(full_path)
+        if static_file is not None:
             return FileResponse(str(static_file))
-        
+
         # Otherwise serve index.html (for React Router)
         index_file = frontend_dist / "index.html"
         if index_file.exists():
