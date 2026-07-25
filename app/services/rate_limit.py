@@ -21,6 +21,18 @@ DEFAULT_WINDOW_SECONDS = 300  # Zeitfenster, in dem Fehlversuche zählen
 DEFAULT_BLOCK_SECONDS = 300  # Basis-Sperrdauer
 MAX_BLOCK_SECONDS = 3600  # Obergrenze der progressiven Sperre
 
+# Ab dieser Anzahl Einträge wird beim nächsten Zugriff aufgeräumt. Die Map
+# wächst sonst unbegrenzt: pro Client-Schlüssel bleibt ein Eintrag liegen, und
+# mit SSA_TRUST_PROXY_HEADERS=true bestimmt der Client diesen Schlüssel selbst
+# (X-Forwarded-For) - dann lässt sie sich mit erfundenen Werten vollschreiben.
+PRUNE_THRESHOLD = 1000
+# Harte Obergrenze; wird sie trotz Aufräumen erreicht, fliegen die am längsten
+# untätigen Einträge raus (gesperrte zuletzt).
+MAX_ENTRIES = 10000
+# Mindestabstand zwischen zwei Aufräumläufen, damit der O(n)-Durchlauf nicht
+# an jedem Login-Versuch hängt.
+PRUNE_MIN_INTERVAL_SECONDS = 60
+
 
 @dataclass
 class _Entry:
@@ -28,6 +40,7 @@ class _Entry:
     first_failure: float = 0.0
     blocked_until: float = 0.0
     block_level: int = 0
+    last_seen: float = 0.0
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
@@ -51,14 +64,64 @@ class LoginRateLimiter:
         )
         self._entries: Dict[str, _Entry] = {}
         self._global_lock = threading.Lock()
+        self._last_prune = 0.0
 
     def _entry(self, key: str) -> _Entry:
+        now = time.time()
         with self._global_lock:
+            if len(self._entries) >= PRUNE_THRESHOLD and (
+                now - self._last_prune > PRUNE_MIN_INTERVAL_SECONDS
+                or len(self._entries) >= MAX_ENTRIES
+            ):
+                self._prune_locked(now)
+                self._last_prune = now
             entry = self._entries.get(key)
             if entry is None:
                 entry = _Entry()
                 self._entries[key] = entry
+            entry.last_seen = now
             return entry
+
+    def _prune_locked(self, now: float) -> None:
+        """
+        Verwirft Einträge, die nichts mehr schützen. Aufrufer hält _global_lock.
+
+        Behalten wird alles, was noch eine aktive Sperre, offene Fehlversuche im
+        Zeitfenster oder kürzlich Aktivität hatte. Die Ruhefrist orientiert sich
+        an der längstmöglichen Sperre, damit die progressive Eskalation
+        (block_level) nicht durch simples Abwarten zurückgesetzt werden kann.
+        """
+        idle_after = max(self.window_seconds, MAX_BLOCK_SECONDS)
+        stale = [
+            key
+            for key, entry in self._entries.items()
+            if entry.blocked_until <= now
+            and (
+                not entry.first_failure
+                or now - entry.first_failure > self.window_seconds
+            )
+            and now - entry.last_seen > idle_after
+        ]
+        for key in stale:
+            del self._entries[key]
+
+        # Notbremse: Feuert jemand schnell genug, sind alle Einträge "frisch"
+        # und oben bleibt nichts übrig. Dann die am längsten untätigen
+        # verwerfen - aktive Sperren zuletzt, damit der Schutz zuerst greift.
+        if len(self._entries) >= MAX_ENTRIES:
+            candidates = sorted(
+                self._entries.items(),
+                key=lambda item: (item[1].blocked_until > now, item[1].last_seen),
+            )
+            for key, _ in candidates[: len(self._entries) - MAX_ENTRIES // 2]:
+                del self._entries[key]
+            logger.warning(
+                "Rate-Limit: Obergrenze erreicht, älteste Einträge verworfen "
+                f"(jetzt {len(self._entries)})"
+            )
+
+        if stale:
+            logger.debug(f"Rate-Limit: {len(stale)} verwaiste Einträge verworfen")
 
     def check(self, key: str) -> Tuple[bool, int]:
         """
@@ -120,6 +183,7 @@ class LoginRateLimiter:
         """Kompletter Reset (für Tests)"""
         with self._global_lock:
             self._entries.clear()
+            self._last_prune = 0.0
 
 
 def _env_int(name: str, default: int) -> int:

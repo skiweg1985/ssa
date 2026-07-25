@@ -29,6 +29,14 @@ services:
       # Optional: bestehende config.yaml fuer den einmaligen Erst-Import mounten
       # - ./config.yaml:/app/config.yaml:ro
 
+    # --- Betrieb ---
+    # Dieser Dienst laeuft als GENAU EIN Prozess und darf nicht repliziert
+    # werden (kein "docker compose up --scale ssa=2", keine zusaetzlichen
+    # uvicorn-Worker). Scheduler, Doppelstart-Schutz fuer Scans und das
+    # Login-Rate-Limit liegen im Prozessspeicher; mehrere Prozesse wuerden
+    # denselben Job mehrfach parallel gegen das NAS laufen lassen.
+    # Der Prozess sichert das zusaetzlich ueber ein Lock im Datenvolume ab.
+
     # --- Haertung ---
     # Der Container laeuft als unprivilegierter Benutzer (UID 1000, siehe Dockerfile).
     #
