@@ -123,7 +123,9 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
       id: "history",
       tab: "daten",
       title: "Scan-Historie",
-      description: "Komplette Historie aller Ergebnisse dieses Scans",
+      description:
+        "Historie aller Ergebnisse dieses Scans. Ohne Parameter komplett; " +
+        "mit ?limit=<n> die n neuesten und ?offset=<n> zum Überspringen.",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/history`,
     },
