@@ -54,6 +54,49 @@ if explore_logger.handlers:
     for handler in explore_logger.handlers[:]:
         explore_logger.removeHandler(handler)
 
+# Offener Datei-Handle des Einzelprozess-Locks. Muss für die Laufzeit des
+# Prozesses am Leben bleiben - beim Schliessen gibt das Betriebssystem das
+# Lock frei.
+_instance_lock_handle = None
+
+
+def _acquire_scheduler_lock(data_dir: Path) -> bool:
+    """
+    Versucht, das Einzelprozess-Lock für den Scheduler zu nehmen.
+
+    Hintergrund: Scheduler, Doppelstart-Schutz und Rate-Limit liegen im
+    Prozessspeicher. Läuft die Anwendung mit mehreren Workern, plant sonst
+    JEDER Prozess dieselben Jobs ein und ein Job scannt n-fach parallel
+    dasselbe NAS.
+
+    Fail-open: Lässt sich das Lock aus technischen Gründen nicht setzen (kein
+    fcntl, Dateisystem ohne Lock-Unterstützung, fehlende Rechte), gibt die
+    Funktion True zurück. Ein nicht laufender Scheduler wäre der deutlich
+    grössere Schaden als ein doppelt geplanter Job.
+
+    Returns:
+        False nur dann, wenn das Lock nachweislich ein anderer Prozess hält.
+    """
+    global _instance_lock_handle
+    try:
+        import fcntl
+
+        lock_path = Path(data_dir) / "scheduler.lock"
+        handle = open(lock_path, "w")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            handle.close()
+            return False
+        handle.write(str(os.getpid()))
+        handle.flush()
+        _instance_lock_handle = handle
+        return True
+    except Exception as e:
+        logger.debug(f"Scheduler-Lock nicht verfügbar ({e}) - Scheduler startet regulär")
+        return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -85,10 +128,24 @@ async def lifespan(app: FastAPI):
         logger.error(f"Fehler beim Initialisieren des Jobs-Stores: {e}")
 
     try:
-        # Lade Jobs aus der Datenbank und starte Scheduler
-        scheduler_service.load_and_schedule()
-        scheduler_service.start()
-        logger.info("Scheduler gestartet")
+        # Lade Jobs aus der Datenbank und starte Scheduler - aber nur in EINEM
+        # Prozess. Mit mehreren Workern wuerde sonst jeder dieselben Jobs
+        # einplanen und jeder Lauf n-fach gegen das NAS gehen.
+        if _acquire_scheduler_lock(get_storage().db_path.parent):
+            scheduler_service.load_and_schedule()
+            scheduler_service.start()
+            logger.info("Scheduler gestartet")
+        else:
+            logger.warning(
+                "=" * 60 + "\n"
+                "Es laeuft bereits ein anderer SSA-Prozess mit aktivem Scheduler.\n"
+                "Dieser Prozess bedient nur die API - geplante Scans uebernimmt\n"
+                "der andere Prozess.\n"
+                "\n"
+                "Die Anwendung ist auf EINEN Prozess ausgelegt: Doppelstart-Schutz\n"
+                "und Login-Rate-Limit gelten weiterhin nur prozessweit. Bitte mit\n"
+                "genau einem Worker und ohne Replikate betreiben.\n" + "=" * 60
+            )
     except Exception as e:
         logger.error(f"Fehler beim Starten des Schedulers: {e}")
         # Server startet trotzdem, aber ohne automatische Scans

@@ -5,7 +5,7 @@ import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 from contextlib import contextmanager
 from app.models.scan import ScanResult, ScanResultItem, TotalSize
@@ -603,9 +603,62 @@ class ScanStorage:
 
         return None
     
-    def get_all_results(self, scan_slug: str) -> List[ScanResult]:
-        """Holt alle Ergebnisse für einen Scan (anhand slug)"""
-        return self._results.get(scan_slug, [])
+    def get_all_results(
+        self,
+        scan_slug: str,
+        limit: Optional[int] = None,
+        offset: int = 0,
+    ) -> List[ScanResult]:
+        """
+        Holt Ergebnisse für einen Scan (anhand slug), aufsteigend nach Zeitstempel.
+
+        Ohne limit/offset wird wie bisher die vollständige Historie geliefert.
+
+        Args:
+            limit: Anzahl der zurückgegebenen Läufe. Geliefert werden die
+                   NEUESTEN limit Läufe - die Sortierung der Ausgabe bleibt
+                   aufsteigend.
+            offset: Überspringt offset Läufe vom neuen Ende her (Blättern in
+                    die Vergangenheit).
+        """
+        results = self._results.get(scan_slug, [])
+        if limit is None and not offset:
+            return results
+
+        end = len(results) - max(0, offset)
+        if end <= 0:
+            return []
+        start = max(0, end - limit) if limit is not None else 0
+        return results[start:end]
+
+    def count_results(self, scan_slug: str) -> int:
+        """Anzahl gespeicherter Läufe eines Scans (für Paginierung)"""
+        return len(self._results.get(scan_slug, []))
+
+    def get_slug_summary(self) -> List[Dict[str, Any]]:
+        """
+        Übersicht je gespeichertem Scan-Slug: Anzahl Läufe und Zeitraum.
+
+        Grundlage für die Anzeige verwaister Ergebnisse - also solcher, zu
+        denen es keinen Scan-Job mehr gibt. Der Storage kennt die Jobs nicht,
+        den Abgleich macht der Aufrufer.
+        """
+        summary = []
+        # Über eine Kopie iterieren: ein laufender Scan kann parallel einen
+        # neuen Slug eintragen.
+        for scan_slug, results in list(self._results.items()):
+            if not results:
+                continue
+            summary.append(
+                {
+                    "scan_slug": scan_slug,
+                    "scan_name": results[-1].scan_name,
+                    "count": len(results),
+                    "oldest": results[0].timestamp.isoformat(),
+                    "newest": results[-1].timestamp.isoformat(),
+                }
+            )
+        return summary
     
     def get_results_since(self, scan_slug: str, since: datetime) -> List[ScanResult]:
         """Holt alle Ergebnisse seit einem bestimmten Zeitpunkt"""

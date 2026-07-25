@@ -1,7 +1,25 @@
 """Pydantic-Modelle für Auth, NAS-Verbindungen und Scan-Job-Verwaltung"""
-from typing import Any, Dict, List, Literal, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
+
+# Obergrenzen für Freitextfelder und Listen.
+#
+# Ohne sie nahm die API einen 10.000 Zeichen langen Job-Namen an (der dann als
+# Slug in jeder URL, jeder Log-Zeile und jedem Fremdschlüssel steckt) und
+# Pfadlisten beliebiger Länge (jeder Pfad erzeugt beim Lauf eine eigene
+# NAS-Abfrage). Die Werte sind bewusst grosszügig gewählt - reale
+# Konfigurationen liegen um Grössenordnungen darunter.
+MAX_NAME_LENGTH = 100
+MAX_HOST_LENGTH = 255
+MAX_USERNAME_LENGTH = 255
+MAX_PASSWORD_LENGTH = 1024
+MAX_PATH_LENGTH = 1024
+MAX_PATHS_PER_JOB = 200
+MAX_INTERVAL_LENGTH = 100
+
+# Einzelner Pfad-/Share-/Ordnereintrag
+PathStr = Annotated[str, Field(max_length=MAX_PATH_LENGTH)]
 
 
 # ----------------------------------------------------------------------
@@ -43,14 +61,14 @@ class SNMPSettings(BaseModel):
     port: int = Field(161, ge=1, le=65535)
 
     # v2c
-    community: Optional[str] = None
+    community: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
 
     # v3
-    v3_user: Optional[str] = None
+    v3_user: Optional[str] = Field(default=None, max_length=MAX_USERNAME_LENGTH)
     v3_auth_protocol: Optional[Literal["SHA", "MD5"]] = None
-    v3_auth_key: Optional[str] = None
+    v3_auth_key: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
     v3_priv_protocol: Optional[Literal["AES", "DES"]] = None
-    v3_priv_key: Optional[str] = None
+    v3_priv_key: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
 
     def to_secrets(self) -> Optional[Dict[str, Any]]:
         """Zugangsdaten als Dict für die verschlüsselte Speicherung, sonst None"""
@@ -74,23 +92,23 @@ class SNMPSettings(BaseModel):
 
 
 class NASConnectionCreate(BaseModel):
-    name: str = Field(min_length=1)
-    host: str = Field(min_length=1)
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
-    port: Optional[int] = None
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    host: str = Field(min_length=1, max_length=MAX_HOST_LENGTH)
+    username: str = Field(min_length=1, max_length=MAX_USERNAME_LENGTH)
+    password: str = Field(min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
     use_https: bool = True
     verify_ssl: bool = True
     snmp: Optional[SNMPSettings] = None
 
 
 class NASConnectionUpdate(BaseModel):
-    name: str = Field(min_length=1)
-    host: str = Field(min_length=1)
-    username: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
+    host: str = Field(min_length=1, max_length=MAX_HOST_LENGTH)
+    username: str = Field(min_length=1, max_length=MAX_USERNAME_LENGTH)
     # Leer/None = gespeichertes Passwort behalten
-    password: Optional[str] = None
-    port: Optional[int] = None
+    password: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
+    port: Optional[int] = Field(default=None, ge=1, le=65535)
     use_https: bool = True
     verify_ssl: bool = True
     snmp: Optional[SNMPSettings] = None
@@ -173,13 +191,19 @@ class ApiTokenCreated(ApiTokenPublic):
 # ----------------------------------------------------------------------
 
 class ScanJobCreate(BaseModel):
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     nas_connection_id: int
-    interval: str = Field(min_length=1)
+    interval: str = Field(min_length=1, max_length=MAX_INTERVAL_LENGTH)
     enabled: bool = True
-    paths: Optional[List[str]] = None
-    shares: Optional[List[str]] = None
-    folders: Optional[List[str]] = None
+    paths: Optional[List[PathStr]] = Field(
+        default=None, max_length=MAX_PATHS_PER_JOB
+    )
+    shares: Optional[List[PathStr]] = Field(
+        default=None, max_length=MAX_PATHS_PER_JOB
+    )
+    folders: Optional[List[PathStr]] = Field(
+        default=None, max_length=MAX_PATHS_PER_JOB
+    )
 
 
 class ScanJobUpdate(ScanJobCreate):

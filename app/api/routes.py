@@ -1,5 +1,6 @@
 """API Routes für FastAPI"""
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+import logging
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
 from typing import List, Optional
 from datetime import datetime
 
@@ -16,6 +17,8 @@ from app.services.scanner import scanner_service
 from app.services.scheduler import scheduler_service
 from app.services.jobs_store import jobs_store
 from app.models.config import NASConfigYAML, ScanTaskConfigYAML
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -457,10 +460,27 @@ async def get_scan_results(scan_identifier: str, latest: bool = True):
 
 
 @router.get("/scans/{scan_identifier}/history", response_model=ScanHistoryResponse)
-async def get_scan_history(scan_identifier: str):
+async def get_scan_history(
+    scan_identifier: str,
+    limit: Optional[int] = Query(
+        None,
+        ge=1,
+        description=(
+            "Anzahl der gelieferten Läufe (die neuesten). "
+            "Ohne Angabe wird die komplette Historie zurückgegeben."
+        ),
+    ),
+    offset: int = Query(
+        0, ge=0, description="Läufe vom neuen Ende her überspringen"
+    ),
+):
     """
-    Gibt die komplette Historie aller Ergebnisse eines Scans zurück
-    
+    Gibt die Historie der Ergebnisse eines Scans zurück
+
+    Ohne limit/offset ist das Verhalten unverändert: die komplette Historie,
+    aufsteigend nach Zeitstempel. total_count nennt immer die Gesamtzahl der
+    gespeicherten Läufe, unabhängig von der gelieferten Seite.
+
     Args:
         scan_identifier: Slug oder Name des Scans
     """
@@ -470,17 +490,21 @@ async def get_scan_history(scan_identifier: str):
         if not scan_config:
             raise HTTPException(status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden")
 
-        results = storage.get_all_results(scan_config.slug)
-        if not results:
+        total = storage.count_results(scan_config.slug)
+        if not total:
             raise HTTPException(
                 status_code=404,
                 detail=f"Keine Ergebnisse für Scan '{scan_config.name}' gefunden"
             )
-        
+
+        results = storage.get_all_results(
+            scan_config.slug, limit=limit, offset=offset
+        )
+
         return ScanHistoryResponse(
             scan_slug=scan_config.slug,
             results=results,
-            total_count=len(results)
+            total_count=total
         )
     
     except HTTPException:
@@ -574,7 +598,16 @@ async def get_storage_stats():
         Dictionary mit Statistiken (scan_count, nas_count, folder_count, db_size, etc.)
     """
     try:
-        return storage.get_storage_stats()
+        stats = storage.get_storage_stats()
+        # Zusätzlich ausweisen, wie viel davon zu keinem Job mehr gehört -
+        # sonst wächst dieser Anteil unbemerkt mit.
+        try:
+            orphans = _collect_orphans()
+            stats["orphaned_scan_count"] = len(orphans)
+            stats["orphaned_results"] = sum(entry["count"] for entry in orphans)
+        except Exception as e:
+            logger.warning(f"Verwaiste Ergebnisse nicht ermittelbar: {e}")
+        return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler beim Abrufen der Statistiken: {str(e)}")
 
@@ -716,6 +749,75 @@ async def delete_folder_results(
         raise HTTPException(status_code=500, detail=f"Fehler beim Löschen: {str(e)}")
 
 
+def _collect_orphans() -> List[dict]:
+    """
+    Ergebnisse, zu denen es keinen Scan-Job mehr gibt.
+
+    Sie entstehen, wenn ein Job ohne delete_history gelöscht wird - die
+    Historie bleibt dann absichtlich erhalten, war über die API aber weder
+    sicht- noch löschbar, weil jeder Endpunkt zuerst den Job nachschlägt.
+    """
+    known_slugs = {job["slug"] for job in jobs_store.list_jobs()}
+    return [
+        entry
+        for entry in storage.get_slug_summary()
+        if entry["scan_slug"] not in known_slugs
+    ]
+
+
+@router.get("/storage/orphans")
+async def list_orphaned_results():
+    """
+    Listet Ergebnisse ohne zugehörigen Scan-Job.
+
+    Returns:
+        Übersicht je verwaistem Slug mit Anzahl und Zeitraum
+    """
+    try:
+        orphans = _collect_orphans()
+        return {
+            "orphans": orphans,
+            "scan_count": len(orphans),
+            "total_results": sum(entry["count"] for entry in orphans),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Fehler beim Ermitteln verwaister Ergebnisse: {str(e)}"
+        )
+
+
+@router.delete("/storage/orphans")
+async def delete_orphaned_results():
+    """
+    Löscht alle Ergebnisse, zu denen es keinen Scan-Job mehr gibt.
+
+    Returns:
+        Anzahl der gelöschten Läufe je Slug
+    """
+    try:
+        orphans = _collect_orphans()
+        deleted = []
+        for entry in orphans:
+            storage.clear_results(scan_slug=entry["scan_slug"])
+            deleted.append(
+                {"scan_slug": entry["scan_slug"], "deleted_count": entry["count"]}
+            )
+        return {
+            "success": True,
+            "message": f"{len(deleted)} verwaiste Scan-Historie(n) gelöscht",
+            "deleted": deleted,
+            "total_results": sum(item["deleted_count"] for item in deleted),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Fehler beim Löschen verwaister Ergebnisse: {str(e)}"
+        )
+
+
 @router.delete("/storage/scans/{scan_identifier}")
 async def delete_scan_results(scan_identifier: str):
     """
@@ -738,6 +840,10 @@ async def delete_scan_results(scan_identifier: str):
             "success": True,
             "message": f"Alle Ergebnisse für Scan '{scan_config.name}' wurden gelöscht"
         }
+    except HTTPException:
+        # Sonst verschluckt der generische Zweig unten das 404 und macht daraus
+        # einen 500er (der Client sieht "Fehler beim Löschen: 404: ...").
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler beim Löschen: {str(e)}")
 
