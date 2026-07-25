@@ -89,6 +89,9 @@ export function getStatusConfig(status: string): StatusConfig {
     completed: { icon: null, text: 'Abgeschlossen', variant: 'success' },
     running: { icon: null, text: 'Läuft', variant: 'running' },
     failed: { icon: null, text: 'Fehlgeschlagen', variant: 'error' },
+    // Abbruch ist kein Fehler, aber auch kein Erfolg. Ohne eigenen Eintrag
+    // würde der Fallback unten daraus "Ausstehend" machen - also glatt falsch.
+    cancelled: { icon: null, text: 'Abgebrochen', variant: 'warning' },
     pending: { icon: null, text: 'Ausstehend', variant: 'pending' }
   };
   return statusConfig[status] || statusConfig.pending;

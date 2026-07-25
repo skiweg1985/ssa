@@ -145,8 +145,9 @@ Für Monitoring-Systeme gibt es **statische, read-only API-Tokens**, die im
 Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
 
 - Token wird bei Erstellung **einmalig** angezeigt (gespeichert wird nur der Hash).
-- Zugriff: nur `GET` auf `/api/prtg*` (Sensordaten, s.u.), `/api/scans*` (Status,
-  Ergebnisse, Historie, Fortschritt), `/api/nas-metrics*` (Systemmetriken der NAS)
+- Zugriff: nur `GET` auf `/api/monitor*` (Zustandsberichte, s.u.), `/api/prtg*`
+  (PRTG-Sensordaten), `/api/scans*` (Status, Ergebnisse, Historie, Fortschritt),
+  `/api/nas-metrics*` (Systemmetriken der NAS)
   und `/api/storage/stats` — kein Triggern, keine Verwaltung.
 - Verwendung: Header `Authorization: Bearer <token>`.
 - `/health` ist weiterhin ohne Token erreichbar (Up/Down-Checks).
@@ -155,144 +156,37 @@ Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
 curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/scans
 ```
 
-### PRTG: HTTP Data Advanced (empfohlen)
+### Endpoints für Monitoring-Systeme
 
-Vier Endpoints liefern fertige Sensordaten im PRTG-Format — PRTG legt die Kanäle
-automatisch an, JSONPath-Filter entfallen:
-
-| Endpoint | Sensor |
+| Endpoint | Wofür |
 |---|---|
-| `GET /api/prtg/scans/<slug>` | ein Sensor **pro Scan-Job** |
-| `GET /api/prtg/server` | ein Sensor für den **Server selbst** |
-| `GET /api/prtg/nas/<id-oder-name>/capacity` | Kapazität **pro NAS** (Volumes, Freigaben) |
-| `GET /api/prtg/nas/<id-oder-name>/health` | Systemgesundheit **pro NAS** (SNMP) |
+| `GET /api/monitor` | Gesamtzustand — ein Check für die ganze Instanz |
+| `GET /api/monitor/scans` | alle Scan-Jobs, mit Roll-up und Problemliste |
+| `GET /api/monitor/scans/<slug>` | ein einzelner Scan-Job |
+| `GET /api/monitor/server` | Infrastruktur — Scheduler, System, Storage |
+| `GET /api/prtg/scans/<slug>` | PRTG-Sensor pro Scan-Job |
+| `GET /api/prtg/server` | PRTG-Sensor für den Server selbst |
+| `GET /api/prtg/nas/<id>/capacity` | PRTG-Sensor: Volume-Belegung eines NAS |
+| `GET /api/prtg/nas/<id>/health` | PRTG-Sensor: Temperatur, Platten, RAID (SNMP) |
+| `GET /api/nas-metrics[/<id>]` | NAS-Systemmetriken als rohes JSON |
 
-> **Achtung, verbreitete Fehlannahme:** Die CPU-, RAM- und Disk-Kanäle von
-> `/api/prtg/server` messen den **Rechner, auf dem SSA läuft** — nicht das NAS.
-> Für die Auslastung des NAS selbst ist der `health`-Sensor zuständig.
+Die `/api/monitor*`-Endpoints liefern den Zustand fertig ausgewertet: das Feld
+`severity` (0 = OK, 1 = Warnung, 2 = kritisch) genügt für die Alarmentscheidung —
+kein Zweit-Call, keine Client-Logik, kein Parsen von Cron-Ausdrücken. Für PRTG
+gibt es stattdessen Sensordaten im Format „HTTP Data Advanced", die ihre Kanäle
+selbst anlegen.
 
-**Sensor anlegen:** Gerät → *Sensor hinzufügen* → **HTTP Data Advanced** → URL
-eintragen → unter den erweiterten Einstellungen den Header
-`Authorization: Bearer ssa_...` setzen. Scan-Intervall des Sensors sinnvollerweise
-≥ Scan-Intervall des Jobs wählen.
-
-**Kanäle pro Job:** Gesamtgröße · Ordner · Dateien · Scan-Dauer ·
-Alter letzter Lauf · Alter letzte Daten · Status · Ordner OK · Ordner Fehler —
-plus **ein Kanal je gescanntem Ordner** (Kanalname = Pfad, z.B. `/design`).
-
-**Status-Kanal:**
-
-| Wert | Bedeutung | Sensor |
-|---|---|---|
-| 0 | letzter Lauf erfolgreich | OK |
-| 1 | Scan läuft gerade | OK |
-| 2 | Job deaktiviert | OK |
-| 3 | Job nicht eingeplant | Warning |
-| 4 | letzter Lauf fehlgeschlagen | Error |
-
-Messwerte stammen immer vom letzten **erfolgreichen** Lauf — ein Fehllauf macht
-den Sensor rot, reißt die Charts aber nicht auf 0.
-
-**Kanäle Server:** Uptime · CPU · RAM belegt/frei · Disk belegt/frei · Scheduler ·
-Jobs gesamt/aktiv/laufend · Jobs mit Fehler · Jobs ohne Ergebnisse · Ältester Lauf ·
-DB-Größe · Ergebnisse in DB · Konfigurationswarnungen.
-
-### NAS-Systemmetriken
-
-Zwei Sensoren je NAS, adressiert über **ID oder Verbindungsname**
-(`/api/prtg/nas/NAS-01/capacity`). Getrennt, weil Kapazität und Hardware
-unterschiedlich alarmiert werden und PRTG nur 50 Kanäle je Sensor zulässt.
-
-**Kanäle `capacity`** (aus der File Station API, kein Zusatzaufwand am NAS):
-Volumes · Volumes schreibgeschützt · Freigaben · Freigaben ohne Schreibrecht ·
-Antwortzeit — plus **je Volume** Belegung %, frei und gesamt.
-
-*Volumes schreibgeschützt* ist der wichtigste Einzelwert: Dieser Zustand tritt
-bei vollem Speicher **und** bei abgestürztem RAID auf.
-
-**Kanäle `health`** (via SNMP): Systemstatus · Temperatur · Netzteil ·
-Systemlüfter · CPU-Lüfter · DSM-Update verfügbar · Platten · Platten nicht
-normal · Höchste Plattentemperatur · RAID-Verbünde · RAID mit Fehler · RAID in
-Wartung · CPU · RAM belegt — plus USV-Kanäle sofern ein Gerät angeschlossen
-ist, und optional je Platte die Temperatur (`?disks=1`).
-
-Der `health`-Sensor liefert bewusst **keine Belegungswerte**: Die RAID-MIB
-listet Storage Pools und Volumes in derselben Tabelle, ohne sie zu
-unterscheiden — und beim Pool zählt der *nicht zugewiesene* Platz als „frei".
-Ein vollständig zugewiesener Pool meldet dort also ~100 %, obwohl nichts voll
-ist. Für Kapazität ist der `capacity`-Sensor zuständig, der über die File
-Station API eindeutige Volume-Werte bekommt.
-
-Statuskanäle nutzen durchgängig dieselbe Skala:
-
-| Wert | Bedeutung | Sensor |
-|---|---|---|
-| 0 | Normal | OK |
-| 1 | Wartung (z.B. RAID-Resync) | OK |
-| 2 | Zustand unbekannt | Warning |
-| 3 | Fehler | Error |
-
-**SNMP einrichten** (nur für `health` nötig):
-
-1. Am NAS: *Systemsteuerung → Terminal & SNMP → SNMP-Dienst aktivieren*.
-2. In SSA: NAS-Verbindung bearbeiten → SNMP aktivieren, Version und Community
-   bzw. v3-Zugangsdaten eintragen. Die Zugangsdaten werden verschlüsselt
-   gespeichert (wie das DSM-Passwort) und nie über die API zurückgegeben.
-
-SNMP ist der **einzige von Synology öffentlich dokumentierte** Weg zu
-Temperatur, SMART, RAID-Status und USV — siehe
-[DiskStation MIB Guide](https://global.download.synology.com/download/Document/MIBGuide/Synology_MIB_File.zip).
-Die File Station API liefert diese Werte nicht.
-
-### Generischer JSON-Endpoint
-
-Für Grafana, eigene Dashboards und Skripte — ohne PRTG-Formatierung:
-
-| Endpoint | Zweck |
-|---|---|
-| `GET /api/nas-metrics` | alle Systeme; `?connection_id=` filtert |
-| `GET /api/nas-metrics/<id-oder-name>` | ein System |
-
-`?groups=capacity,health` schränkt auf einzelne Quellen ein. Jede Quelle trägt
-ihren eigenen `available`/`error`-Status: ein NAS ohne SNMP liefert weiterhin
-vollständige Kapazitätsdaten.
+Die `nas`-Endpoints messen die **NAS-Geräte selbst** — Kapazität, Temperatur,
+Plattenstatus, RAID. Nicht zu verwechseln mit `/api/prtg/server`, dessen CPU-
+und RAM-Kanäle den Rechner betreffen, auf dem SSA läuft.
 
 ```bash
-curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/nas-metrics/NAS-01
+curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/monitor
 ```
 
-**Query-Parameter:**
-
-| Parameter | Endpoint | Default | Wirkung |
-|---|---|---|---|
-| `folders` | `scans` | `1` | `0` = keine Ordner-Kanäle, nur Summen |
-| `max_folders` | `scans` | `40` | Obergrenze für Ordner-Kanäle |
-| `volumes` | `capacity` | `1` | `0` = keine Volume-Kanäle, nur Summen |
-| `max_volumes` | `capacity` | `15` | Obergrenze für Volume-Kanäle |
-| `disks` | `health` | `0` | `1` = zusätzlich ein Temperaturkanal je Platte |
-| `max_disks` | `health` | `24` | Obergrenze für Platten-Kanäle |
-| `limits` | alle | `1` | `0` = keine Schwellwerte (eigene in PRTG pflegen) |
-
-**Gut zu wissen:**
-- Metriken werden **live** geholt und ~60 s zwischengespeichert — `capacity`-
-  und `health`-Sensor desselben NAS teilen sich also einen Abruf. Historie
-  führt PRTG selbst; SSA speichert diese Werte nicht.
-- Werte, die ein Modell nicht liefert (Temperatur, CPU, RAM), werden
-  **weggelassen** statt als 0 gemeldet — die Sensormeldung nennt sie.
-- PRTG identifiziert Kanäle über den **Namen** — wird ein Scan-Pfad umbenannt,
-  entsteht ein neuer Kanal; der alte bleibt leer stehen und kann in PRTG gelöscht werden.
-- PRTG unterstützt max. **50 Kanäle** pro Sensor; darüber wird gekappt (Hinweis
-  erscheint in der Sensormeldung).
-- Mitgelieferte Schwellwerte überschreiben in PRTG manuell gesetzte Limits —
-  bei eigenen Schwellwerten `?limits=0` verwenden.
-- Sensor erst **nach dem ersten erfolgreichen Scan** anlegen; vorher meldet der
-  Endpoint bewusst einen Fehler statt Nullwerte.
-- Fehler (unbekannter Job, noch keine Daten) kommen als HTTP **200** mit
-  `prtg.error` — so wie PRTG es erwartet.
-
-```bash
-curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/prtg/scans/design-scan
-```
+Siehe [README_MONITORING.md](README_MONITORING.md) für Details — Feldreferenz,
+Beispielantworten, PRTG-Sensoreinrichtung und fertige Rezepte für Nagios,
+Zabbix, Checkmk, Grafana und Uptime-Kuma.
 
 ## Sicherheit
 

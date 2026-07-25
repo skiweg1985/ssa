@@ -245,6 +245,13 @@ export interface TriggerResponse {
   triggered: boolean;
 }
 
+export interface CancelResponse {
+  scan_slug: string;
+  message: string;
+  /** Der Abbruch ist kooperativ - der Lauf endet erst beim nächsten Prüfpunkt */
+  cancelling: boolean;
+}
+
 export interface ScanHistoryResponse {
   scan_slug: string;
   results: ScanResult[];

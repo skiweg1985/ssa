@@ -9,8 +9,7 @@ im Antwortkörper (`prtg.error`) bzw. über Kanal-Schwellwerte, nicht als HTTP-S
 """
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from fastapi import APIRouter, Query
 
@@ -24,6 +23,13 @@ from app.services.health import (
     get_uptime_seconds,
 )
 from app.services.jobs_store import jobs_store
+from app.services.monitoring import (
+    age_limits,
+    age_seconds,
+    as_utc,
+    expected_path_count,
+    folder_balance,
+)
 from app.services.scanner import scanner_service
 from app.services.scheduler import scheduler_service
 from app.services.storage import storage
@@ -45,59 +51,16 @@ STATUS_DISABLED = 2    # Job deaktiviert
 STATUS_STALE = 3       # eingeplant, aber kein aktueller Lauf -> Warning
 STATUS_FAILED = 4      # letzter Lauf fehlgeschlagen -> Error
 
-
-def _as_utc(value: datetime) -> datetime:
-    """
-    Stellt sicher, dass ein Timestamp tz-bewusst ist.
-
-    Ältere Datensätze können naive Timestamps enthalten (der Scanner nutzte im
-    Fehlerpfad datetime.utcnow()). Ohne diese Normalisierung würde die
-    Altersberechnung mit TypeError abbrechen.
-    """
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
+# Ein abgebrochener Lauf teilt den Wert mit STATUS_STALE. Der Warnbereich des
+# Kanals ist durch die Limits (2.5/3.5) genau ein Wert breit, und "abgebrochen"
+# ist eine Warnung: kein Fehler, aber auch keine frischen Daten. Ein eigener
+# Wert wäre entweder OK (< 2.5) oder Error (> 3.5) - beides falsch. Welcher der
+# beiden Gründe zutrifft, steht in der Sensormeldung.
+STATUS_CANCELLED = STATUS_STALE
 
 
-def _age_seconds(timestamp: Optional[datetime]) -> Optional[float]:
-    if timestamp is None:
-        return None
-    return (datetime.now(timezone.utc) - _as_utc(timestamp)).total_seconds()
-
-
-def _expected_path_count(job: Dict[str, Any]) -> int:
-    """
-    Anzahl der Pfade, die dieser Job scannen soll.
-
-    Nötig, weil nur erfolgreiche Ordner persistiert werden: nach einem Neustart
-    wäre "Ordner Fehler" sonst fälschlich 0.
-    """
-    try:
-        from app.api.routes import _job_to_view_config
-
-        config = _job_to_view_config(job)
-        if config is None:
-            return 0
-        return len(scanner_service._determine_paths(config))
-    except Exception as e:
-        logger.debug(f"Erwartete Pfadanzahl nicht ermittelbar: {e}")
-        return 0
-
-
-def _age_limits(
-    interval_seconds: Optional[float], warn_factor: float, err_factor: float
-) -> Dict[str, Optional[float]]:
-    """
-    Schwellwerte für die Alters-Kanäle aus dem Scan-Intervall.
-
-    Untergrenze verhindert, dass Minuten-Jobs bei jedem kleinen Verzug flattern.
-    """
-    if interval_seconds is None or interval_seconds <= 0:
-        return {"warn_max": None, "err_max": None}
-    return {
-        "warn_max": max(interval_seconds * warn_factor, interval_seconds + 300),
-        "err_max": max(interval_seconds * err_factor, interval_seconds + 600),
-    }
+# Zeit-, Pfad- und Schwellwert-Helfer stehen in app/services/monitoring.py,
+# damit PRTG- und generische Monitoring-Endpoints dieselben Werte berechnen.
 
 
 # ----------------------------------------------------------------------
@@ -150,11 +113,13 @@ async def prtg_scan(
             sum(item.elapsed_time_ms or 0 for item in successful) / 1000.0
         )
 
-        expected_paths = _expected_path_count(job)
-        explicit_failures = len(
-            [item for item in latest_completed.results if not item.success]
+        # Ordnerbilanz über den geteilten Helfer: nur erfolgreiche Ordner werden
+        # persistiert, deshalb der Abgleich mit der konfigurierten Pfadanzahl -
+        # der aber ausgesetzt wird, wenn die Konfiguration nach dem Lauf
+        # geändert wurde (neu hinzugefügte Pfade sind keine Fehler).
+        _, failed_folders, _ = folder_balance(
+            latest_completed, expected_path_count(job)
         )
-        failed_folders = max(expected_paths - len(successful), explicit_failures, 0)
 
         # Status ermitteln
         if is_running:
@@ -166,6 +131,11 @@ async def prtg_scan(
         elif latest.status == "failed":
             status_code = STATUS_FAILED
             status_text = f"Letzter Lauf fehlgeschlagen: {latest.error or 'unbekannt'}"
+        elif latest.status == "cancelled":
+            # Ohne diesen Zweig fiele ein abgebrochener Lauf auf STATUS_OK
+            # durch - der Sensor stünde nach einem Abbruch auf grün.
+            status_code = STATUS_CANCELLED
+            status_text = f"Letzter Lauf abgebrochen: {latest.error or 'ohne Angabe'}"
         elif scheduler_service.get_job_info(slug) is None:
             status_code = STATUS_STALE
             status_text = "Job ist nicht eingeplant"
@@ -180,8 +150,8 @@ async def prtg_scan(
             if job["enabled"]
             else None
         )
-        run_limits = _age_limits(interval_seconds, 2, 3)
-        data_limits = _age_limits(interval_seconds, 3, 5)
+        run_limits = age_limits(interval_seconds, 2, 3)
+        data_limits = age_limits(interval_seconds, 3, 5)
 
         channels: List[PrtgChannel] = [
             make_channel("Gesamtgröße", total_bytes, unit="BytesDisk"),
@@ -192,7 +162,7 @@ async def prtg_scan(
             ),
             make_channel(
                 "Alter letzter Lauf",
-                _age_seconds(latest.timestamp),
+                age_seconds(latest.timestamp),
                 unit="TimeSeconds",
                 warn_max=run_limits["warn_max"],
                 err_max=run_limits["err_max"],
@@ -202,7 +172,7 @@ async def prtg_scan(
             ),
             make_channel(
                 "Alter letzte Daten",
-                _age_seconds(latest_completed.timestamp),
+                age_seconds(latest_completed.timestamp),
                 unit="TimeSeconds",
                 warn_max=data_limits["warn_max"],
                 err_max=data_limits["err_max"],
@@ -217,7 +187,7 @@ async def prtg_scan(
                 custom_unit="Code",
                 warn_max=2.5,
                 err_max=3.5,
-                warn_msg="Job ist nicht eingeplant",
+                warn_msg="Job ist nicht eingeplant oder letzter Lauf abgebrochen",
                 err_msg="Letzter Scan-Lauf fehlgeschlagen",
                 with_limits=limits,
             ),
@@ -254,7 +224,7 @@ async def prtg_scan(
                     )
                 )
 
-        last_run = _as_utc(latest.timestamp).strftime("%d.%m.%Y %H:%M UTC")
+        last_run = as_utc(latest.timestamp).strftime("%d.%m.%Y %H:%M UTC")
         text = (
             f"{status_text} | Letzter Lauf {last_run} | "
             f"{len(successful)} Ordner OK{truncation_note}"

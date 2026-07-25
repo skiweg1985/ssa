@@ -17,7 +17,7 @@ import { ApiTokensModal } from "@/components/modals/ApiTokensModal"
 import { LoginScreen } from "@/components/auth/LoginScreen"
 import { useScans } from "@/hooks/useScans"
 import { useAuth } from "@/hooks/useAuth"
-import { triggerScan, reloadConfig, deleteScanJob } from "@/lib/api"
+import { cancelScan, triggerScan, reloadConfig, deleteScanJob } from "@/lib/api"
 import type { ScanStatus } from "@/types/api"
 
 function AppContent({ onLogout }: { onLogout: () => void }) {
@@ -39,6 +39,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [selectedScanName, setSelectedScanName] = useState<string | null>(null)
   const [selectedScan, setSelectedScan] = useState<ScanStatus | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ScanStatus | null>(null)
+  const [cancelTarget, setCancelTarget] = useState<ScanStatus | null>(null)
 
   /* Stiller Erfolg.
      Ein Toast „Erfolg — Scan wurde gestartet", während die Zeile daneben sichtbar auf
@@ -50,6 +51,33 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       setTimeout(() => refetch(), 1000)
     } catch (err) {
       showToast("Start fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")
+    }
+  }
+
+  const handleCancel = (scan: ScanStatus) => {
+    setCancelTarget(scan)
+  }
+
+  const confirmCancel = async () => {
+    if (!cancelTarget) return
+    const scan = cancelTarget
+    setCancelTarget(null)
+    try {
+      const result = await cancelScan(scan.scan_slug)
+      if (result.cancelling) {
+        // Der Abbruch ist kooperativ - der Lauf endet erst beim nächsten
+        // Prüfpunkt, deshalb eine Rückmeldung statt stiller Erwartung.
+        showToast("Abbruch angefordert", result.message, "info")
+      } else {
+        showToast("Kein laufender Scan", result.message, "info")
+      }
+      setTimeout(() => refetch(), 1500)
+    } catch (err) {
+      showToast(
+        "Abbruch fehlgeschlagen",
+        err instanceof Error ? err.message : "Unbekannter Fehler",
+        "error"
+      )
     }
   }
 
@@ -166,6 +194,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
             loading={loading}
             lastUpdated={lastUpdated}
             onRun={handleRun}
+            onCancel={handleCancel}
             onShowResults={handleShowResults}
             onShowHistory={handleShowHistory}
             onShowDetail={handleShowDetail}
@@ -256,6 +285,25 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
         requireTyping={deleteTarget?.scan_name}
         confirmLabel="Job und Verlauf löschen"
         onConfirm={confirmDeleteJob}
+      />
+
+      <ConfirmDialog
+        open={cancelTarget !== null}
+        onOpenChange={(open) => !open && setCancelTarget(null)}
+        title="Laufenden Scan abbrechen"
+        description={
+          <>
+            Der laufende Scan von <strong>{cancelTarget?.scan_name}</strong> wird
+            beendet. Bereits gemessene Ordner bleiben erhalten, der Lauf zählt
+            aber nicht als erfolgreich.
+          </>
+        }
+        consequence="Der Abbruch wirkt nicht sofort: der Scan beendet sich beim nächsten Prüfpunkt, in der Regel innerhalb weniger Sekunden."
+        // Nicht beide Knöpfe "abbrechen" nennen - hier hieße das einmal
+        // "Lauf beenden" und einmal "Dialog schließen".
+        confirmLabel="Lauf beenden"
+        cancelLabel="Weiterlaufen lassen"
+        onConfirm={confirmCancel}
       />
     </div>
   )

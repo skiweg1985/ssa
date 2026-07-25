@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn"
 interface GridCardProps {
   scan: ScanStatus
   onRun: (scanName: string) => void
+  onCancel?: (scan: ScanStatus) => void
   onShowResults: (scanName: string) => void
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
@@ -28,6 +29,7 @@ const statusIcons = {
 export function GridCard({
   scan,
   onRun,
+  onCancel,
   onShowResults,
   onShowHistory,
   onShowDetail,
@@ -199,6 +201,7 @@ export function GridCard({
         <TableActions
           scan={scan}
           onRun={onRun}
+          onCancel={onCancel}
           onShowResults={onShowResults}
           onShowHistory={onShowHistory}
           onShowDetail={onShowDetail}

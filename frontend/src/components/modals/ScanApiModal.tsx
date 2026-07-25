@@ -5,9 +5,19 @@ import {
   DialogContent,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Code, Copy, CheckCircle2, ExternalLink, Link2, Lightbulb } from "lucide-react"
+import {
+  Activity,
+  Copy,
+  CheckCircle2,
+  Database,
+  Lightbulb,
+  Link2,
+  Play,
+} from "lucide-react"
 import { useState } from "react"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import type { ScanStatus } from "@/types/api"
 
 interface ScanApiModalProps {
@@ -18,43 +28,22 @@ interface ScanApiModalProps {
 
 const API_BASE = "/api"
 
-export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+type TabId = "monitoring" | "daten" | "aktionen" | "beispiele"
 
-  const copyToClipboard = async (text: string, index: number) => {
-    try {
-      // Moderne Clipboard API (benötigt HTTPS oder localhost)
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text)
-        setCopiedIndex(index)
-        setTimeout(() => setCopiedIndex(null), 2000)
-        return
-      }
-      
-      // Fallback: Alte Methode mit execCommand
-      const textArea = document.createElement("textarea")
-      textArea.value = text
-      textArea.style.position = "fixed"
-      textArea.style.left = "-999999px"
-      textArea.style.top = "-999999px"
-      document.body.appendChild(textArea)
-      textArea.focus()
-      textArea.select()
-      
-      const successful = document.execCommand("copy")
-      document.body.removeChild(textArea)
-      
-      if (successful) {
-        setCopiedIndex(index)
-        setTimeout(() => setCopiedIndex(null), 2000)
-      } else {
-        console.error("Kopieren fehlgeschlagen")
-      }
-    } catch (err) {
-      console.error("Fehler beim Kopieren:", err)
-      // Optional: Fehlermeldung anzeigen
-    }
-  }
+interface Endpoint {
+  id: string
+  tab: TabId
+  title: string
+  description: string
+  method: "GET" | "POST"
+  endpoint: string
+  /** Hervorhebung: empfohlener Weg bzw. veralteter Endpunkt */
+  badge?: { label: string; tone: "recommended" | "deprecated" }
+}
+
+export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
+  const [activeTab, setActiveTab] = useState<TabId>("monitoring")
+  const { copiedKey, copy } = useCopyToClipboard()
 
   if (!open || !scan) return null
 
@@ -85,49 +74,259 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
     )
   }
 
-  // Stelle sicher, dass baseUrl nicht leer ist
   const fullBaseUrl = baseUrl.trim()
 
-  const apiEndpoints = [
+  const apiEndpoints: Endpoint[] = [
     {
+      id: "monitor",
+      tab: "monitoring",
+      title: "Monitoring-Bericht",
+      description:
+        "Zustand dieses Jobs als severity (0 = OK, 1 = Warnung, 2 = kritisch), " +
+        "inklusive Fehlertext, Ordnerbilanz und Überfälligkeit. Von jedem " +
+        "Monitoring-System auswertbar — ohne Zweit-Abfrage.",
+      method: "GET",
+      endpoint: `${API_BASE}/monitor/scans/${scanSlug}`,
+      badge: { label: "empfohlen", tone: "recommended" },
+    },
+    {
+      id: "prtg",
+      tab: "monitoring",
+      title: "PRTG-Sensordaten",
+      description:
+        'Fertige Kanäle im Format "HTTP Data Advanced" — PRTG legt die Kanäle ' +
+        "selbst an, JSONPath-Filter entfallen.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/scans/${scanSlug}`,
+    },
+    {
+      id: "status",
+      tab: "monitoring",
+      title: "Scan-Status",
+      description:
+        "Aktueller Status dieses Scans. Für Monitoring ungeeignet: der Status " +
+        "mischt Lebenszyklus und Ergebnis, Teilfehler und Fehlertexte fehlen. " +
+        "Bleibt aus Kompatibilitätsgründen erhalten.",
+      method: "GET",
+      endpoint: `${API_BASE}/scans/${scanSlug}/status`,
+      badge: { label: "veraltet", tone: "deprecated" },
+    },
+    {
+      id: "results",
+      tab: "daten",
       title: "Scan-Ergebnisse",
       description: "Neueste Ergebnisse dieses Scans abrufen",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/results`,
-      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results`,
-      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results"`,
     },
     {
+      id: "history",
+      tab: "daten",
       title: "Scan-Historie",
-      description: "Komplette Historie aller Ergebnisse dieses Scans",
+      description:
+        "Historie aller Ergebnisse dieses Scans. Ohne Parameter komplett; " +
+        "mit ?limit=<n> die n neuesten und ?offset=<n> zum Überspringen.",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/history`,
-      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/history`,
-      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/history"`,
     },
     {
-      title: "Scan-Status",
-      description: "Aktuellen Status dieses Scans abrufen",
-      method: "GET",
-      endpoint: `${API_BASE}/scans/${scanSlug}/status`,
-      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/status`,
-      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/status"`,
-    },
-    {
-      title: "Scan-Progress",
+      id: "progress",
+      tab: "daten",
+      title: "Scan-Fortschritt",
       description: "Fortschritt eines laufenden Scans (nur wenn Scan läuft)",
       method: "GET",
       endpoint: `${API_BASE}/scans/${scanSlug}/progress`,
-      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/progress`,
-      curl: `curl -X GET "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/progress"`,
     },
     {
+      id: "trigger",
+      tab: "aktionen",
       title: "Scan starten",
       description: "Diesen Scan manuell starten",
       method: "POST",
       endpoint: `${API_BASE}/scans/${scanSlug}/trigger`,
-      url: `${fullBaseUrl}${API_BASE}/scans/${scanSlug}/trigger`,
-      curl: `curl -X POST "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/trigger"`,
+    },
+    {
+      id: "cancel",
+      tab: "aktionen",
+      title: "Scan abbrechen",
+      description:
+        "Einen laufenden Scan beenden. Der Abbruch ist kooperativ: der Lauf " +
+        "endet beim nächsten Prüfpunkt, in der Regel innerhalb weniger " +
+        "Sekunden. Bereits gemessene Ordner bleiben erhalten, der Lauf wird " +
+        "mit Status \"cancelled\" gespeichert.",
+      method: "POST",
+      endpoint: `${API_BASE}/scans/${scanSlug}/cancel`,
+    },
+  ]
+
+  const urlFor = (endpoint: Endpoint) => `${fullBaseUrl}${endpoint.endpoint}`
+
+  // Schreibende Endpunkte brauchen ein Login-Token: require_auth lehnt statische
+  // API-Tokens bei allem außer GET mit 403 ab. Ein Beispiel mit $SSA_TOKEN wäre
+  // hier also garantiert nicht funktionsfähig.
+  const tokenVarFor = (endpoint: Endpoint) =>
+    endpoint.method === "GET" ? "$SSA_TOKEN" : "$SSA_LOGIN_TOKEN"
+
+  const curlFor = (endpoint: Endpoint) =>
+    [
+      "curl",
+      ...(endpoint.method === "POST" ? ["-X", "POST"] : []),
+      `-H "Authorization: Bearer ${tokenVarFor(endpoint)}"`,
+      `"${urlFor(endpoint)}"`,
+    ].join(" ")
+
+  const tabs: Array<{ id: TabId; label: string; icon: typeof Activity }> = [
+    { id: "monitoring", label: "Monitoring", icon: Activity },
+    { id: "daten", label: "Daten", icon: Database },
+    { id: "aktionen", label: "Aktionen", icon: Play },
+    { id: "beispiele", label: "Beispiele", icon: Lightbulb },
+  ]
+
+  const copyButton = (text: string, key: string, dark = false) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={() => copy(text, key)}
+      className={
+        dark
+          ? "h-7 px-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+          : "h-7 px-2 text-xs"
+      }
+    >
+      {copiedKey === key ? (
+        <>
+          <CheckCircle2 className="h-3 w-3 mr-1" />
+          Kopiert!
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3 mr-1" />
+          Kopieren
+        </>
+      )}
+    </Button>
+  )
+
+  const endpointCard = (endpoint: Endpoint) => (
+    <div
+      key={endpoint.id}
+      className="border border-slate-200 dark:border-slate-600 rounded-lg overflow-hidden"
+    >
+      <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-600">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span
+            className={`rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-label ${
+              endpoint.method === "GET"
+                ? "border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                : "border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
+            }`}
+          >
+            {endpoint.method}
+          </span>
+          <h4 className="font-semibold text-slate-900 dark:text-slate-100">
+            {endpoint.title}
+          </h4>
+          {endpoint.badge && (
+            <span
+              className={`rounded-sm border px-1.5 py-0.5 text-[11px] font-medium uppercase tracking-label ${
+                endpoint.badge.tone === "recommended"
+                  ? "border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300"
+                  : "border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300"
+              }`}
+            >
+              {endpoint.badge.label}
+            </span>
+          )}
+        </div>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+          {endpoint.description}
+        </p>
+        <code className="text-xs text-slate-700 dark:text-slate-300 mt-2 block bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">
+          {endpoint.endpoint}
+        </code>
+      </div>
+
+      {/* URL */}
+      <div className="px-4 py-3 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">
+            URL:
+          </span>
+          {copyButton(urlFor(endpoint), `${endpoint.id}:url`)}
+        </div>
+        <code className="text-xs text-slate-700 dark:text-slate-300 block mt-1 break-all">
+          {urlFor(endpoint)}
+        </code>
+      </div>
+
+      {/* cURL */}
+      <div className="p-4 bg-slate-900 text-slate-100">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-slate-400">cURL-Befehl:</span>
+          {copyButton(curlFor(endpoint), `${endpoint.id}:curl`, true)}
+        </div>
+        <pre className="text-xs text-slate-300 overflow-x-auto">
+          <code>{curlFor(endpoint)}</code>
+        </pre>
+      </div>
+    </div>
+  )
+
+  const endpointsFor = (tab: TabId) =>
+    apiEndpoints.filter((endpoint) => endpoint.tab === tab)
+
+  const examples: Array<{ id: string; title: string; code: string }> = [
+    {
+      id: "shell",
+      title: "Alarm-Check (Shell)",
+      code: `# severity: 0 = OK, 1 = Warnung, 2 = kritisch
+curl -s -H "Authorization: Bearer $SSA_TOKEN" \\
+  "${fullBaseUrl}${API_BASE}/monitor/scans/${scanSlug}" \\
+  | jq -e '.severity < 2' > /dev/null || echo "${scanSlug} meldet ein Problem"`,
+    },
+    {
+      id: "status-code",
+      title: "Nur den Statuscode auswerten",
+      code: `# Mit http_status=1 wird "kritisch" zu HTTP 503 - für Uptime-Kuma,
+# check_http oder Docker-Healthchecks
+curl -fsS -H "Authorization: Bearer $SSA_TOKEN" \\
+  "${fullBaseUrl}${API_BASE}/monitor/scans/${scanSlug}?http_status=1" > /dev/null`,
+    },
+    {
+      id: "stuck",
+      title: "Hängenden Scan erkennen und abbrechen",
+      code: `# run.stuck wird true, wenn der Lauf die erwartete Dauer deutlich
+# überschreitet (state wird dann "stuck", severity 2)
+REPORT=$(curl -s -H "Authorization: Bearer $SSA_TOKEN" \\
+  "${fullBaseUrl}${API_BASE}/monitor/scans/${scanSlug}")
+
+if [ "$(echo "$REPORT" | jq -r '.run.stuck')" = "true" ]; then
+  echo "$REPORT" | jq -r '"hängt seit \\(.run.active_seconds | floor)s bei \\(.run.progress_percent // "?")%"'
+  # Abbruch erfordert eine angemeldete Sitzung, kein read-only Token
+  curl -s -X POST -H "Authorization: Bearer $SSA_LOGIN_TOKEN" \\
+    "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/cancel" | jq -r '.message'
+fi`,
+    },
+    {
+      id: "python",
+      title: "Python-Integration",
+      code: `import requests
+
+headers = {"Authorization": "Bearer " + SSA_TOKEN}
+report = requests.get(
+    "${fullBaseUrl}${API_BASE}/monitor/scans/${scanSlug}", headers=headers
+).json()
+
+if report["severity"] >= 2:
+    alert(report["message"])          # fertiger Alarmtext
+print(report["last_success"]["total_bytes"])`,
+    },
+    {
+      id: "results",
+      title: "Rohdaten auslesen",
+      code: `RESULT=$(curl -s -H "Authorization: Bearer $SSA_TOKEN" \\
+  "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
+echo "$RESULT" | jq '.results[0].total_size.bytes'`,
     },
   ]
 
@@ -141,138 +340,89 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
       </DialogHeader>
 
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-        <div className="space-y-6">
-          {/* Info-Box */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 dark:text-blue-200 mb-2 flex items-center gap-2">
-              <ExternalLink className="h-4 w-4" />
-              Job-spezifische API-Endpunkte
-            </h3>
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              Diese URLs und cURL-Befehle sind spezifisch für den Scan-Job <strong>"{scanName}"</strong> (ID: <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">{scanSlug}</code>). 
-              Verwenden Sie diese Endpunkte, um die Ergebnisse dieses Scans in Ihr Monitoring-System zu integrieren.
-            </p>
+        {/* Kontext für alle Tabs */}
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 mb-4">
+          <p className="text-sm text-blue-800 dark:text-blue-200">
+            Endpunkte für den Scan-Job <strong>„{scanName}"</strong> (ID:{" "}
+            <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+              {scanSlug}
+            </code>
+            ).
+          </p>
+          <p className="text-sm text-blue-700 dark:text-blue-300 mt-2">
+            Alle Endpunkte erfordern den Header{" "}
+            <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+              Authorization: Bearer …
+            </code>
+            . Die cURL-Befehle erwarten das Token in der Umgebungsvariablen{" "}
+            <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+              SSA_TOKEN
+            </code>
+            ; erzeugt wird es über „API-Tokens verwalten".
+          </p>
+        </div>
+
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as TabId)}>
+          <div className="overflow-x-auto scrollbar-thin">
+            <TabsList>
+              {tabs.map(({ id, label, icon: Icon }) => (
+                <TabsTrigger key={id} value={id} className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
           </div>
 
-          {/* API-Endpunkte */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <Code className="h-5 w-5" />
-              Verfügbare Endpunkte
-            </h3>
+          <TabsContent value="monitoring" className="mt-4 space-y-4">
+            {endpointsFor("monitoring").map(endpointCard)}
+          </TabsContent>
 
-            {apiEndpoints.map((endpoint, index) => (
+          <TabsContent value="daten" className="mt-4 space-y-4">
+            {endpointsFor("daten").map(endpointCard)}
+          </TabsContent>
+
+          <TabsContent value="aktionen" className="mt-4 space-y-4">
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                Schreibender Zugriff: read-only API-Tokens dürfen{" "}
+                <strong>nicht</strong> triggern oder abbrechen — diese Endpunkte
+                erfordern eine angemeldete Sitzung.
+              </p>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mt-2">
+                Die Befehle erwarten das Login-Token deshalb in{" "}
+                <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+                  SSA_LOGIN_TOKEN
+                </code>
+                . Es kommt aus{" "}
+                <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+                  POST /api/auth/login
+                </code>{" "}
+                — nicht aus „API-Tokens verwalten".
+              </p>
+            </div>
+            {endpointsFor("aktionen").map(endpointCard)}
+          </TabsContent>
+
+          <TabsContent value="beispiele" className="mt-4 space-y-4">
+            {examples.map((example) => (
               <div
-                key={index}
+                key={example.id}
                 className="border border-slate-200 dark:border-slate-600 rounded-lg overflow-hidden"
               >
-                <div className="bg-slate-50 dark:bg-slate-800 px-4 py-3 border-b border-slate-200 dark:border-slate-600">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-label ${
-                          endpoint.method === "GET"
-                            ? "border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
-                            : "border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-                        }`}>
-                          {endpoint.method}
-                        </span>
-                        <h4 className="font-semibold text-slate-900 dark:text-slate-100">{endpoint.title}</h4>
-                      </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{endpoint.description}</p>
-                      <code className="text-xs text-slate-700 dark:text-slate-300 mt-2 block bg-white dark:bg-slate-700 px-2 py-1 rounded border border-slate-200 dark:border-slate-600">
-                        {endpoint.endpoint}
-                      </code>
-                    </div>
-                  </div>
+                <div className="flex items-center justify-between bg-slate-50 dark:bg-slate-800 px-4 py-2 border-b border-slate-200 dark:border-slate-600">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {example.title}
+                  </h4>
+                  {copyButton(example.code, `example:${example.id}`)}
                 </div>
-                
-                {/* URL */}
-                <div className="px-4 py-3 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-600 dark:text-slate-400 font-medium">URL:</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(endpoint.url, index * 2)}
-                      className="h-7 px-2 text-xs"
-                    >
-                      {copiedIndex === index * 2 ? (
-                        <>
-                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                          Kopiert!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3 mr-1" />
-                          Kopieren
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  <code className="text-xs text-slate-700 dark:text-slate-300 block mt-1 break-all">
-                    {endpoint.url}
-                  </code>
-                </div>
-
-                {/* cURL */}
-                <div className="p-4 bg-slate-900 text-slate-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-slate-400">cURL-Befehl:</span>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => copyToClipboard(endpoint.curl, index * 2 + 1)}
-                      className="h-7 px-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
-                    >
-                      {copiedIndex === index * 2 + 1 ? (
-                        <>
-                          <CheckCircle2 className="h-3 w-3 mr-1" />
-                          Kopiert!
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="h-3 w-3 mr-1" />
-                          Kopieren
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                  <pre className="text-xs text-slate-300 overflow-x-auto">
-                    <code>{endpoint.curl}</code>
-                  </pre>
-                </div>
+                <pre className="p-4 bg-slate-900 text-xs text-slate-300 overflow-x-auto">
+                  <code>{example.code}</code>
+                </pre>
               </div>
             ))}
-          </div>
-
-          {/* Verwendungsbeispiele */}
-          <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg p-4">
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-3 flex items-center gap-2">
-              <Lightbulb className="h-4 w-4" />
-              Verwendungsbeispiele
-            </h3>
-            <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
-              <div>
-                <strong className="text-slate-900 dark:text-slate-100">Monitoring-Script (Bash):</strong>
-                <pre className="mt-1 text-xs bg-white dark:bg-slate-700 dark:text-slate-300 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
-                  <code className="dark:text-slate-300">{`# Scan-Ergebnisse abrufen
-RESULT=$(curl -s "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
-echo "$RESULT" | jq '.results[0].total_size.bytes'`}</code>
-                </pre>
-              </div>
-              <div>
-                <strong className="text-slate-900 dark:text-slate-100">Python-Integration:</strong>
-                <pre className="mt-1 text-xs bg-white dark:bg-slate-700 dark:text-slate-300 p-2 rounded border border-slate-200 dark:border-slate-600 overflow-x-auto">
-                  <code className="dark:text-slate-300">{`import requests
-response = requests.get("${fullBaseUrl}${API_BASE}/scans/${scanSlug}/results")
-data = response.json()
-print(f"Gesamtgröße: {data['results'][0]['total_size']['formatted']}")`}</code>
-                </pre>
-              </div>
-            </div>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
 
       <DialogFooter>

@@ -17,6 +17,7 @@ API_TOKEN_ALLOWED_PREFIXES = (
     "/api/scans",
     "/api/storage/stats",
     "/api/prtg",
+    "/api/monitor",
     "/api/nas-metrics",
 )
 
@@ -70,7 +71,8 @@ async def require_auth(
                 status_code=403,
                 detail=(
                     "API-Token erlaubt nur Lesezugriff auf Scan-Status/Ergebnisse, "
-                    "Storage-Statistiken, NAS-Metriken und PRTG-Sensordaten"
+                    "Storage-Statistiken, Monitoring-Berichte, NAS-Metriken und "
+                    "PRTG-Sensordaten"
                 ),
             )
         return f"api-token:{token_info['name']}"

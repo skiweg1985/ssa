@@ -6,8 +6,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Code, Copy, CheckCircle2, ExternalLink, BookOpen, Lightbulb } from "lucide-react"
-import { useState } from "react"
+import { Code, Copy, CheckCircle2, ExternalLink, BookOpen, FileJson, Lightbulb } from "lucide-react"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 
 interface ApiInfoModalProps {
   open: boolean
@@ -18,119 +18,127 @@ interface ApiInfoModalProps {
 const API_BASE = "/api"
 
 export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoModalProps) {
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
-
-  const copyToClipboard = async (text: string, index: number) => {
-    try {
-      // Moderne Clipboard API (benötigt HTTPS oder localhost)
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text)
-        setCopiedIndex(index)
-        setTimeout(() => setCopiedIndex(null), 2000)
-        return
-      }
-      
-      // Fallback: Alte Methode mit execCommand
-      const textArea = document.createElement("textarea")
-      textArea.value = text
-      textArea.style.position = "fixed"
-      textArea.style.left = "-999999px"
-      textArea.style.top = "-999999px"
-      document.body.appendChild(textArea)
-      textArea.focus()
-      textArea.select()
-      
-      const successful = document.execCommand("copy")
-      document.body.removeChild(textArea)
-      
-      if (successful) {
-        setCopiedIndex(index)
-        setTimeout(() => setCopiedIndex(null), 2000)
-      } else {
-        console.error("Kopieren fehlgeschlagen")
-      }
-    } catch (err) {
-      console.error("Fehler beim Kopieren:", err)
-      // Optional: Fehlermeldung anzeigen
-    }
-  }
+  const { copiedKey, copy } = useCopyToClipboard()
 
   const apiExamples = [
+    {
+      title: "Gesamtzustand abrufen",
+      description:
+        "Ein Check für die ganze Instanz: severity 0 = OK, 1 = Warnung, 2 = kritisch",
+      method: "GET",
+      endpoint: `${API_BASE}/monitor`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/monitor"`,
+    },
+    {
+      title: "Zustand aller Scan-Jobs",
+      description:
+        "Roll-up über alle Jobs mit Problemliste; ?include_scans=0 liefert nur die Zusammenfassung",
+      method: "GET",
+      endpoint: `${API_BASE}/monitor/scans`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/monitor/scans"`,
+    },
+    {
+      title: "Zustand eines Scan-Jobs",
+      description:
+        "Schweregrad, Fehlertext, Ordnerbilanz und Überfälligkeit - fertig ausgewertet",
+      method: "GET",
+      endpoint: `${API_BASE}/monitor/scans/{scan_slug}`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/monitor/scans/mein-scan"`,
+    },
+    {
+      title: "Zustand der Infrastruktur",
+      description: "Scheduler, Systemressourcen, Storage und Konfigurationswarnungen",
+      method: "GET",
+      endpoint: `${API_BASE}/monitor/server`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/monitor/server"`,
+    },
+    {
+      title: "PRTG-Sensordaten (Job)",
+      description: 'Fertige Kanäle im Format "HTTP Data Advanced" - ein Sensor pro Scan-Job',
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/scans/{scan_slug}`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/scans/mein-scan"`,
+    },
+    {
+      title: "PRTG-Sensordaten (Server)",
+      description:
+        "Ein Sensor für den Server selbst. CPU, RAM und Disk beziehen sich auf den "
+        + "SSA-Host - für die Werte des NAS die nas-Sensoren verwenden.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/server`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/server"`,
+    },
+    {
+      title: "PRTG-Sensordaten (NAS-Kapazität)",
+      description:
+        "Volume-Belegung, schreibgeschützte Volumes und Freigaben eines NAS. "
+        + "Adressierbar per Verbindungs-ID oder -Name.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/capacity`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/capacity"`,
+    },
+    {
+      title: "PRTG-Sensordaten (NAS-Systemzustand)",
+      description:
+        "Temperatur, Lüfter, Plattenstatus, RAID und USV über SNMP. "
+        + "Setzt einen hinterlegten SNMP-Zugang an der NAS-Verbindung voraus.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/health`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/health"`,
+    },
+    {
+      title: "NAS-Systemmetriken (JSON)",
+      description:
+        "Kapazität und Systemzustand aller NAS als rohes JSON, für Grafana und "
+        + "eigene Auswertungen. ?groups=capacity,health schränkt die Quellen ein.",
+      method: "GET",
+      endpoint: `${API_BASE}/nas-metrics/{id_oder_name}`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/nas-metrics/NAS-01"`,
+    },
     {
       title: "Alle Scans abrufen",
       description: "Gibt eine Liste aller konfigurierten Scans mit Status zurück",
       method: "GET",
       endpoint: `${API_BASE}/scans`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/scans"`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/scans"`,
     },
     {
       title: "Scan-Ergebnisse abrufen",
       description: "Gibt die neuesten Ergebnisse eines Scans zurück",
       method: "GET",
       endpoint: `${API_BASE}/scans/{scan_slug}/results`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/results"`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/results"`,
     },
     {
       title: "Scan-Historie abrufen",
       description: "Gibt die komplette Historie aller Ergebnisse eines Scans zurück",
       method: "GET",
       endpoint: `${API_BASE}/scans/{scan_slug}/history`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/history"`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/history"`,
     },
     {
-      title: "Scan-Status abrufen",
-      description: "Gibt den aktuellen Status eines Scans zurück",
+      title: "Scan-Status abrufen (veraltet)",
+      description:
+        "Gibt den aktuellen Status eines Scans zurück. Für Monitoring abgelöst von /api/monitor/scans/{scan_slug}",
       method: "GET",
       endpoint: `${API_BASE}/scans/{scan_slug}/status`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/status"`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/status"`,
     },
     {
       title: "Scan-Progress abrufen",
       description: "Gibt den Fortschritt eines laufenden Scans zurück",
       method: "GET",
       endpoint: `${API_BASE}/scans/{scan_slug}/progress`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/scans/mein-scan/progress"`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/progress"`,
     },
     {
       title: "Scan manuell starten",
-      description: "Startet einen Scan manuell",
+      description:
+        "Startet einen Scan manuell. Erfordert ein Login-Token - read-only "
+        + "API-Tokens dürfen nur GET und werden hier mit 403 abgelehnt.",
       method: "POST",
       endpoint: `${API_BASE}/scans/{scan_slug}/trigger`,
-      curl: `curl -X POST "${window.location.origin}${API_BASE}/scans/mein-scan/trigger"`,
-    },
-    {
-      title: "NAS-Systemmetriken abrufen",
-      description:
-        "Kapazität je Volume und Systemzustand (Temperatur, Platten, RAID) eines NAS. " +
-        "Identifikation per ID oder Verbindungsname.",
-      method: "GET",
-      endpoint: `${API_BASE}/nas-metrics/{id_oder_name}`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/nas-metrics/NAS-01"`,
-    },
-    {
-      title: "PRTG-Sensor: Kapazität eines NAS",
-      description:
-        "Fertige Sensordaten im PRTG-Format - Volumes, Belegung und Freigaben. " +
-        "PRTG legt die Kanäle automatisch an.",
-      method: "GET",
-      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/capacity`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/capacity"`,
-    },
-    {
-      title: "PRTG-Sensor: Systemzustand eines NAS",
-      description:
-        "Temperatur, Lüfter, Plattenstatus, RAID und USV via SNMP. " +
-        "Setzt einen hinterlegten SNMP-Zugang voraus.",
-      method: "GET",
-      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/health`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/health"`,
-    },
-    {
-      title: "PRTG-Sensor: Scan-Job",
-      description: "Alle Metriken eines Scan-Jobs als PRTG-Kanäle",
-      method: "GET",
-      endpoint: `${API_BASE}/prtg/scans/{scan_slug}`,
-      curl: `curl -X GET "${window.location.origin}${API_BASE}/prtg/scans/mein-scan"`,
+      curl: `curl -X POST -H "Authorization: Bearer $SSA_LOGIN_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/trigger"`,
     },
   ]
 
@@ -154,13 +162,18 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
               API-Integration für Monitoring-Systeme
             </h3>
             <p className="text-sm text-blue-800 dark:text-blue-200 mb-3">
-              Diese API ermöglicht es Ihnen, Scan-Ergebnisse in externe Monitoring-Systeme wie Prometheus, Grafana, 
-              Nagios oder andere Tools zu integrieren. Alle Endpunkte liefern JSON-Daten und können mit Standard-HTTP-Requests 
-              abgerufen werden.
+              Die <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">/api/monitor*</code>-Endpunkte
+              liefern den Zustand fertig ausgewertet: das Feld{" "}
+              <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">severity</code>{" "}
+              (0 = OK, 1 = Warnung, 2 = kritisch) genügt für die
+              Alarmentscheidung — ohne Zweit-Abfrage und ohne eigene Logik. Für
+              PRTG gibt es stattdessen fertige Sensordaten unter{" "}
+              <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">/api/prtg/*</code>.
             </p>
             <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
               <p><strong>Base URL:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">{window.location.origin}{API_BASE}</code></p>
               <p><strong>Content-Type:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">application/json</code></p>
+              <p><strong>Authentifizierung:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">Authorization: Bearer &lt;token&gt;</code> — lesende Beispiele erwarten ein read-only API-Token in <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">SSA_TOKEN</code>, schreibende ein Login-Token in <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">SSA_LOGIN_TOKEN</code> (aus <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">POST /api/auth/login</code>)</p>
             </div>
           </div>
 
@@ -202,10 +215,10 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => copyToClipboard(example.curl, index)}
+                      onClick={() => copy(example.curl, `${index}:curl`)}
                       className="h-7 px-2 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
                     >
-                      {copiedIndex === index ? (
+                      {copiedKey === `${index}:curl` ? (
                         <>
                           <CheckCircle2 className="h-3 w-3 mr-1" />
                           Kopiert!
@@ -232,36 +245,47 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
               <Lightbulb className="h-4 w-4" />
               Monitoring-Integration
             </h3>
-            <div className="space-y-3 text-sm text-slate-700">
+            <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
               <div>
-                <strong className="text-slate-900 dark:text-slate-100">PRTG (empfohlen):</strong>
+                <strong className="text-slate-900 dark:text-slate-100">PRTG:</strong>
                 <p className="mt-1">
-                  Sensortyp <em>HTTP Data Advanced</em> anlegen und auf einen der{" "}
-                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/prtg/…</code>{" "}
-                  Endpunkte zeigen lassen — die Kanäle entstehen automatisch,
-                  JSONPath-Filter entfallen. Zugriff über ein API-Token im Header{" "}
-                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">Authorization: Bearer ssa_…</code>.
+                  Sensortyp <strong>HTTP Data Advanced</strong> auf{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/prtg/scans/{scan_slug}"}</code>{" "}
+                  bzw. <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/prtg/server</code>.
+                  PRTG legt die Kanäle selbst an.
                 </p>
               </div>
               <div>
-                <strong className="text-slate-900 dark:text-slate-100">Prometheus Exporter:</strong>
+                <strong className="text-slate-900 dark:text-slate-100">PRTG für die NAS selbst:</strong>
                 <p className="mt-1">
-                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code> abruft
-                  und die Daten als Metriken bereitstellt.
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/prtg/nas/{id}/capacity"}</code>{" "}
+                  liefert Volume-Belegung und Freigaben,{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/prtg/nas/{id}/health"}</code>{" "}
+                  Temperatur, Plattenstatus und RAID-Zustand über SNMP. Beachten:
+                  CPU und RAM in{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/prtg/server</code>{" "}
+                  messen den SSA-Host, nicht das NAS.
                 </p>
               </div>
               <div>
-                <strong className="text-slate-900 dark:text-slate-100">Grafana Dashboard:</strong>
+                <strong className="text-slate-900 dark:text-slate-100">Zabbix, Checkmk, Nagios, Icinga:</strong>
                 <p className="mt-1">
-                  Verwenden Sie die JSON-API-Endpunkte als Datenquelle in Grafana und visualisieren Sie 
-                  die Scan-Ergebnisse in Echtzeit.
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/monitor</code>{" "}
+                  abrufen und <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">$.severity</code>{" "}
+                  auswerten. Werkzeuge, die nur den Statuscode lesen, ergänzen{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">?http_status=1</code> —
+                  dann wird „kritisch" zu HTTP 503. Der Schweregrad steht außerdem
+                  im Header{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">X-SSA-Severity</code>.
                 </p>
               </div>
               <div>
-                <strong className="text-slate-900 dark:text-slate-100">Webhook-Integration:</strong>
+                <strong className="text-slate-900 dark:text-slate-100">Grafana, Prometheus:</strong>
                 <p className="mt-1">
-                  Richten Sie einen Cron-Job oder Webhook ein, der regelmäßig die API-Endpunkte abruft 
-                  und die Daten an Ihr Monitoring-System weiterleitet.
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/monitor/scans</code>{" "}
+                  liefert alle Jobs in einem Aufruf — inklusive Größen, Ordnerbilanz
+                  und Schweregrad je Job. Für die Rohdaten einzelner Läufe{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code>.
                 </p>
               </div>
             </div>
@@ -269,28 +293,46 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
 
           {/* Response-Beispiel */}
           <div className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2">📄 Response-Format</h3>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-2 flex items-center gap-2">
+              <FileJson className="h-4 w-4" />
+              Response-Format
+            </h3>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
-              Alle Endpunkte liefern JSON-Daten. Beispiel für <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/scans/{scan_slug}/results"}</code>:
+              Alle Endpunkte liefern JSON. Beispiel für{" "}
+              <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/monitor/scans/{scan_slug}"}</code>{" "}
+              — gekürzt; alle Felder sind immer vorhanden, Unbekanntes ist <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">null</code>:
             </p>
             <pre className="text-xs bg-slate-900 text-slate-100 p-3 rounded overflow-x-auto">
               <code>{`{
-  "scan_slug": "mein-scan",
-  "scan_name": "mein_scan",
-  "status": "completed",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "results": [
-    {
-      "folder_name": "/volume1/data",
-      "success": true,
-      "total_size": {
-        "bytes": 1073741824,
-        "formatted": "1.0 GB"
-      },
-      "num_file": 1000,
-      "num_dir": 50
-    }
-  ]
+  "severity": 1,
+  "severity_text": "warning",
+  "state": "partial",
+  "reasons": ["partial"],
+  "message": "Letzter Lauf abgeschlossen, aber 1 von 3 Ordnern fehlgeschlagen: /photo",
+  "scan": { "slug": "mein-scan", "name": "Mein Scan", "enabled": true },
+  "run": { "active": false },
+  "last_run": {
+    "at": "2026-07-25T09:00:00Z",
+    "age_seconds": 764.0,
+    "status": "completed",
+    "error": null,
+    "folders_total": 3,
+    "folders_ok": 2,
+    "folders_failed": 1,
+    "folders_failed_names": ["/photo"]
+  },
+  "last_success": {
+    "at": "2026-07-25T09:00:00Z",
+    "total_bytes": 1073741824,
+    "total_directories": 50,
+    "total_files": 1000
+  },
+  "schedule": {
+    "scheduled": true,
+    "expected_interval_seconds": 21600.0,
+    "overdue": false,
+    "overdue_after_seconds": 64800.0
+  }
 }`}</code>
             </pre>
           </div>

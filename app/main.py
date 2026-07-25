@@ -24,6 +24,7 @@ from app.api.auth_routes import router as auth_router
 from app.api.nas_routes import router as nas_router
 from app.api.job_routes import router as job_router
 from app.api.token_routes import router as token_router
+from app.api.monitor_routes import router as monitor_router
 from app.api.prtg_routes import router as prtg_router
 from app.api.prtg_nas_routes import router as prtg_nas_router
 from app.api.nas_metrics_routes import router as nas_metrics_router
@@ -226,6 +227,13 @@ app.include_router(
     prtg_nas_router,
     prefix="/api/prtg/nas",
     tags=["prtg"],
+    dependencies=[Depends(require_auth)],
+)
+# Generische Monitoring-Endpoints (read-only, ebenfalls für Monitoring-Tokens)
+app.include_router(
+    monitor_router,
+    prefix="/api/monitor",
+    tags=["monitoring"],
     dependencies=[Depends(require_auth)],
 )
 
