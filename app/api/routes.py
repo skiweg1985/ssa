@@ -1,7 +1,8 @@
 """API Routes für FastAPI"""
 import logging
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Response
 from typing import List, Optional
+from urllib.parse import quote
 from datetime import datetime
 
 from app.models.scan import (
@@ -9,6 +10,7 @@ from app.models.scan import (
     ScanStatus,
     ScanListResponse,
     TriggerResponse,
+    CancelResponse,
     ScanHistoryResponse,
     NASConfigPublic
 )
@@ -16,6 +18,7 @@ from app.services.storage import storage
 from app.services.scanner import scanner_service
 from app.services.scheduler import scheduler_service
 from app.services.jobs_store import jobs_store
+from app.services.monitoring import compute_progress_percent
 from app.models.config import NASConfigYAML, ScanTaskConfigYAML
 
 logger = logging.getLogger(__name__)
@@ -211,11 +214,37 @@ async def get_scan(scan_identifier: str):
         raise HTTPException(status_code=500, detail=f"Fehler beim Laden des Scans: {str(e)}")
 
 
-@router.get("/scans/{scan_identifier}/status", response_model=ScanStatus)
-async def get_scan_status(scan_identifier: str):
+@router.get(
+    "/scans/{scan_identifier}/status",
+    response_model=ScanStatus,
+    deprecated=True,
+)
+async def get_scan_status(scan_identifier: str, response: Response):
     """
-    Gibt den Status eines Scans zurück
+    Gibt den Status eines Scans zurück.
+
+    VERALTET - abgelöst von `GET /api/monitor/scans/{slug}`.
+
+    Für Monitoring ist diese Antwort schwer auszuwerten: `status` mischt
+    Lebenszyklus und Ergebnis ("running" überschreibt das Ergebnis des
+    vorherigen Laufs), "completed" bedeutet nicht "alle Ordner ok", es gibt
+    keinen Fehlertext und keinen Zeitstempel des letzten Erfolgs, und die
+    Überfälligkeit müsste der Client selbst aus `interval` errechnen.
+    Der Monitoring-Endpoint liefert das alles vorberechnet als `severity`.
+
+    Verhalten und Schema bleiben aus Kompatibilitätsgründen unverändert;
+    ein Entfernungsdatum ist nicht gesetzt.
     """
+    # RFC 8594: Nachfolger maschinenlesbar bekanntgeben. Bewusst ohne
+    # "Sunset"-Header - es gibt keine Zusage, den Endpoint zu entfernen.
+    #
+    # Der Identifier darf ein Job-NAME sein, und Namen erlauben beliebiges
+    # Unicode sowie Leer- und Sonderzeichen. HTTP-Header werden als Latin-1
+    # kodiert - ein Emoji im Namen hätte den Endpoint sonst mit 500 beendet,
+    # statt wie bisher den Status zu liefern. Deshalb percent-kodiert.
+    response.headers["Deprecation"] = "true"
+    successor = f"/api/monitor/scans/{quote(scan_identifier, safe='')}"
+    response.headers["Link"] = f'<{successor}>; rel="successor-version"'
     return await get_scan(scan_identifier)
 
 
@@ -256,146 +285,13 @@ async def get_scan_progress(scan_identifier: str):
                 detail=f"Keine Status-Informationen für Scan '{scan_config.name}' verfügbar"
             )
         
-        # Berechne Fortschritt basierend auf historischem Scan
-        progress_percent = None
-        last_completed = storage.get_latest_completed_result(scan_config.slug)
-        
-        if last_completed and last_completed.results:
-            # Hole path_status für pro-Ordner Berechnung
-            path_status = progress.get("path_status", {})
-            
-            # Normalisiere Pfade für Vergleich (entferne führende/trailing Slashes)
-            def normalize_path(p: str) -> str:
-                """Normalisiert einen Pfad für Vergleich"""
-                return p.strip().strip('/')
-            
-            # Erstelle Mapping von historischen Werten pro Pfad (normalisiert)
-            historical_by_path = {}
-            for item in last_completed.results:
-                if item.success:
-                    # Normalisiere Pfad für konsistenten Vergleich
-                    normalized_path = normalize_path(item.folder_name)
-                    historical_by_path[normalized_path] = {
-                        "size": item.total_size.bytes if item.total_size else 0,
-                        "dirs": item.num_dir or 0,
-                        "files": item.num_file or 0,
-                        "original_path": item.folder_name  # Behalte Original für Debugging
-                    }
-            
-            # Erstelle normalisiertes Mapping von aktuellen Pfaden
-            normalized_path_status = {}
-            for path, status in path_status.items():
-                normalized = normalize_path(path)
-                # Wenn mehrere Pfade auf denselben normalisierten Pfad mappen, 
-                # verwende den mit den höchsten Werten (aktuellster Status)
-                if normalized not in normalized_path_status:
-                    normalized_path_status[normalized] = status
-                else:
-                    # Behalte den Status mit höheren Werten
-                    existing = normalized_path_status[normalized]
-                    if status.get("total_size", 0) > existing.get("total_size", 0):
-                        normalized_path_status[normalized] = status
-            
-            # Berechne Gesamtwerte des letzten erfolgreichen Scans (für Fallback)
-            historical_total_size = sum(
-                item.total_size.bytes 
-                for item in last_completed.results 
-                if item.success and item.total_size and item.total_size.bytes > 0
-            )
-            historical_total_dirs = sum(
-                item.num_dir or 0 
-                for item in last_completed.results 
-                if item.success
-            )
-            historical_total_files = sum(
-                item.num_file or 0 
-                for item in last_completed.results 
-                if item.success
-            )
-            
-            # Berechne Fortschritt pro Ordner und gewichte nach Größe
-            total_weighted_size_percent = 0.0
-            total_weighted_dirs_percent = 0.0
-            total_weighted_files_percent = 0.0
-            total_weight = 0.0
-            
-            # Iteriere über alle historischen Pfade
-            for normalized_path, historical in historical_by_path.items():
-                # Hole aktuellen Status für diesen Pfad (falls vorhanden)
-                current_path_status = normalized_path_status.get(normalized_path, {})
-                current_size = current_path_status.get("total_size", 0) or 0
-                current_dirs = current_path_status.get("num_dir", 0) or 0
-                current_files = current_path_status.get("num_file", 0) or 0
-                
-                hist_size = historical["size"]
-                hist_dirs = historical["dirs"]
-                hist_files = historical["files"]
-                
-                # Gewicht basierend auf historischer Größe (wichtigste Metrik)
-                # Verwende Größe als primäres Gewicht, da sie am genauesten ist
-                if hist_size > 0:
-                    weight = hist_size
-                elif hist_dirs > 0:
-                    weight = hist_dirs * 1000  # Fallback: verwende dirs als Gewicht
-                elif hist_files > 0:
-                    weight = hist_files  # Fallback: verwende files als Gewicht
-                else:
-                    weight = 1  # Minimales Gewicht für leere Ordner
-                
-                # Berechne Fortschritt für diesen Ordner
-                # Wenn der Ordner noch nicht gestartet wurde, ist der Fortschritt 0%
-                if hist_size > 0:
-                    path_size_percent = min(100, max(0, (current_size / hist_size) * 100))
-                else:
-                    # Für leere Ordner: 100% wenn fertig, sonst 0%
-                    path_size_percent = 100 if current_path_status.get("finished", False) else 0
-                
-                if hist_dirs > 0:
-                    path_dirs_percent = min(100, max(0, (current_dirs / hist_dirs) * 100))
-                else:
-                    path_dirs_percent = 100 if current_path_status.get("finished", False) else 0
-                
-                if hist_files > 0:
-                    path_files_percent = min(100, max(0, (current_files / hist_files) * 100))
-                else:
-                    path_files_percent = 100 if current_path_status.get("finished", False) else 0
-                
-                # Gewichtete Summe (jeder Ordner trägt entsprechend seiner Größe zum Gesamtfortschritt bei)
-                total_weighted_size_percent += path_size_percent * weight
-                total_weighted_dirs_percent += path_dirs_percent * weight
-                total_weighted_files_percent += path_files_percent * weight
-                total_weight += weight
-            
-            # Berechne gewichteten Durchschnitt
-            if total_weight > 0:
-                size_percent = total_weighted_size_percent / total_weight
-                dirs_percent = total_weighted_dirs_percent / total_weight
-                files_percent = total_weighted_files_percent / total_weight
-            else:
-                # Fallback: verwende aggregierte Werte wenn keine path_status verfügbar
-                current_total_size = progress.get("total_size", 0) or 0
-                current_total_dirs = progress.get("num_dir", 0) or 0
-                current_total_files = progress.get("num_file", 0) or 0
-                
-                if historical_total_size > 0:
-                    size_percent = min(100, max(0, (current_total_size / historical_total_size) * 100))
-                else:
-                    size_percent = 0
-                
-                if historical_total_dirs > 0:
-                    dirs_percent = min(100, max(0, (current_total_dirs / historical_total_dirs) * 100))
-                else:
-                    dirs_percent = 0
-                
-                if historical_total_files > 0:
-                    files_percent = min(100, max(0, (current_total_files / historical_total_files) * 100))
-                else:
-                    files_percent = 0
-            
-            # Gewichteter Durchschnitt der Metriken (Größe 70%, Ordner 20%, Dateien 10%)
-            progress_percent = (size_percent * 0.7 + dirs_percent * 0.2 + files_percent * 0.1)
-            progress_percent = round(progress_percent, 1)
-        
+        # Fortschritt gegen den letzten erfolgreichen Lauf. Die Rechnung liegt
+        # in app/services/monitoring.py, damit die Monitoring-Berichte dieselbe
+        # Zahl zeigen wie diese Antwort.
+        progress_percent = compute_progress_percent(
+            progress, storage.get_latest_completed_result(scan_config.slug)
+        )
+
         # Füge progress_percent zum Progress-Dict hinzu
         progress_with_percent = progress.copy()
         progress_with_percent["progress_percent"] = progress_percent
@@ -552,6 +448,57 @@ async def trigger_scan(scan_identifier: str, background_tasks: BackgroundTasks):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fehler beim Starten des Scans: {str(e)}")
+
+
+@router.post("/scans/{scan_identifier}/cancel", response_model=CancelResponse)
+async def cancel_scan(scan_identifier: str):
+    """
+    Bricht einen laufenden Scan ab.
+
+    Der Abbruch ist kooperativ: Scans laufen als Hintergrund-Task bzw. als
+    Scheduler-Job, es gibt kein Task-Handle zum harten Beenden. Der Lauf prüft
+    den Wunsch zwischen zwei Pfaden und bei jedem Poll der Größenabfrage, endet
+    also in der Regel innerhalb weniger Sekunden. Der laufende DirSize-Task wird
+    zusätzlich am NAS gestoppt, damit dort nicht weitergerechnet wird.
+
+    Der Lauf wird mit Status 'cancelled' in der Historie gespeichert - bereits
+    gemessene Pfade bleiben erhalten, gelten aber nicht als erfolgreicher Lauf.
+
+    Args:
+        scan_identifier: Slug oder Name des Scans
+    """
+    try:
+        job = jobs_store.get_job(scan_identifier)
+
+        if not job:
+            raise HTTPException(
+                status_code=404, detail=f"Scan '{scan_identifier}' nicht gefunden"
+            )
+
+        slug = job["slug"]
+        if not scanner_service.request_cancel(slug):
+            # Kein laufender Scan: bewusst HTTP 200 mit cancelling=false statt
+            # eines Fehlers - dasselbe Muster wie beim Trigger, damit ein
+            # doppelter Klick keine Fehlermeldung produziert.
+            return CancelResponse(
+                scan_slug=slug,
+                message=f"Für '{job['name']}' läuft derzeit kein Scan",
+                cancelling=False,
+            )
+
+        logger.info(f"Abbruch für Scan '{slug}' angefordert")
+        return CancelResponse(
+            scan_slug=slug,
+            message=f"Abbruch für '{job['name']}' angefordert",
+            cancelling=True,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Fehler beim Abbrechen des Scans: {str(e)}"
+        )
 
 
 @router.post("/config/reload")

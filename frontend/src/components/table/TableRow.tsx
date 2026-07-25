@@ -11,6 +11,7 @@ interface TableRowProps {
   scan: ScanStatus
   density: "compact" | "normal"
   onRun: (scanName: string) => void
+  onCancel?: (scan: ScanStatus) => void
   onShowResults: (scanName: string) => void
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
@@ -30,6 +31,7 @@ export function TableRow({
   scan,
   density,
   onRun,
+  onCancel,
   onShowResults,
   onShowHistory,
   onShowDetail,
@@ -214,6 +216,7 @@ export function TableRow({
         <TableActions
           scan={scan}
           onRun={onRun}
+          onCancel={onCancel}
           onShowResults={onShowResults}
           onShowHistory={onShowHistory}
           onShowDetail={onShowDetail}

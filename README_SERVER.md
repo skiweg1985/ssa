@@ -160,11 +160,41 @@ Gibt Details eines spezifischen Scans zurück. Unterstützt auch den Scan-Namen 
 **Parameter:**
 - `scan_slug`: URL-freundlicher Slug des Scans (z.B. `homes-scan`) oder Scan-Name
 
-#### Scan-Status abrufen
+#### Scan-Status abrufen (veraltet)
 
 ```http
 GET /api/scans/{scan_slug}/status
 ```
+
+> **Veraltet** — abgelöst von `GET /api/monitor/scans/{scan_slug}`. Der Endpoint
+> bleibt unverändert erhalten, ist aber für Monitoring ungeeignet: `status`
+> mischt Lebenszyklus und Ergebnis, Teilfehler und Fehlertexte fehlen, und die
+> Überfälligkeit müsste der Client selbst berechnen. Siehe
+> [README_MONITORING.md](README_MONITORING.md), Kapitel „Veraltet".
+
+#### Laufenden Scan abbrechen
+
+```http
+POST /api/scans/{scan_slug}/cancel
+```
+
+Beendet einen laufenden Scan. Der Abbruch ist kooperativ — der Lauf endet beim
+nächsten Prüfpunkt, in der Regel innerhalb weniger Sekunden. Bereits gemessene
+Ordner bleiben erhalten, der Lauf wird mit Status `cancelled` gespeichert und
+zählt nicht als erfolgreicher Lauf.
+
+**Response:**
+```json
+{
+  "scan_slug": "homes-scan",
+  "message": "Abbruch für 'homes_scan' angefordert",
+  "cancelling": true
+}
+```
+
+`cancelling: false` bedeutet, dass gerade kein Scan lief — das ist kein Fehler.
+Siehe [README_MONITORING.md](README_MONITORING.md) für die Erkennung hängender
+Läufe.
 
 #### Scan-Fortschritt abrufen
 
@@ -390,6 +420,76 @@ Gibt erweiterte Health-Informationen zurück:
 - Scheduler-Status
 - Storage-Statistiken
 - Laufende Scans
+
+Ohne Token erreichbar, gedacht für Up/Down-Checks. `status` ist `healthy` oder
+`warning` und wird nie `error` — für Job- und Ressourcenalarme sind die
+Monitoring-Endpoints zuständig.
+
+### Monitoring
+
+Zustandsberichte, die ein Monitoring-System direkt auswerten kann. Alle
+erfordern ein Token und sind auch für read-only API-Tokens erreichbar.
+
+#### Gesamtzustand
+
+```http
+GET /api/monitor
+```
+
+**Parameter:**
+- `http_status` (optional, Default `0`): `1` = Schweregrad zusätzlich als
+  HTTP-Status abbilden (kritisch → 503)
+
+**Response:**
+```json
+{
+  "schema_version": "ssa.monitor.instance/1",
+  "generated_at": "2026-07-25T09:12:44Z",
+  "severity": 0,
+  "severity_text": "ok",
+  "state": "ok",
+  "message": "Alles in Ordnung",
+  "components": {
+    "server": { "severity": 0, "severity_text": "ok", "state": "ok", "message": "Server in Ordnung" },
+    "scans": { "severity": 0, "severity_text": "ok", "state": "ok", "message": "Alle 4 Jobs in Ordnung" }
+  },
+  "problems": []
+}
+```
+
+#### Zustand eines Scan-Jobs
+
+```http
+GET /api/monitor/scans/{scan_slug}
+```
+
+Liefert Schweregrad, Grund, Ordnerbilanz des letzten Laufs, Messwerte des
+letzten erfolgreichen Laufs und die serverseitig berechnete Überfälligkeit.
+Unterstützt auch den Scan-Namen. Ein unbekannter Job ergibt HTTP 404.
+
+#### Zustand aller Scan-Jobs
+
+```http
+GET /api/monitor/scans
+```
+
+**Parameter:**
+- `include_scans` (optional, Default `1`): `0` = nur Roll-up und Problemliste
+- `http_status` (optional, Default `0`): wie oben
+
+#### Zustand der Infrastruktur
+
+```http
+GET /api/monitor/server
+```
+
+Scheduler, Systemressourcen, Storage und Konfigurationswarnungen. Job-Ergebnisse
+gehen hier bewusst nicht in den Schweregrad ein.
+
+Jede Antwort trägt zusätzlich die Header `X-SSA-Severity` und `X-SSA-State`.
+
+Siehe [README_MONITORING.md](README_MONITORING.md) für die vollständige
+Feldreferenz, Beispielantworten aller Zustände und Integrationsrezepte.
 
 ## Datenbank
 

@@ -12,7 +12,7 @@ import type { ScanStatus } from "@/types/api"
 import { LayoutGrid, List, ArrowUpDown, ArrowUp, ArrowDown, Clock } from "lucide-react"
 import { cn } from "@/lib/cn"
 
-type StatusFilter = "all" | "completed" | "failed" | "running" | "pending"
+type StatusFilter = "all" | "completed" | "failed" | "cancelled" | "running" | "pending"
 type SortField = "name" | "last_run" | "next_run"
 type SortDirection = "asc" | "desc"
 type Density = "compact" | "normal"
@@ -22,6 +22,7 @@ interface ScanTableProps {
   loading: boolean
   lastUpdated: Date | null
   onRun: (scanName: string) => void
+  onCancel?: (scan: ScanStatus) => void
   onShowResults: (scanName: string) => void
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
@@ -35,6 +36,7 @@ const statusLabels: Record<StatusFilter, string> = {
   all: "Alle",
   completed: "Abgeschlossen",
   failed: "Fehlgeschlagen",
+  cancelled: "Abgebrochen",
   running: "Läuft",
   pending: "Ausstehend",
 }
@@ -50,6 +52,7 @@ export function ScanTable({
   loading,
   lastUpdated,
   onRun,
+  onCancel,
   onShowResults,
   onShowHistory,
   onShowDetail,
@@ -121,7 +124,14 @@ export function ScanTable({
   }
 
   const statusCounts = useMemo(() => {
-    const counts = { all: scans.length, completed: 0, failed: 0, running: 0, pending: 0 }
+    const counts = {
+      all: scans.length,
+      completed: 0,
+      failed: 0,
+      cancelled: 0,
+      running: 0,
+      pending: 0,
+    }
     scans.forEach((scan) => {
       if (scan.status in counts) {
         counts[scan.status as keyof typeof counts]++
@@ -166,7 +176,7 @@ export function ScanTable({
           {/* Status Filter Segmented Control */}
           <div className="inline-flex items-center rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-1 shadow-sm overflow-x-auto scrollbar-hide -mx-1 sm:mx-0 sm:overflow-x-visible">
             <div className="flex items-center gap-1 min-w-max">
-              {(["all", "completed", "failed", "running", "pending"] as StatusFilter[]).map((status) => {
+              {(["all", "completed", "failed", "cancelled", "running", "pending"] as StatusFilter[]).map((status) => {
                 const isActive = statusFilter === status
                 return (
                   <button
@@ -339,6 +349,7 @@ export function ScanTable({
                       scan={scan}
                       density={density}
                       onRun={onRun}
+                      onCancel={onCancel}
                       onShowResults={onShowResults}
                       onShowHistory={onShowHistory}
                       onShowDetail={onShowDetail}
@@ -359,6 +370,7 @@ export function ScanTable({
                   key={scan.scan_slug}
                   scan={scan}
                   onRun={onRun}
+                  onCancel={onCancel}
                   onShowResults={onShowResults}
                   onShowHistory={onShowHistory}
                   onShowDetail={onShowDetail}

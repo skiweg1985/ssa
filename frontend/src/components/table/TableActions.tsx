@@ -1,4 +1,4 @@
-import { Play, BarChart3, History, MoreVertical, Eye, Link2, Pencil, Trash2 } from "lucide-react"
+import { Play, BarChart3, History, MoreVertical, Eye, Link2, Pencil, Trash2, Square } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import type { ScanStatus } from "@/types/api"
@@ -6,6 +6,7 @@ import type { ScanStatus } from "@/types/api"
 interface TableActionsProps {
   scan: ScanStatus
   onRun: (scanName: string) => void
+  onCancel?: (scan: ScanStatus) => void
   onShowResults: (scanName: string) => void
   onShowHistory: (scanName: string) => void
   onShowDetail: (scan: ScanStatus) => void
@@ -17,6 +18,7 @@ interface TableActionsProps {
 export function TableActions({
   scan,
   onRun,
+  onCancel,
   onShowResults,
   onShowHistory,
   onShowDetail,
@@ -25,6 +27,7 @@ export function TableActions({
   onDelete,
 }: TableActionsProps) {
   const canRun = scan.status !== "running" && scan.enabled
+  const isRunning = scan.status === "running"
 
   return (
     <div className="flex items-center gap-1.5">
@@ -55,6 +58,18 @@ export function TableActions({
           </Button>
         }
       >
+        {/* Nur während eines Laufs - der einzige Zeitpunkt, an dem der
+            Abbruch überhaupt etwas tut. Steht oben, weil er dann die
+            dringlichste Aktion ist. */}
+        {isRunning && onCancel && (
+          <DropdownMenuItem
+            onClick={() => onCancel(scan)}
+            className="text-xs min-h-[40px] text-amber-700 dark:text-amber-400"
+          >
+            <Square className="h-3.5 w-3.5 mr-2" />
+            Scan abbrechen
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem
           onClick={() => onShowResults(scan.scan_slug)}
           className="text-xs min-h-[40px]"
