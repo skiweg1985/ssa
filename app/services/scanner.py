@@ -129,9 +129,52 @@ class ScannerService:
     def _finish_scan(self, scan_slug: str) -> None:
         """Markiert einen Scan als beendet, behält den Status für die Grace Period"""
         with self._state_lock:
-            self._running_scans[scan_slug] = False
+            # Schluessel entfernen statt auf False setzen: is_scan_running()
+            # liest ohnehin mit .get(slug, False), und ein liegengebliebener
+            # False-Eintrag pro jemals gelaufenem Slug waechst unbegrenzt an
+            # (auch fuer laengst geloeschte Jobs).
+            self._running_scans.pop(scan_slug, None)
             if scan_slug in self._scan_status:
                 self._scan_finished_at[scan_slug] = datetime.now(timezone.utc)
+
+    def _persist_result(
+        self, scan_slug: str, scan_name: str, scan_result: "ScanResult", nas_host: str
+    ) -> bool:
+        """
+        Speichert ein Scan-Ergebnis - aber nur, wenn es den Job noch gibt.
+
+        Wird ein Job gelöscht, während sein Scan läuft, endet der Lauf trotzdem
+        regulär und schrieb bisher sein Ergebnis weg. Die Zeilen gehören dann zu
+        keinem Job mehr: über die API sind sie nicht mehr erreichbar (jeder
+        Endpunkt prüft zuerst die Job-Existenz) und sie überleben sogar ein
+        ausdrückliches delete_history=true, weil der Scan nach dem Löschen
+        schreibt.
+
+        Returns:
+            True, wenn gespeichert wurde
+        """
+        from app.services.jobs_store import jobs_store
+
+        try:
+            job_exists = jobs_store.get_job(scan_slug) is not None
+        except Exception as e:
+            # Store nicht erreichbar: im Zweifel speichern - ein verworfenes
+            # Ergebnis wäre schlimmer als eine verwaiste Zeile.
+            logger.warning(
+                f"Scan '{scan_name}': Job-Existenz nicht prüfbar ({e}) - "
+                "Ergebnis wird gespeichert"
+            )
+            job_exists = True
+
+        if not job_exists:
+            logger.info(
+                f"Scan '{scan_name}': Job wurde während des Laufs gelöscht - "
+                "Ergebnis wird verworfen"
+            )
+            return False
+
+        storage.add_result(scan_slug, scan_name, scan_result, nas_host)
+        return True
 
     def _set_expected_paths(self, scan_slug: str, paths: List[str]) -> None:
         """Hinterlegt die erwarteten Pfade (normalisiert) für die finished-Prüfung"""
@@ -319,7 +362,7 @@ class ScannerService:
                 scan_result.error = error_msg
                 scan_result.timestamp = datetime.now(timezone.utc)
                 # Speichere fehlgeschlagenen Scan
-                storage.add_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
+                self._persist_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
                 return scan_result
             
             logger.info(f"Scan '{scan_name}': Login erfolgreich")
@@ -335,7 +378,7 @@ class ScannerService:
                     scan_result.error = error_msg
                     scan_result.timestamp = datetime.now(timezone.utc)
                     # Speichere fehlgeschlagenen Scan
-                    storage.add_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
+                    self._persist_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
                     return scan_result
                 
                 logger.info(f"Scan '{scan_name}': {len(paths)} Pfad(e) zum Scannen gefunden: {paths}")
@@ -502,7 +545,7 @@ class ScannerService:
         # Speichere nur abgeschlossene Scans (completed oder failed)
         # "running" Status wird nicht gespeichert
         if scan_result.status != "running":
-            storage.add_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
+            self._persist_result(scan_slug, scan_name, scan_result, scan_config.nas.host)
         
         return scan_result
     

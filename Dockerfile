@@ -69,4 +69,12 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=4).status == 200 else 1)"]
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# WICHTIG: genau EIN Worker.
+#
+# Scheduler, Doppelstart-Schutz fuer Scans und das Login-Rate-Limit leben im
+# Prozessspeicher. Mit mehreren Workern plant JEDER Prozess dieselben Jobs ein
+# (ein Job laeuft dann n-fach parallel gegen dasselbe NAS), CRUD ueber die API
+# erreicht nur den annehmenden Worker, und das Login-Limit gilt effektiv n-fach.
+# Aus demselben Grund darf der Container nicht repliziert werden
+# (kein "docker compose up --scale").
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
