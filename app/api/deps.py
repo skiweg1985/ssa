@@ -8,10 +8,16 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 # Pfade, die statische API-Tokens (Monitoring, z.B. PRTG) lesen dürfen.
 # Ausschließlich GET; Verwaltung (Jobs/Verbindungen/Tokens) bleibt dem Login vorbehalten.
+#
+# ACHTUNG: Der Vergleich läuft über str.startswith. "/api/nas-metrics" ist
+# deshalb bewusst voll ausgeschrieben - ein verkürztes "/api/nas" würde auch
+# "/api/nas-connections" freischalten und Monitoring-Tokens Lesezugriff auf
+# die Verbindungsverwaltung geben.
 API_TOKEN_ALLOWED_PREFIXES = (
     "/api/scans",
     "/api/storage/stats",
     "/api/prtg",
+    "/api/nas-metrics",
 )
 
 
@@ -64,7 +70,7 @@ async def require_auth(
                 status_code=403,
                 detail=(
                     "API-Token erlaubt nur Lesezugriff auf Scan-Status/Ergebnisse, "
-                    "Storage-Statistiken und PRTG-Sensordaten"
+                    "Storage-Statistiken, NAS-Metriken und PRTG-Sensordaten"
                 ),
             )
         return f"api-token:{token_info['name']}"

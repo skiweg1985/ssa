@@ -32,6 +32,11 @@ pyyaml==6.0.3
 # --- Sicherheit (Fernet-Verschluesselung der NAS-Zugangsdaten) ---
 cryptography==49.0.0
 
+# --- SNMP (Systemmetriken der NAS: Temperatur, Platten, RAID, UPS) ---
+# Der einzige von Synology oeffentlich dokumentierte Weg zu diesen Werten
+# (DiskStation MIB Guide). Wird nur geladen, wenn SNMP konfiguriert ist.
+pysnmp==7.1.27
+
 # --- CLI / System ---
 rich==15.0.0
 inquirer==3.4.1

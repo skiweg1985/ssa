@@ -14,6 +14,7 @@ import type {
   LoginResponse,
   NASConnectionPublic,
   NASConnectionPayload,
+  NASMetrics,
   TestConnectionResponse,
   BrowseResponse,
   ScanJobPayload,
@@ -147,6 +148,29 @@ export async function browseNas(id: number, path?: string): Promise<BrowseRespon
     method: 'POST',
     body: JSON.stringify({ path: path ?? null }),
   });
+}
+
+// --- NAS metrics endpoints ---
+
+/** Metriken aller NAS-Systeme; `groups` schränkt auf 'capacity' und/oder 'health' ein */
+export async function fetchNasMetrics(params?: {
+  connectionId?: number;
+  groups?: Array<'capacity' | 'health'>;
+}): Promise<NASMetrics[]> {
+  const query = new URLSearchParams();
+  if (params?.connectionId !== undefined) query.set('connection_id', String(params.connectionId));
+  if (params?.groups?.length) query.set('groups', params.groups.join(','));
+  const suffix = query.toString() ? `?${query}` : '';
+  return fetchAPI<NASMetrics[]>(`/nas-metrics${suffix}`);
+}
+
+/** Metriken eines Systems — `identifier` ist die ID oder der Verbindungsname */
+export async function fetchNasMetricsFor(
+  identifier: number | string,
+  groups?: Array<'capacity' | 'health'>,
+): Promise<NASMetrics> {
+  const suffix = groups?.length ? `?groups=${groups.join(',')}` : '';
+  return fetchAPI<NASMetrics>(`/nas-metrics/${encodeURIComponent(String(identifier))}${suffix}`);
 }
 
 // --- API token endpoints (Monitoring) ---

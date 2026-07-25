@@ -1,8 +1,7 @@
 """API-Routes für NAS-Verbindungen: CRUD, Verbindungstest, Verzeichnis-Browsing"""
 import asyncio
 import logging
-import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -21,86 +20,42 @@ from app.services.jobs_store import (
     NotFoundError,
     jobs_store,
 )
+from app.services.nas_session import (
+    LOGIN_TIMEOUT,
+    NASConnectionNotFound,
+    NASCredentialsError,
+    NASLoginFailed,
+    NASSessionError,
+    NASUnreachable,
+    evict_session,
+    get_session,
+    make_api as _make_api,
+)
 from app.services.security import SecretDecryptionError
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-LOGIN_TIMEOUT = 15  # Sekunden
 BROWSE_TIMEOUT = 20  # Sekunden
-SESSION_TTL = 300  # Sekunden (5 Minuten)
-
-# Session-Cache für Browse: {connection_id: (SynologyAPI-Instanz, expires_at)}
-_session_cache: Dict[int, Tuple[Any, float]] = {}
-
-
-def _make_api(host: str, port: Optional[int], use_https: bool, verify_ssl: bool):
-    """Erzeugt eine SynologyAPI-Instanz ohne Rate-Limit (interaktives Browsen)"""
-    from explore_syno_api import SynologyAPI
-
-    return SynologyAPI(
-        host,
-        port=port,
-        use_https=use_https,
-        rate_limit_delay=0,
-        output_json=True,
-        verify_ssl=verify_ssl,
-    )
-
-
-def evict_session(connection_id: int) -> None:
-    """Entfernt eine gecachte Session (bei Update/Delete der Verbindung)"""
-    _session_cache.pop(connection_id, None)
 
 
 async def _get_session(connection_id: int):
     """
-    Liefert eine eingeloggte SynologyAPI-Instanz für die Verbindung
-    (aus dem Cache oder per frischem Login).
+    Eingeloggte SynologyAPI-Instanz, Session-Fehler auf HTTP-Status abgebildet.
+
+    Die Session-Logik liegt in app/services/nas_session.py, weil sie mit den
+    Metrik-Endpoints geteilt wird; nur die HTTP-Abbildung gehört hierher.
     """
-    cached = _session_cache.get(connection_id)
-    if cached is not None:
-        api, expires_at = cached
-        if expires_at > time.time():
-            return api
-        _session_cache.pop(connection_id, None)
-
-    row = jobs_store.get_connection_row(connection_id)
-    if row is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"NAS-Verbindung {connection_id} nicht gefunden",
-        )
     try:
-        password = jobs_store.get_connection_password(connection_id)
-    except SecretDecryptionError as e:
+        return await get_session(connection_id)
+    except NASConnectionNotFound as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except NASCredentialsError as e:
         raise HTTPException(status_code=409, detail=str(e))
-
-    api = _make_api(
-        row["host"], row["port"], bool(row["use_https"]), bool(row["verify_ssl"])
-    )
-    try:
-        success = await asyncio.wait_for(
-            asyncio.to_thread(api.login, row["username"], password),
-            timeout=LOGIN_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=504,
-            detail="Zeitüberschreitung beim Verbinden mit dem NAS",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=502, detail=f"Verbindung zum NAS fehlgeschlagen: {e}"
-        )
-    if not success:
-        raise HTTPException(
-            status_code=502,
-            detail="Anmeldung am NAS fehlgeschlagen - bitte Zugangsdaten prüfen",
-        )
-    _session_cache[connection_id] = (api, time.time() + SESSION_TTL)
-    return api
+    except (NASLoginFailed, NASUnreachable, NASSessionError) as e:
+        status = 504 if "Zeitüberschreitung" in str(e) else 502
+        raise HTTPException(status_code=status, detail=str(e))
 
 
 # ----------------------------------------------------------------------
@@ -125,6 +80,10 @@ async def create_connection(request: NASConnectionCreate):
             port=request.port,
             use_https=request.use_https,
             verify_ssl=request.verify_ssl,
+            snmp_enabled=request.snmp.enabled if request.snmp else False,
+            snmp_version=request.snmp.version if request.snmp else None,
+            snmp_port=request.snmp.port if request.snmp else None,
+            snmp_secrets=request.snmp.to_secrets() if request.snmp else None,
         )
     except Exception as e:
         if "UNIQUE constraint failed" in str(e):
@@ -138,6 +97,25 @@ async def create_connection(request: NASConnectionCreate):
 @router.put("/{connection_id}", response_model=NASConnectionPublic)
 async def update_connection(connection_id: int, request: NASConnectionUpdate):
     """Verbindung aktualisieren. Leeres Passwort behält das gespeicherte."""
+    # Fehlender snmp-Block heißt "unverändert", nicht "abschalten" - sonst
+    # würde ein Client, der das Feld nicht kennt, SNMP stillschweigend deaktivieren.
+    if request.snmp is not None:
+        snmp_enabled = request.snmp.enabled
+        snmp_version = request.snmp.version
+        snmp_port = request.snmp.port
+        snmp_secrets = request.snmp.to_secrets()
+    else:
+        existing = jobs_store.get_connection(connection_id)
+        if existing is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"NAS-Verbindung {connection_id} nicht gefunden",
+            )
+        snmp_enabled = existing["snmp_enabled"]
+        snmp_version = existing["snmp_version"]
+        snmp_port = existing["snmp_port"]
+        snmp_secrets = None  # None = gespeicherte Zugangsdaten behalten
+
     try:
         result = jobs_store.update_connection(
             connection_id,
@@ -148,6 +126,10 @@ async def update_connection(connection_id: int, request: NASConnectionUpdate):
             port=request.port,
             use_https=request.use_https,
             verify_ssl=request.verify_ssl,
+            snmp_enabled=snmp_enabled,
+            snmp_version=snmp_version,
+            snmp_port=snmp_port,
+            snmp_secrets=snmp_secrets,
         )
     except NotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))

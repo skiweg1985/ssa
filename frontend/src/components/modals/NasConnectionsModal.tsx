@@ -48,6 +48,16 @@ interface FormState {
   password: string
   use_https: boolean
   verify_ssl: boolean
+  // SNMP: Zugang für die Systemmetriken (Temperatur, Platten, RAID, USV)
+  snmp_enabled: boolean
+  snmp_version: "2c" | "3"
+  snmp_port: string
+  snmp_community: string
+  snmp_v3_user: string
+  snmp_v3_auth_protocol: "SHA" | "MD5"
+  snmp_v3_auth_key: string
+  snmp_v3_priv_protocol: "AES" | "DES"
+  snmp_v3_priv_key: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -58,6 +68,16 @@ const EMPTY_FORM: FormState = {
   password: "",
   use_https: true,
   verify_ssl: true,
+  snmp_enabled: false,
+  // v2c ist in Bestandsumgebungen weiterhin der verbreitete Standard
+  snmp_version: "2c",
+  snmp_port: "161",
+  snmp_community: "",
+  snmp_v3_user: "",
+  snmp_v3_auth_protocol: "SHA",
+  snmp_v3_auth_key: "",
+  snmp_v3_priv_protocol: "AES",
+  snmp_v3_priv_key: "",
 }
 
 export function NasConnectionsModal({
@@ -106,6 +126,7 @@ export function NasConnectionsModal({
 
   function startEdit(connection: NASConnectionPublic) {
     setForm({
+      ...EMPTY_FORM,
       name: connection.name,
       host: connection.host,
       port: connection.port != null ? String(connection.port) : "",
@@ -113,6 +134,11 @@ export function NasConnectionsModal({
       password: "",
       use_https: connection.use_https,
       verify_ssl: connection.verify_ssl,
+      snmp_enabled: connection.snmp_enabled,
+      snmp_version: connection.snmp_version === "3" ? "3" : "2c",
+      snmp_port: String(connection.snmp_port ?? 161),
+      // Zugangsdaten kommen bewusst nie vom Server zurück - leer lassen heißt
+      // "gespeicherte behalten", genau wie beim DSM-Passwort.
     })
     setTestState({ kind: "idle" })
     setEditing(connection)
@@ -127,15 +153,38 @@ export function NasConnectionsModal({
       port: form.port.trim() ? Number(form.port.trim()) : null,
       use_https: form.use_https,
       verify_ssl: form.verify_ssl,
+      snmp: {
+        enabled: form.snmp_enabled,
+        version: form.snmp_version,
+        port: form.snmp_port.trim() ? Number(form.snmp_port.trim()) : 161,
+        community: form.snmp_community || undefined,
+        v3_user: form.snmp_v3_user || undefined,
+        v3_auth_protocol: form.snmp_v3_auth_protocol,
+        v3_auth_key: form.snmp_v3_auth_key || undefined,
+        v3_priv_protocol: form.snmp_v3_priv_protocol,
+        v3_priv_key: form.snmp_v3_priv_key || undefined,
+      },
     }
   }
+
+  // Beim Aktivieren von SNMP müssen Zugangsdaten vorliegen - entweder neu
+  // eingegeben oder bereits gespeichert (dann sind die Felder leer).
+  const snmpHasStoredSecrets = editing !== "new" && editing ? editing.snmp_enabled : false
+  const snmpCredentialsOk =
+    !form.snmp_enabled ||
+    snmpHasStoredSecrets ||
+    (form.snmp_version === "2c"
+      ? form.snmp_community.trim().length > 0
+      : form.snmp_v3_user.trim().length > 0)
 
   const formValid =
     form.name.trim() &&
     form.host.trim() &&
     form.username.trim() &&
     (editing === "new" ? form.password.length > 0 : true) &&
-    (!form.port.trim() || !Number.isNaN(Number(form.port.trim())))
+    (!form.port.trim() || !Number.isNaN(Number(form.port.trim()))) &&
+    (!form.snmp_port.trim() || !Number.isNaN(Number(form.snmp_port.trim()))) &&
+    snmpCredentialsOk
 
   async function handleTest() {
     setTestState({ kind: "loading" })
@@ -374,6 +423,165 @@ export function NasConnectionsModal({
                 onCheckedChange={(v) => setForm({ ...form, verify_ssl: v })}
                 label="SSL-Zertifikat prüfen"
               />
+            </div>
+
+            {/* SNMP: Systemmetriken (Temperatur, Platten, RAID, USV).
+                Getrennter Zugang, weil DSM diese Werte nur über SNMP
+                herausgibt - die File-Station-API liefert sie nicht. */}
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-4">
+              <Switch
+                checked={form.snmp_enabled}
+                onCheckedChange={(v) => setForm({ ...form, snmp_enabled: v })}
+                label="Systemmetriken über SNMP auslesen"
+              />
+              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                Liefert Temperatur, Plattenstatus, RAID-Zustand und USV. Am NAS
+                muss der Dienst unter <em>Systemsteuerung → Terminal &amp; SNMP</em>{" "}
+                aktiviert sein.
+              </p>
+
+              {form.snmp_enabled && (
+                <div className="mt-4 space-y-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        SNMP-Version
+                      </label>
+                      <select
+                        value={form.snmp_version}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            snmp_version: e.target.value === "3" ? "3" : "2c",
+                          })
+                        }
+                        className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                      >
+                        <option value="2c">v2c (Community)</option>
+                        <option value="3">v3 (Benutzer, verschlüsselt)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        SNMP-Port
+                      </label>
+                      <Input
+                        value={form.snmp_port}
+                        onChange={(e) => setForm({ ...form, snmp_port: e.target.value })}
+                        placeholder="161"
+                        inputMode="numeric"
+                      />
+                    </div>
+                  </div>
+
+                  {form.snmp_version === "2c" ? (
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        Community
+                      </label>
+                      <Input
+                        type="password"
+                        value={form.snmp_community}
+                        onChange={(e) =>
+                          setForm({ ...form, snmp_community: e.target.value })
+                        }
+                        placeholder={
+                          snmpHasStoredSecrets
+                            ? "•••••• (leer lassen zum Beibehalten)"
+                            : "z.B. public"
+                        }
+                        autoComplete="new-password"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          Benutzer
+                        </label>
+                        <Input
+                          value={form.snmp_v3_user}
+                          onChange={(e) =>
+                            setForm({ ...form, snmp_v3_user: e.target.value })
+                          }
+                          placeholder={
+                            snmpHasStoredSecrets ? "(leer lassen zum Beibehalten)" : ""
+                          }
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            Auth-Protokoll
+                          </label>
+                          <select
+                            value={form.snmp_v3_auth_protocol}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                snmp_v3_auth_protocol:
+                                  e.target.value === "MD5" ? "MD5" : "SHA",
+                              })
+                            }
+                            className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                          >
+                            <option value="SHA">SHA</option>
+                            <option value="MD5">MD5</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            Auth-Schlüssel
+                          </label>
+                          <Input
+                            type="password"
+                            value={form.snmp_v3_auth_key}
+                            onChange={(e) =>
+                              setForm({ ...form, snmp_v3_auth_key: e.target.value })
+                            }
+                            autoComplete="new-password"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            Priv-Protokoll
+                          </label>
+                          <select
+                            value={form.snmp_v3_priv_protocol}
+                            onChange={(e) =>
+                              setForm({
+                                ...form,
+                                snmp_v3_priv_protocol:
+                                  e.target.value === "DES" ? "DES" : "AES",
+                              })
+                            }
+                            className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
+                          >
+                            <option value="AES">AES</option>
+                            <option value="DES">DES</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            Priv-Schlüssel
+                          </label>
+                          <Input
+                            type="password"
+                            value={form.snmp_v3_priv_key}
+                            onChange={(e) =>
+                              setForm({ ...form, snmp_v3_priv_key: e.target.value })
+                            }
+                            autoComplete="new-password"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Test-Ergebnis */}

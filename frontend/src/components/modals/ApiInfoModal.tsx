@@ -98,6 +98,40 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
       endpoint: `${API_BASE}/scans/{scan_slug}/trigger`,
       curl: `curl -X POST "${window.location.origin}${API_BASE}/scans/mein-scan/trigger"`,
     },
+    {
+      title: "NAS-Systemmetriken abrufen",
+      description:
+        "Kapazität je Volume und Systemzustand (Temperatur, Platten, RAID) eines NAS. " +
+        "Identifikation per ID oder Verbindungsname.",
+      method: "GET",
+      endpoint: `${API_BASE}/nas-metrics/{id_oder_name}`,
+      curl: `curl -X GET "${window.location.origin}${API_BASE}/nas-metrics/NAS-01"`,
+    },
+    {
+      title: "PRTG-Sensor: Kapazität eines NAS",
+      description:
+        "Fertige Sensordaten im PRTG-Format - Volumes, Belegung und Freigaben. " +
+        "PRTG legt die Kanäle automatisch an.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/capacity`,
+      curl: `curl -X GET "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/capacity"`,
+    },
+    {
+      title: "PRTG-Sensor: Systemzustand eines NAS",
+      description:
+        "Temperatur, Lüfter, Plattenstatus, RAID und USV via SNMP. " +
+        "Setzt einen hinterlegten SNMP-Zugang voraus.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/health`,
+      curl: `curl -X GET "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/health"`,
+    },
+    {
+      title: "PRTG-Sensor: Scan-Job",
+      description: "Alle Metriken eines Scan-Jobs als PRTG-Kanäle",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/scans/{scan_slug}`,
+      curl: `curl -X GET "${window.location.origin}${API_BASE}/prtg/scans/mein-scan"`,
+    },
   ]
 
   if (!open) return null
@@ -200,9 +234,19 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
             </h3>
             <div className="space-y-3 text-sm text-slate-700">
               <div>
+                <strong className="text-slate-900 dark:text-slate-100">PRTG (empfohlen):</strong>
+                <p className="mt-1">
+                  Sensortyp <em>HTTP Data Advanced</em> anlegen und auf einen der{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/prtg/…</code>{" "}
+                  Endpunkte zeigen lassen — die Kanäle entstehen automatisch,
+                  JSONPath-Filter entfallen. Zugriff über ein API-Token im Header{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">Authorization: Bearer ssa_…</code>.
+                </p>
+              </div>
+              <div>
                 <strong className="text-slate-900 dark:text-slate-100">Prometheus Exporter:</strong>
                 <p className="mt-1">
-                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code> abruft 
+                  Erstellen Sie einen Prometheus Exporter, der regelmäßig <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/scans/{scan_slug}/results"}</code> abruft
                   und die Daten als Metriken bereitstellt.
                 </p>
               </div>

@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 IMPORT_MARKER_KEY = "config_yaml_imported"
 
+# Aktueller Stand des Schemas (PRAGMA user_version). Bei jeder neuen
+# Migrationsstufe hochzählen und in _migrate() einen Block ergänzen.
+SCHEMA_VERSION = 1
+
 
 class JobsStoreError(Exception):
     """Basisklasse für Fehler des Jobs-Stores"""
@@ -50,6 +54,39 @@ def _json_or_none(value: Optional[List[str]]) -> Optional[str]:
     if value is None:
         return None
     return json.dumps(list(value))
+
+
+def _row_value(row: sqlite3.Row, key: str, default: Any = None) -> Any:
+    """
+    Spaltenwert einer Row, mit Default für (noch) nicht vorhandene Spalten.
+
+    sqlite3.Row kennt kein .get(); der Zugriff auf eine unbekannte Spalte wirft
+    IndexError. Das trifft Test-Fixtures, die Rows ohne die migrierten Spalten
+    bauen.
+    """
+    try:
+        value = row[key]
+    except (IndexError, KeyError):
+        return default
+    return default if value is None else value
+
+
+# Voreinstellungen für den SNMP-Zugang (siehe Synology DiskStation MIB Guide)
+DEFAULT_SNMP_VERSION = "2c"
+DEFAULT_SNMP_PORT = 161
+
+
+def _encrypt_snmp_secrets(secrets: Optional[Dict[str, Any]]) -> Optional[str]:
+    """
+    Verschlüsselt die SNMP-Zugangsdaten als JSON.
+
+    Ein einzelnes verschlüsseltes Feld statt einer Spalte je Credential:
+    v2c braucht nur eine Community, v3 dagegen Benutzer plus Auth- und
+    Priv-Schlüssel - und spätere Felder kommen so ohne Migration aus.
+    """
+    if not secrets:
+        return None
+    return encrypt_secret(json.dumps(secrets, separators=(",", ":")))
 
 
 def _list_or_none(value: Optional[str]) -> Optional[List[str]]:
@@ -128,7 +165,61 @@ class JobsStore:
                 );
                 """
             )
+            self._migrate(conn)
             conn.commit()
+
+    # ------------------------------------------------------------------
+    # Schema-Migrationen
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _add_missing_columns(
+        conn: sqlite3.Connection, table: str, columns: Dict[str, str]
+    ) -> None:
+        """
+        Fügt fehlende Spalten per ALTER TABLE hinzu.
+
+        Idempotent über PRAGMA table_info, damit ein erneuter Lauf auf einer
+        bereits migrierten (oder von Hand angepassten) Datenbank nicht bricht.
+        """
+        existing = {
+            row["name"]
+            for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        }
+        for column, definition in columns.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+                logger.info(f"Schema-Migration: {table}.{column} ergänzt")
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """
+        Bringt eine bestehende Datenbank auf SCHEMA_VERSION.
+
+        Das CREATE-Script oben bildet bewusst nur das Ur-Schema ab; alles
+        Spätere kommt ausschließlich aus diesen Stufen. So gibt es für jede
+        Erweiterung genau eine Wahrheit - egal ob die Datenbank neu angelegt
+        oder aus einer älteren Version übernommen wurde.
+        """
+        version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+        if version >= SCHEMA_VERSION:
+            return
+
+        if version < 1:
+            # SNMP-Zugang je NAS-Verbindung (Systemmetriken via SNMP).
+            # Die Zugangsdaten liegen als verschlüsseltes JSON in einer
+            # einzigen Spalte - so brauchen spätere Felder keine Migration.
+            self._add_missing_columns(
+                conn,
+                "nas_connections",
+                {
+                    "snmp_enabled": "INTEGER NOT NULL DEFAULT 0",
+                    "snmp_version": "TEXT",
+                    "snmp_port": "INTEGER",
+                    "snmp_secrets_encrypted": "TEXT",
+                },
+            )
+
+        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
 
     # ------------------------------------------------------------------
     # app_meta
@@ -157,6 +248,12 @@ class JobsStore:
     def _connection_row_to_dict(
         self, row: sqlite3.Row, job_count: int = 0
     ) -> Dict[str, Any]:
+        """
+        Öffentliche Sicht einer Verbindung.
+
+        Enthält bewusst weder password_encrypted noch snmp_secrets_encrypted -
+        diese Dicts gehen unverändert an die API-Antworten.
+        """
         return {
             "id": row["id"],
             "name": row["name"],
@@ -165,6 +262,9 @@ class JobsStore:
             "use_https": bool(row["use_https"]),
             "verify_ssl": bool(row["verify_ssl"]),
             "username": row["username"],
+            "snmp_enabled": bool(_row_value(row, "snmp_enabled", 0)),
+            "snmp_version": _row_value(row, "snmp_version", DEFAULT_SNMP_VERSION),
+            "snmp_port": _row_value(row, "snmp_port", DEFAULT_SNMP_PORT),
             "job_count": job_count,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
@@ -199,18 +299,28 @@ class JobsStore:
         row = self.get_connection_row(connection_id)
         if row is None:
             return None
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "host": row["host"],
-            "port": row["port"],
-            "use_https": bool(row["use_https"]),
-            "verify_ssl": bool(row["verify_ssl"]),
-            "username": row["username"],
-            "job_count": self.job_count(connection_id),
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-        }
+        return self._connection_row_to_dict(row, self.job_count(connection_id))
+
+    def get_connection_by_identifier(
+        self, identifier: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Verbindung per numerischer ID ODER Name (analog zu get_job).
+
+        Namen sind UNIQUE und überleben ein Neuanlegen der Verbindung nicht -
+        Monitoring-URLs bleiben damit stabiler als mit reinen IDs.
+        """
+        if identifier.isdigit():
+            connection = self.get_connection(int(identifier))
+            if connection is not None:
+                return connection
+        with self._get_connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM nas_connections WHERE name = ?", (identifier,)
+            ).fetchone()
+        if row is None:
+            return None
+        return self._connection_row_to_dict(row, self.job_count(row["id"]))
 
     def get_connection_password(self, connection_id: int) -> str:
         """Entschlüsseltes Passwort einer Verbindung (nur Backend-intern)"""
@@ -218,6 +328,40 @@ class JobsStore:
         if row is None:
             raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
         return decrypt_secret(row["password_encrypted"])
+
+    def get_snmp_config(self, connection_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Entschlüsselter SNMP-Zugang einer Verbindung (nur Backend-intern).
+
+        Returns:
+            Dict mit host, port, version und den Zugangsdaten, oder None wenn
+            SNMP für diese Verbindung nicht aktiviert ist.
+
+        Raises:
+            NotFoundError: Verbindung existiert nicht
+            SecretDecryptionError: gespeicherte Zugangsdaten nicht lesbar
+        """
+        row = self.get_connection_row(connection_id)
+        if row is None:
+            raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
+        if not _row_value(row, "snmp_enabled", 0):
+            return None
+
+        secrets_raw = _row_value(row, "snmp_secrets_encrypted")
+        try:
+            secrets = json.loads(decrypt_secret(secrets_raw)) if secrets_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(
+                f"SNMP-Zugangsdaten der Verbindung {connection_id} sind unlesbar"
+            )
+            secrets = {}
+
+        return {
+            "host": row["host"],
+            "port": int(_row_value(row, "snmp_port", DEFAULT_SNMP_PORT)),
+            "version": str(_row_value(row, "snmp_version", DEFAULT_SNMP_VERSION)),
+            "secrets": secrets,
+        }
 
     def job_count(self, connection_id: int) -> int:
         with self._get_connection() as conn:
@@ -236,6 +380,10 @@ class JobsStore:
         port: Optional[int] = None,
         use_https: bool = True,
         verify_ssl: bool = True,
+        snmp_enabled: bool = False,
+        snmp_version: Optional[str] = None,
+        snmp_port: Optional[int] = None,
+        snmp_secrets: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         now = _now_iso()
         with self._get_connection() as conn:
@@ -243,8 +391,9 @@ class JobsStore:
                 """
                 INSERT INTO nas_connections
                     (name, host, port, use_https, verify_ssl, username,
-                     password_encrypted, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     password_encrypted, snmp_enabled, snmp_version, snmp_port,
+                     snmp_secrets_encrypted, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     name,
@@ -254,6 +403,10 @@ class JobsStore:
                     int(verify_ssl),
                     username,
                     encrypt_secret(password),
+                    int(snmp_enabled),
+                    snmp_version or DEFAULT_SNMP_VERSION,
+                    snmp_port or DEFAULT_SNMP_PORT,
+                    _encrypt_snmp_secrets(snmp_secrets),
                     now,
                     now,
                 ),
@@ -274,8 +427,18 @@ class JobsStore:
         port: Optional[int] = None,
         use_https: bool = True,
         verify_ssl: bool = True,
+        snmp_enabled: bool = False,
+        snmp_version: Optional[str] = None,
+        snmp_port: Optional[int] = None,
+        snmp_secrets: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Aktualisiert eine Verbindung. Leeres/None-Passwort behält das gespeicherte."""
+        """
+        Aktualisiert eine Verbindung.
+
+        Leeres/None-Passwort behält das gespeicherte - für die SNMP-Zugangsdaten
+        gilt dasselbe, damit die Edit-Form ohne erneute Eingabe speichern kann.
+        Auch beim Abschalten von SNMP bleiben sie erhalten.
+        """
         existing = self.get_connection_row(connection_id)
         if existing is None:
             raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
@@ -283,12 +446,17 @@ class JobsStore:
         password_encrypted = (
             encrypt_secret(password) if password else existing["password_encrypted"]
         )
+        snmp_secrets_encrypted = _encrypt_snmp_secrets(snmp_secrets) or _row_value(
+            existing, "snmp_secrets_encrypted"
+        )
         with self._get_connection() as conn:
             conn.execute(
                 """
                 UPDATE nas_connections
                 SET name = ?, host = ?, port = ?, use_https = ?, verify_ssl = ?,
-                    username = ?, password_encrypted = ?, updated_at = ?
+                    username = ?, password_encrypted = ?, snmp_enabled = ?,
+                    snmp_version = ?, snmp_port = ?, snmp_secrets_encrypted = ?,
+                    updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -299,6 +467,10 @@ class JobsStore:
                     int(verify_ssl),
                     username,
                     password_encrypted,
+                    int(snmp_enabled),
+                    snmp_version or DEFAULT_SNMP_VERSION,
+                    snmp_port or DEFAULT_SNMP_PORT,
+                    snmp_secrets_encrypted,
                     _now_iso(),
                     connection_id,
                 ),
