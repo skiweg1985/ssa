@@ -867,7 +867,11 @@ class ScanStorage:
     
     def get_storage_stats(self) -> Dict[str, any]:
         """Gibt Statistiken über den Storage zurück"""
-        total_results = sum(len(results) for results in self._results.values())
+        # Über eine Kopie iterieren: /health wertet die Statistiken in einem
+        # Worker-Thread aus, während ein laufender Scan im Event-Loop ein
+        # neues Ergebnis (und damit ggf. einen neuen Slug) einträgt.
+        results_snapshot = list(self._results.values())
+        total_results = sum(len(results) for results in results_snapshot)
         db_size = 0
         db_count = 0
         folder_count = 0
