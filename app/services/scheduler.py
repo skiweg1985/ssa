@@ -1,4 +1,6 @@
 """Scheduler Service - APScheduler Integration"""
+import hashlib
+import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -35,17 +37,28 @@ def parse_interval_string(interval_str: str) -> Optional[timedelta]:
     
     value = int(match.group(1))
     unit = match.group(2)
-    
-    # Konvertiere in timedelta
-    if unit == 's':
-        return timedelta(seconds=value)
-    elif unit == 'm':
-        return timedelta(minutes=value)
-    elif unit == 'h':
-        return timedelta(hours=value)
-    elif unit == 'd':
-        return timedelta(days=value)
-    
+
+    # Ein Intervall von 0 wuerde APScheduler dauerfeuern lassen
+    if value == 0:
+        return None
+
+    # Konvertiere in timedelta.
+    # timedelta wirft OverflowError, sobald der Wert nicht mehr in einen
+    # C-int passt ("99999999999999999999d"). Das ist eine ungueltige Eingabe
+    # wie jede andere - hier abfangen, damit die Validierung 422 liefert
+    # statt den Fehler bis in einen 500er durchzureichen.
+    try:
+        if unit == 's':
+            return timedelta(seconds=value)
+        elif unit == 'm':
+            return timedelta(minutes=value)
+        elif unit == 'h':
+            return timedelta(hours=value)
+        elif unit == 'd':
+            return timedelta(days=value)
+    except OverflowError:
+        return None
+
     return None
 
 
@@ -73,6 +86,42 @@ class SchedulerService:
         )
         self.config: Optional[ConfigYAML] = None
         self._job_ids: Dict[str, str] = {}  # Mapping von scan_slug zu job_id
+        # Fingerabdruck der zuletzt eingeplanten Konfiguration je Slug.
+        # Damit erkennt der Resync, ob sich ein Job wirklich geändert hat -
+        # sonst wurde jeder bestehende Job neu eingeplant und das Intervall
+        # begann von vorn (ein häufiger Reload konnte Läufe dauerhaft
+        # verschieben).
+        self._job_signatures: Dict[str, str] = {}
+
+    @staticmethod
+    def _job_signature(scan_config: ScanTaskConfigYAML) -> str:
+        """Fingerabdruck aller Felder, die den eingeplanten Lauf bestimmen"""
+        payload = json.dumps(
+            {
+                "name": scan_config.name,
+                "interval": scan_config.interval,
+                "shares": scan_config.shares,
+                "folders": scan_config.folders,
+                "paths": scan_config.paths,
+                "enabled": scan_config.enabled,
+                "nas": {
+                    "host": scan_config.nas.host,
+                    "port": scan_config.nas.port,
+                    "use_https": scan_config.nas.use_https,
+                    "verify_ssl": scan_config.nas.verify_ssl,
+                    "username": scan_config.nas.username,
+                    # Die Zugangsdaten stecken im eingeplanten Job-Argument,
+                    # ein Passwortwechsel muss also neu einplanen. Nur als
+                    # Hash, damit das Klartextpasswort nirgends liegen bleibt.
+                    "password": hashlib.sha256(
+                        (scan_config.nas.password or "").encode("utf-8")
+                    ).hexdigest(),
+                },
+            },
+            sort_keys=True,
+            default=str,
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
     
     def load_and_schedule(self, config_path: Optional[str] = None) -> None:
         """
@@ -199,7 +248,8 @@ class SchedulerService:
             )
             
             self._job_ids[scan_config.slug] = job_id
-            
+            self._job_signatures[scan_config.slug] = self._job_signature(scan_config)
+
             # Berechne nächsten Lauf
             next_run = self.scheduler.get_job(job_id).next_run_time if self.scheduler.running else None
             
@@ -245,6 +295,7 @@ class SchedulerService:
         try:
             self.scheduler.remove_job(job_id)
             self._job_ids.pop(scan_slug, None)
+            self._job_signatures.pop(scan_slug, None)
             logger.info(f"Job für Scan '{scan_slug}' entfernt")
             return True
         except Exception as e:
@@ -388,8 +439,13 @@ class SchedulerService:
         Synchronisiert die Scheduler-Jobs mit dem aktuellen Stand der Datenbank.
 
         Entfernt Jobs, die es nicht mehr gibt oder die deaktiviert wurden,
-        und fügt neue/aktivierte Jobs hinzu. Bestehende Jobs werden neu
-        eingeplant (remove + add), damit Intervall-Änderungen greifen.
+        und fügt neue/aktivierte Jobs hinzu. Bestehende Jobs werden nur dann
+        neu eingeplant, wenn sich ihre Konfiguration tatsächlich geändert hat.
+
+        Wichtig: Ein Neuplanen setzt bei Intervall-Triggern den Zähler zurück.
+        Würde hier jeder bestehende Job angefasst, verschöbe jeder Aufruf den
+        nächsten Lauf um ein volles Intervall - bei regelmässigem Reload liefe
+        ein Job nie.
 
         Returns:
             Dictionary mit Informationen über die Synchronisierung
@@ -418,6 +474,10 @@ class SchedulerService:
                     logger.error(f"Job '{slug}' konnte nicht geladen werden: {e}")
                     continue
                 if slug in old_scan_slugs:
+                    # Unveränderte Jobs in Ruhe lassen, sonst beginnt ihr
+                    # Intervall bei jedem Resync von vorn.
+                    if self._job_signatures.get(slug) == self._job_signature(scan_config):
+                        continue
                     self.remove_scan_job(slug)
                     self.add_scan_job(scan_config)
                     updated_scans.append(job["name"])

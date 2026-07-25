@@ -87,6 +87,43 @@ class JobsStore:
         finally:
             conn.close()
 
+    @contextmanager
+    def _write_transaction(self):
+        """
+        Verbindung, die sofort das Schreib-Lock der Datenbank hält.
+
+        Nötig überall dort, wo aus dem gelesenen Zustand eine Schreibentscheidung
+        folgt ("gibt es den Slug schon?", "existiert die Zeile noch?"). Ohne das
+        Lock lesen zwei Schreiber denselben Stand und überholen sich gegenseitig -
+        das erzeugte doppelt vergebene Slugs (UNIQUE-Verletzung) und UPDATEs auf
+        zwischenzeitlich gelöschte Zeilen.
+
+        BEGIN IMMEDIATE nimmt das Lock beim Öffnen der Transaktion statt erst beim
+        ersten Schreibzugriff; damit ist auch der vorangehende SELECT geschützt.
+        Leser werden dadurch nicht blockiert (WAL).
+        """
+        conn = sqlite3.connect(
+            str(self._db_path),
+            timeout=10.0,
+            check_same_thread=False,
+        )
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.row_factory = sqlite3.Row
+        # Transaktionsgrenzen selbst setzen statt implizit durch das sqlite3-Modul
+        conn.isolation_level = None
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                yield conn
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+            conn.execute("COMMIT")
+        finally:
+            conn.close()
+
     def _init_database(self) -> None:
         with self._get_connection() as conn:
             conn.executescript(
@@ -194,11 +231,9 @@ class JobsStore:
             ).fetchone()
             return dict(row) if row else None
 
-    def get_connection(self, connection_id: int) -> Optional[Dict[str, Any]]:
-        """Öffentliche Sicht einer Verbindung (ohne Passwort)"""
-        row = self.get_connection_row(connection_id)
-        if row is None:
-            return None
+    @staticmethod
+    def _connection_row_to_public(row: Any, job_count: int) -> Dict[str, Any]:
+        """Öffentliche Sicht einer Verbindungszeile (ohne Passwort)"""
         return {
             "id": row["id"],
             "name": row["name"],
@@ -207,10 +242,17 @@ class JobsStore:
             "use_https": bool(row["use_https"]),
             "verify_ssl": bool(row["verify_ssl"]),
             "username": row["username"],
-            "job_count": self.job_count(connection_id),
+            "job_count": job_count,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
+
+    def get_connection(self, connection_id: int) -> Optional[Dict[str, Any]]:
+        """Öffentliche Sicht einer Verbindung (ohne Passwort)"""
+        row = self.get_connection_row(connection_id)
+        if row is None:
+            return None
+        return self._connection_row_to_public(row, self.job_count(connection_id))
 
     def get_connection_password(self, connection_id: int) -> str:
         """Entschlüsseltes Passwort einer Verbindung (nur Backend-intern)"""
@@ -238,7 +280,7 @@ class JobsStore:
         verify_ssl: bool = True,
     ) -> Dict[str, Any]:
         now = _now_iso()
-        with self._get_connection() as conn:
+        with self._write_transaction() as conn:
             cursor = conn.execute(
                 """
                 INSERT INTO nas_connections
@@ -258,11 +300,16 @@ class JobsStore:
                     now,
                 ),
             )
-            conn.commit()
             new_id = cursor.lastrowid
-        connection = self.get_connection(new_id)
-        assert connection is not None
-        return connection
+            row = conn.execute(
+                "SELECT * FROM nas_connections WHERE id = ?", (new_id,)
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(
+                    f"NAS-Verbindung {new_id} konnte nicht angelegt werden"
+                )
+            # Frisch angelegt: es kann noch kein Job darauf verweisen
+            return self._connection_row_to_public(row, 0)
 
     def update_connection(
         self,
@@ -276,15 +323,19 @@ class JobsStore:
         verify_ssl: bool = True,
     ) -> Dict[str, Any]:
         """Aktualisiert eine Verbindung. Leeres/None-Passwort behält das gespeicherte."""
-        existing = self.get_connection_row(connection_id)
-        if existing is None:
-            raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
+        # Lesen des alten Passworts, Schreiben und Zurücklesen in einer
+        # Transaktion - sonst kann die Verbindung dazwischen gelöscht werden.
+        with self._write_transaction() as conn:
+            existing = conn.execute(
+                "SELECT * FROM nas_connections WHERE id = ?", (connection_id,)
+            ).fetchone()
+            if existing is None:
+                raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
 
-        password_encrypted = (
-            encrypt_secret(password) if password else existing["password_encrypted"]
-        )
-        with self._get_connection() as conn:
-            conn.execute(
+            password_encrypted = (
+                encrypt_secret(password) if password else existing["password_encrypted"]
+            )
+            cursor = conn.execute(
                 """
                 UPDATE nas_connections
                 SET name = ?, host = ?, port = ?, use_https = ?, verify_ssl = ?,
@@ -303,16 +354,29 @@ class JobsStore:
                     connection_id,
                 ),
             )
-            conn.commit()
-        connection = self.get_connection(connection_id)
-        assert connection is not None
-        return connection
+            if cursor.rowcount == 0:
+                raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
+            row = conn.execute(
+                "SELECT * FROM nas_connections WHERE id = ?", (connection_id,)
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
+            job_count = conn.execute(
+                "SELECT COUNT(*) AS n FROM scan_jobs WHERE nas_connection_id = ?",
+                (connection_id,),
+            ).fetchone()["n"]
+            return self._connection_row_to_public(row, int(job_count))
 
     def delete_connection(self, connection_id: int) -> None:
         """Löscht eine Verbindung. Wirft ConnectionInUseError bei referenzierenden Jobs."""
-        if self.get_connection_row(connection_id) is None:
-            raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
-        with self._get_connection() as conn:
+        # Prüfung auf referenzierende Jobs und DELETE gehören zusammen, sonst
+        # kann parallel ein Job angelegt werden, der die gerade gelöschte
+        # Verbindung referenziert.
+        with self._write_transaction() as conn:
+            if conn.execute(
+                "SELECT 1 FROM nas_connections WHERE id = ?", (connection_id,)
+            ).fetchone() is None:
+                raise NotFoundError(f"NAS-Verbindung {connection_id} nicht gefunden")
             rows = conn.execute(
                 "SELECT name FROM scan_jobs WHERE nas_connection_id = ? ORDER BY name",
                 (connection_id,),
@@ -322,7 +386,6 @@ class JobsStore:
             conn.execute(
                 "DELETE FROM nas_connections WHERE id = ?", (connection_id,)
             )
-            conn.commit()
 
     def find_connection(
         self,
@@ -401,12 +464,17 @@ class JobsStore:
         slug: Optional[str] = None,
         created_at: Optional[str] = None,
     ) -> Dict[str, Any]:
-        if self.get_connection_row(nas_connection_id) is None:
-            raise NotFoundError(
-                f"NAS-Verbindung {nas_connection_id} nicht gefunden"
-            )
         now = _now_iso()
-        with self._get_connection() as conn:
+        # Slug-Suche und INSERT müssen in einer Transaktion liegen, sonst
+        # ermitteln zwei gleichzeitige Anlagen denselben freien Slug und der
+        # zweite INSERT verletzt die UNIQUE-Bedingung.
+        with self._write_transaction() as conn:
+            if conn.execute(
+                "SELECT 1 FROM nas_connections WHERE id = ?", (nas_connection_id,)
+            ).fetchone() is None:
+                raise NotFoundError(
+                    f"NAS-Verbindung {nas_connection_id} nicht gefunden"
+                )
             final_slug = self._unique_slug(conn, slug or generate_slug(name))
             conn.execute(
                 """
@@ -428,10 +496,12 @@ class JobsStore:
                     now,
                 ),
             )
-            conn.commit()
-        job = self.get_job(final_slug)
-        assert job is not None
-        return job
+            row = conn.execute(
+                "SELECT * FROM scan_jobs WHERE slug = ?", (final_slug,)
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"Scan-Job '{final_slug}' konnte nicht angelegt werden")
+            return self._job_row_to_dict(row)
 
     def update_job(
         self,
@@ -445,18 +515,23 @@ class JobsStore:
         paths: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Aktualisiert einen Job. Der Slug ist unveränderlich (Historie bleibt intakt)."""
-        with self._get_connection() as conn:
+        # Prüfen, Schreiben und Zurücklesen in EINER Transaktion: vorher lagen
+        # das über drei Verbindungen verteilt, ein DELETE dazwischen liess das
+        # UPDATE ins Leere laufen und der anschliessende assert riss den
+        # Request mit einem 500er ab.
+        with self._write_transaction() as conn:
             existing = conn.execute(
                 "SELECT slug FROM scan_jobs WHERE slug = ?", (slug,)
             ).fetchone()
             if existing is None:
                 raise NotFoundError(f"Scan-Job '{slug}' nicht gefunden")
-        if self.get_connection_row(nas_connection_id) is None:
-            raise NotFoundError(
-                f"NAS-Verbindung {nas_connection_id} nicht gefunden"
-            )
-        with self._get_connection() as conn:
-            conn.execute(
+            if conn.execute(
+                "SELECT 1 FROM nas_connections WHERE id = ?", (nas_connection_id,)
+            ).fetchone() is None:
+                raise NotFoundError(
+                    f"NAS-Verbindung {nas_connection_id} nicht gefunden"
+                )
+            cursor = conn.execute(
                 """
                 UPDATE scan_jobs
                 SET name = ?, nas_connection_id = ?, shares = ?, folders = ?,
@@ -475,10 +550,14 @@ class JobsStore:
                     slug,
                 ),
             )
-            conn.commit()
-        job = self.get_job(slug)
-        assert job is not None
-        return job
+            if cursor.rowcount == 0:
+                raise NotFoundError(f"Scan-Job '{slug}' nicht gefunden")
+            row = conn.execute(
+                "SELECT * FROM scan_jobs WHERE slug = ?", (slug,)
+            ).fetchone()
+            if row is None:
+                raise NotFoundError(f"Scan-Job '{slug}' nicht gefunden")
+            return self._job_row_to_dict(row)
 
     def delete_job(self, slug: str) -> None:
         with self._get_connection() as conn:
