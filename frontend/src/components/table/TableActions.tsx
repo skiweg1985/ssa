@@ -28,27 +28,30 @@ export function TableActions({
 
   return (
     <div className="flex items-center gap-1.5">
+      {/* Zeilenaktion, nicht die Hauptaktion der Seite: Umriss statt Füllung.
+          Gefüllt ist in dieser Ansicht nur „Neuer Scan" — eine Tabelle mit zwanzig
+          Zeilen hätte sonst zwanzig Primärbuttons, und keiner davon führt mehr. */}
       <Button
-        variant="primary"
+        variant="default"
         size="sm"
         onClick={() => onRun(scan.scan_slug)}
         disabled={!canRun}
-        className="h-10 min-h-[40px] w-10 min-w-[40px] p-0"
+        className="h-9 w-9 p-0 text-primary-600 dark:text-primary-400 hover:border-primary-400 dark:hover:border-primary-500 hover:bg-primary-50 dark:hover:bg-primary-900/30"
         title="Scan starten"
-        aria-label="Scan starten"
+        aria-label={`Scan „${scan.scan_name}" starten`}
       >
-        <Play className="h-4 w-4" />
+        <Play className="h-4 w-4" aria-hidden="true" />
       </Button>
       <DropdownMenu
         trigger={
           <Button
             variant="ghost"
             size="sm"
-            className="h-10 min-h-[40px] w-10 min-w-[40px] p-0"
+            className="h-9 w-9 p-0"
             title="Weitere Aktionen"
-            aria-label="Weitere Aktionen"
+            aria-label={`Weitere Aktionen für „${scan.scan_name}"`}
           >
-            <MoreVertical className="h-4 w-4" />
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
           </Button>
         }
       >

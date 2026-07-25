@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Loader2 } from "lucide-react"
 import { ToastProvider, useToast } from "@/components/ui/toast"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { Topbar } from "@/components/layout/Topbar"
 import { CommandPalette } from "@/components/layout/CommandPalette"
 import { ScanTable } from "@/components/table/ScanTable"
@@ -37,24 +38,29 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   const [editingJob, setEditingJob] = useState<ScanStatus | null>(null)
   const [selectedScanName, setSelectedScanName] = useState<string | null>(null)
   const [selectedScan, setSelectedScan] = useState<ScanStatus | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<ScanStatus | null>(null)
 
+  /* Stiller Erfolg.
+     Ein Toast „Erfolg — Scan wurde gestartet", während die Zeile daneben sichtbar auf
+     „läuft" springt, sagt nichts, was nicht schon dasteht. Gemeldet wird nur noch,
+     was fehlschlägt — oder was man sonst nirgends sehen würde. */
   const handleRun = async (scanName: string) => {
     try {
       await triggerScan(scanName)
-      showToast("Erfolg", `Scan '${scanName}' wurde gestartet`, "success")
       setTimeout(() => refetch(), 1000)
     } catch (err) {
-      showToast("Fehler", `Fehler beim Starten: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
+      showToast("Start fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")
     }
   }
 
   const handleReloadConfig = async () => {
     try {
       await reloadConfig()
-      showToast("Erfolg", "Scheduler wurde neu synchronisiert", "success")
+      // Diese Aktion hat keine sichtbare Wirkung in der Tabelle — sie bleibt gemeldet.
+      showToast("Scheduler synchronisiert", "config.yaml neu eingelesen, Zeitpläne aktualisiert.", "info")
       setTimeout(() => refetch(), 1000)
     } catch (err) {
-      showToast("Fehler", `Fehler beim Neuladen: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
+      showToast("Neuladen fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")
     }
   }
 
@@ -88,17 +94,21 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     setJobEditorOpen(true)
   }
 
-  const handleDeleteJob = async (scan: ScanStatus) => {
-    const deleteHistory = confirm(
-      `Scan-Job '${scan.scan_name}' löschen?\n\nOK = Job UND Verlauf löschen\nAbbrechen = nichts löschen`
-    )
-    if (!deleteHistory) return
+  /* Löschen nimmt den kompletten Verlauf mit und ist nicht rückholbar — hier ist ein
+     Dialog richtig, aber der native confirm() war es nicht: ungestylt, und „OK" stand
+     für „Job UND Verlauf löschen". Jetzt muss der Name getippt werden. */
+  const handleDeleteJob = (scan: ScanStatus) => {
+    setDeleteTarget(scan)
+  }
+
+  const confirmDeleteJob = async () => {
+    if (!deleteTarget) return
+    const scan = deleteTarget
     try {
       await deleteScanJob(scan.scan_slug, true)
-      showToast("Erfolg", `Scan '${scan.scan_name}' wurde gelöscht`, "success")
-      refetch()
+      refetch() // die Zeile verschwindet — das ist die Quittung
     } catch (err) {
-      showToast("Fehler", `Löschen fehlgeschlagen: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
+      showToast("Löschen fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")
     }
   }
 
@@ -112,7 +122,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col">
+    <div className="min-h-[100dvh] bg-slate-50 dark:bg-slate-900 flex flex-col">
       <Topbar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
@@ -231,6 +241,22 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       />
 
       <ApiTokensModal open={apiTokensOpen} onOpenChange={setApiTokensOpen} />
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Scan-Job löschen"
+        description={
+          <>
+            Der Job <strong>{deleteTarget?.scan_name}</strong> wird aus der Konfiguration
+            entfernt und aus dem Zeitplan genommen.
+          </>
+        }
+        consequence="Der komplette Verlauf dieses Jobs wird mitgelöscht. Frühere Scan-Ergebnisse und Größenverläufe sind danach nicht wiederherstellbar."
+        requireTyping={deleteTarget?.scan_name}
+        confirmLabel="Job und Verlauf löschen"
+        onConfirm={confirmDeleteJob}
+      />
     </div>
   )
 }
@@ -240,8 +266,8 @@ function AuthGate() {
 
   if (status === "checking") {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-500" />
+      <div className="min-h-[100dvh] bg-slate-50 dark:bg-slate-900 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary-500" aria-label="Wird geladen" />
       </div>
     )
   }

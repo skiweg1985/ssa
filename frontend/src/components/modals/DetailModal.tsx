@@ -106,9 +106,9 @@ export function DetailModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
+      <DialogHeader>
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <DialogTitle className="text-white flex items-center gap-2 min-w-0 flex-1">
+          <DialogTitle className="flex items-center gap-2 min-w-0 flex-1">
             <FileText className="h-5 w-5 flex-shrink-0" />
             <span className="truncate">Job-Details: {currentScan.scan_name}</span>
           </DialogTitle>
@@ -122,7 +122,7 @@ export function DetailModal({
         {/* Progress Section for Running/Completed Scans */}
         {(currentScan.status === "running" || displayProgress?.status === "completed") && (
           <div className={cn(
-            "mb-6 p-4 rounded-lg border transition-all duration-500",
+            "mb-6 p-4 rounded-lg border transition-[background-color,border-color] duration-medium ease-out",
             displayProgress?.status === "completed" 
               ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700" 
               : "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700"
@@ -146,7 +146,7 @@ export function DetailModal({
                   <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
                     <div
                       className={cn(
-                        "h-full bg-primary-500 transition-all duration-500 rounded-full",
+                        "h-full bg-primary-500 transition-[width] duration-medium ease-out rounded-full",
                         (displayProgress.progress.finished || displayProgress.status === "completed") && "bg-emerald-500"
                       )}
                       style={{
@@ -163,10 +163,10 @@ export function DetailModal({
               )}
               {displayProgress?.progress && (
                 <>
-                  <div className="grid grid-cols-3 gap-4 text-xs">
+                  <div className="grid grid-cols-3 gap-4 text-xs tabular-nums">
                     <div>
-                      <div className="text-slate-500 dark:text-slate-400">Größe</div>
-                      <div className="font-semibold text-slate-900 dark:text-slate-100">{formatSizeCompact(displayProgress.progress.total_size)}</div>
+                      <div className="label-mono text-slate-500 dark:text-slate-400">Größe</div>
+                      <div className="mt-0.5 font-mono font-medium text-slate-900 dark:text-slate-100">{formatSizeCompact(displayProgress.progress.total_size)}</div>
                     </div>
                     <div>
                       <div className="text-slate-500 dark:text-slate-400">Ordner</div>

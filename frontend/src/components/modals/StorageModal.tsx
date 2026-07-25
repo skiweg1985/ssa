@@ -19,6 +19,7 @@ import {
 import type { StorageStats, FoldersResponse, CleanupPreview } from "@/types/api"
 import { Loader2, Trash2, Database, BarChart3, FolderOpen, CheckCircle2, XCircle } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 
 interface StorageModalProps {
   open: boolean
@@ -33,6 +34,7 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cleanupDays, setCleanupDays] = useState(90)
+  const [deleteTarget, setDeleteTarget] = useState<{ nasHost: string; folderPath: string } | null>(null)
   const { showToast } = useToast()
 
   const loadData = useCallback(async () => {
@@ -67,8 +69,7 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
     try {
       setLoading(true)
       await executeCleanup({ days: cleanupDays })
-      showToast("Erfolg", "Bereinigung erfolgreich durchgeführt", "success")
-      loadData()
+      loadData() // die Zahlen darunter aktualisieren sich sichtbar
     } catch (err) {
       showToast("Fehler", `Fehler bei Bereinigung: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
     } finally {
@@ -76,16 +77,21 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
     }
   }
 
-  async function handleDeleteFolder(nasHost: string, folderPath: string) {
-    if (!confirm(`Möchten Sie wirklich alle Ergebnisse für ${folderPath} löschen?`)) return
+  function handleDeleteFolder(nasHost: string, folderPath: string) {
+    setDeleteTarget({ nasHost, folderPath })
+  }
 
+  async function confirmDeleteFolder() {
+    if (!deleteTarget) return
     try {
       setLoading(true)
-      await deleteFolderResults({ nas_host: nasHost, folder_path: folderPath })
-      showToast("Erfolg", "Ordner-Ergebnisse gelöscht", "success")
-      loadData()
+      await deleteFolderResults({
+        nas_host: deleteTarget.nasHost,
+        folder_path: deleteTarget.folderPath,
+      })
+      loadData() // der Eintrag verschwindet aus der Liste
     } catch (err) {
-      showToast("Fehler", `Fehler beim Löschen: ${err instanceof Error ? err.message : "Unbekannt"}`, "error")
+      showToast("Löschen fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")
     } finally {
       setLoading(false)
     }
@@ -93,8 +99,8 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           <Database className="h-5 w-5 flex-shrink-0" />
           <span className="truncate">Storage-Management</span>
         </DialogTitle>
@@ -254,6 +260,24 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
           Schließen
         </Button>
       </DialogFooter>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="Ordner-Ergebnisse löschen"
+        description={
+          <>
+            Alle gespeicherten Scan-Ergebnisse für{" "}
+            <code className="rounded-sm bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 font-mono text-xs">
+              {deleteTarget?.folderPath}
+            </code>{" "}
+            werden aus der Datenbank entfernt.
+          </>
+        }
+        consequence="Der Größenverlauf dieses Ordners geht dabei verloren und lässt sich nur durch neue Scans wieder aufbauen."
+        confirmLabel="Ergebnisse löschen"
+        onConfirm={confirmDeleteFolder}
+      />
     </Dialog>
   )
 }

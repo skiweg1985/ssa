@@ -41,7 +41,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={{ toasts, showToast }}>
       {children}
-      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+      {/* Fest in der Ecke gestapelt: ein neuer Toast schiebt keinen bestehenden
+          und verschiebt nichts im Dokument. */}
+      <div
+        className="fixed top-4 right-4 left-4 sm:left-auto z-toast flex flex-col gap-2 pointer-events-none"
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
+      >
         {toasts.map((toast) => (
           <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
         ))}
@@ -68,31 +75,44 @@ function ToastItem({
   toast: Toast
   onRemove: (id: string) => void
 }) {
-  const typeStyles = {
-    success: "bg-green-50 dark:bg-green-900/90 border-green-200 dark:border-green-700 text-green-800 dark:text-green-200",
-    error: "bg-red-50 dark:bg-red-900/90 border-red-200 dark:border-red-700 text-red-800 dark:text-red-200",
-    warning: "bg-yellow-50 dark:bg-yellow-900/90 border-yellow-200 dark:border-yellow-700 text-yellow-800 dark:text-yellow-200",
-    info: "bg-blue-50 dark:bg-blue-900/90 border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200",
+  /* Der Status sitzt in einem kleinen Punkt, nicht in einem 4 px dicken Seitenstreifen.
+     Der Streifen war die auffälligste Kartenform der Vorlage — und die eine, die
+     jedes generierte Dashboard trägt. */
+  const dotStyles = {
+    success: "bg-emerald-600 dark:bg-emerald-400",
+    error: "bg-red-600 dark:bg-red-400",
+    warning: "bg-amber-600 dark:bg-amber-400",
+    info: "bg-primary-500 dark:bg-primary-400",
   }
 
   return (
     <div
       className={cn(
-        "bg-white dark:bg-slate-800 border-l-4 rounded-lg shadow-lg p-4 min-w-[300px] animate-in slide-in-from-right backdrop-blur-sm",
-        typeStyles[toast.type]
+        "pointer-events-auto flex gap-3 rounded-md border border-slate-200 dark:border-slate-700",
+        "bg-white dark:bg-slate-800 p-3.5 shadow-lg sm:min-w-[320px] sm:max-w-sm",
+        "animate-in slide-in-from-right"
       )}
     >
-      <div className="flex justify-between items-start mb-2">
-        <span className="font-semibold">{toast.title}</span>
-        <button
-          className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded"
-          onClick={() => onRemove(toast.id)}
-          aria-label="Toast schließen"
-        >
-          <X className="h-4 w-4" />
-        </button>
+      <span
+        className={cn("mt-1.5 h-2 w-2 flex-shrink-0 rounded-full", dotStyles[toast.type])}
+        aria-hidden="true"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="font-display text-sm font-semibold tracking-display text-slate-900 dark:text-slate-50">
+          {toast.title}
+        </div>
+        <div className="mt-0.5 text-sm text-slate-600 dark:text-slate-300 break-words">
+          {toast.message}
+        </div>
       </div>
-      <div className="text-sm text-slate-700 dark:text-slate-300">{toast.message}</div>
+      <button
+        type="button"
+        className="-mr-1 -mt-1 h-7 w-7 flex-shrink-0 rounded-sm flex items-center justify-center text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-50 hover:bg-slate-100 dark:hover:bg-slate-700 transition-[color,background-color] duration-instant ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+        onClick={() => onRemove(toast.id)}
+        aria-label="Meldung schließen"
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
     </div>
   )
 }

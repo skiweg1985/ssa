@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/components/ui/toast"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { fetchApiTokens, createApiToken, deleteApiToken } from "@/lib/api"
 import type { ApiTokenPublic, ApiTokenCreated } from "@/types/api"
 import { formatRelativeTime } from "@/lib/utils"
@@ -42,6 +43,7 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState<ApiTokenCreated | null>(null)
   const [copied, setCopied] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<ApiTokenPublic | null>(null)
 
   const loadTokens = useCallback(async () => {
     setLoading(true)
@@ -96,19 +98,16 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
     }
   }
 
-  async function handleDelete(token: ApiTokenPublic) {
-    if (
-      !confirm(
-        `API-Token '${token.name}' widerrufen?\n\nMonitoring-Systeme, die dieses Token verwenden, verlieren sofort den Zugriff.`
-      )
-    ) {
-      return
-    }
+  function handleDelete(token: ApiTokenPublic) {
+    setDeleteTarget(token)
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteApiToken(token.id)
-      showToast("Erfolg", `Token '${token.name}' widerrufen`, "success")
-      if (created?.id === token.id) setCreated(null)
-      loadTokens()
+      await deleteApiToken(deleteTarget.id)
+      if (created?.id === deleteTarget.id) setCreated(null)
+      loadTokens() // die Zeile verschwindet aus der Liste
     } catch (err) {
       showToast(
         "Fehler",
@@ -120,8 +119,8 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} maxWidth="2xl">
-      <DialogHeader className="bg-gradient-to-r from-emerald-500 to-teal-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           <KeyRound className="h-5 w-5 flex-shrink-0" />
           <span className="truncate">API-Tokens für Monitoring</span>
         </DialogTitle>
@@ -248,6 +247,21 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
           Schließen
         </Button>
       </DialogFooter>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="API-Token widerrufen"
+        description={
+          <>
+            Das Token <strong>{deleteTarget?.name}</strong> verliert sofort jeden Zugriff.
+          </>
+        }
+        consequence="Monitoring-Systeme, die dieses Token verwenden, erhalten ab sofort HTTP 401. Das Token lässt sich nicht reaktivieren — es muss ein neues erzeugt und dort eingetragen werden."
+        requireTyping={deleteTarget?.name}
+        confirmLabel="Token widerrufen"
+        onConfirm={confirmDelete}
+      />
     </Dialog>
   )
 }

@@ -102,7 +102,7 @@ export function Select({
           <div
             ref={menuRef}
             role="listbox"
-            className="fixed z-[1100] max-h-60 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 shadow-xl"
+            className="fixed z-popover max-h-60 overflow-y-auto rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 py-1 shadow-xl"
             style={{
               top: `${position.top}px`,
               left: `${position.left}px`,

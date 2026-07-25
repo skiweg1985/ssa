@@ -215,7 +215,7 @@ export function DirectoryPicker({
             ) : (
               <Folder className="h-4 w-4 flex-shrink-0 text-amber-500" />
             )}
-            <span className="truncate text-sm text-slate-700 dark:text-slate-300">
+            <span className="truncate font-mono text-xs text-slate-700 dark:text-slate-300">
               {node.name}
             </span>
           </button>

@@ -68,7 +68,7 @@ export function TableRow({
   return (
     <tr
       className={cn(
-        "border-b border-slate-100 dark:border-slate-700 transition-all duration-150 group",
+        "border-b border-slate-100 dark:border-slate-700 transition-[background-color] duration-instant ease-out group",
         "hover:bg-slate-50/50 dark:hover:bg-slate-800/50 focus-within:bg-slate-50 dark:focus-within:bg-slate-800",
         "hover:shadow-sm",
         isRunning && effectiveStatus !== "completed" && "bg-blue-50/30 dark:bg-blue-900/20",
@@ -102,7 +102,7 @@ export function TableRow({
                     {hasProgressPercent && (
                       <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative mb-1">
                         {(progress.progress.finished || progress.status === "completed") ? (
-                          <div className="h-full bg-emerald-500 rounded-full w-full transition-all duration-500 animate-in fade-in" />
+                          <div className="h-full bg-emerald-500 rounded-full w-full transition-[width] duration-medium ease-out animate-in fade-in" />
                         ) : (
                           <>
                             <div 
@@ -138,8 +138,8 @@ export function TableRow({
                     </div>
                   </>
                 ) : (
-                  <div className="text-[10px] text-slate-500 dark:text-slate-400 italic">
-                    Warte auf Ergebnisse...
+                  <div className="label-mono text-slate-500 dark:text-slate-400">
+                    Warte auf Ergebnisse …
                   </div>
                 )}
               </div>

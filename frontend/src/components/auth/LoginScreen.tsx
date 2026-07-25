@@ -33,24 +33,27 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
 
   return (
     <div
-      className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center px-4"
+      className="min-h-[100dvh] bg-slate-50 dark:bg-slate-900 flex items-center justify-center px-4"
       style={{
         paddingTop: "max(1rem, env(safe-area-inset-top))",
         paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
       }}
     >
-      <div className="w-full max-w-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-lg overflow-hidden">
-        {/* Gradient-Header (Dialog-Konvention) */}
-        <div className="bg-gradient-to-r from-primary-500 to-purple-600 px-6 py-6 text-white">
+      <div className="w-full max-w-sm rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 overflow-hidden">
+        {/* Kopf in der Systemstimme: Inset-Fläche, Hairline nach unten, EIN Akzent am Icon.
+            Kein Farbverlauf — der trug hier keine Information, nur Aufmerksamkeit. */}
+        <div className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="rounded-lg bg-white/15 p-2">
-              <HardDrive className="h-6 w-6" />
+            <div className="rounded-md border border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/30 p-2 text-primary-600 dark:text-primary-400">
+              <HardDrive className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="min-w-0">
-              <h1 className="text-lg font-semibold leading-tight truncate">
+              <h1 className="font-display text-base font-semibold leading-tight tracking-display truncate text-slate-900 dark:text-slate-50">
                 Synology Space Analyzer
               </h1>
-              <p className="text-sm text-white/80">Anmeldung erforderlich</p>
+              <p className="label-mono mt-1 text-slate-500 dark:text-slate-400">
+                Anmeldung erforderlich
+              </p>
             </div>
           </div>
         </div>
@@ -106,6 +109,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           <Button
             type="submit"
             variant="primary"
+            size="lg"
             className="w-full"
             isLoading={loading}
             disabled={!password}

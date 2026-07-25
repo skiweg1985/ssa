@@ -54,7 +54,7 @@ export function TabsTrigger({ className, value, children, ...props }: TabsTrigge
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ring-offset-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2",
+        "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium ring-offset-white transition-[background-color,color,box-shadow] duration-instant ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2",
         isActive
           ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
           : "text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-700/50",
