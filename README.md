@@ -213,8 +213,15 @@ bei vollem Speicher **und** bei abgestürztem RAID auf.
 **Kanäle `health`** (via SNMP): Systemstatus · Temperatur · Netzteil ·
 Systemlüfter · CPU-Lüfter · DSM-Update verfügbar · Platten · Platten nicht
 normal · Höchste Plattentemperatur · RAID-Verbünde · RAID mit Fehler · RAID in
-Wartung · CPU · RAM belegt — plus je RAID die Belegung, USV-Kanäle sofern ein
-Gerät angeschlossen ist, und optional je Platte die Temperatur (`?disks=1`).
+Wartung · CPU · RAM belegt — plus USV-Kanäle sofern ein Gerät angeschlossen
+ist, und optional je Platte die Temperatur (`?disks=1`).
+
+Der `health`-Sensor liefert bewusst **keine Belegungswerte**: Die RAID-MIB
+listet Storage Pools und Volumes in derselben Tabelle, ohne sie zu
+unterscheiden — und beim Pool zählt der *nicht zugewiesene* Platz als „frei".
+Ein vollständig zugewiesener Pool meldet dort also ~100 %, obwohl nichts voll
+ist. Für Kapazität ist der `capacity`-Sensor zuständig, der über die File
+Station API eindeutige Volume-Werte bekommt.
 
 Statuskanäle nutzen durchgängig dieselbe Skala:
 

@@ -180,6 +180,29 @@ class TestBuildRaids:
         )[0]
         assert raid["used_percent"] is None
 
+    def test_table_mixes_pools_and_volumes(self):
+        """
+        Rohdaten eines DS224+ (DSM 7.2): Volume und Storage Pool stehen in
+        derselben Tabelle, unterscheidbar nur am Namen.
+
+        Beim Pool zählt der nicht zugewiesene Platz als "frei" - deshalb die
+        100 % trotz halb leerem Volume. Der Wert wird berechnet, taugt aber
+        nicht zum Alarmieren; der PRTG-Health-Sensor baut daraus bewusst
+        keinen Kanal.
+        """
+        raids = _build_raids(
+            [
+                {"name": "Volume 1", "status": "1",
+                 "total_size": "3675804811264", "free_size": "1658928504832"},
+                {"name": "Storage Pool 1", "status": "1",
+                 "total_size": "3829772845056", "free_size": "796917760"},
+            ]
+        )
+        by_name = {r["name"]: r for r in raids}
+        assert by_name["Volume 1"]["used_percent"] == 54.9
+        assert by_name["Storage Pool 1"]["used_percent"] == 100.0
+        assert all(r["status"] == "ok" for r in raids)
+
 
 class TestBuildUps:
     def test_no_ups_connected(self):

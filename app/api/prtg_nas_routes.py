@@ -38,12 +38,16 @@ DEFAULT_MAX_DISKS = 24
 VOLUME_WARN_PERCENT = 85.0
 VOLUME_ERR_PERCENT = 95.0
 
-# Temperaturgrenzen: Gehäusewert des NAS bzw. Platten. Platten laufen
-# spezifikationsgemäß bis ~60 °C, die Lebensdauer leidet aber deutlich früher.
+# Temperaturgrenzen: Gehäusewert des NAS bzw. Platten.
+#
+# Bei den Platten bewusst nicht zu scharf: Festplatten laufen im Normalbetrieb
+# bei 35-45 °C, im Sommer auch darüber. Eine Warnung ab 45 °C würde bei vielen
+# Geräten dauerhaft anstehen und damit ihren Zweck verlieren. Synology selbst
+# alarmiert erst im Bereich um 60 °C. (Referenzmessung DS224+ mit SSDs: 31/33 °C)
 NAS_TEMP_WARN = 60.0
 NAS_TEMP_ERR = 70.0
-DISK_TEMP_WARN = 45.0
-DISK_TEMP_ERR = 55.0
+DISK_TEMP_WARN = 50.0
+DISK_TEMP_ERR = 60.0
 
 # Statuskanäle nutzen durchgängig dieselbe Skala, damit ein Schwellwertpaar
 # für alle passt: Wartung bleibt grün, Unbekanntes warnt, Fehler ist rot.
@@ -360,30 +364,22 @@ async def prtg_nas_health(
                 continue
             channels.append(make_channel(name, value, with_limits=limits, **options))
 
-        # Belegung je RAID-Verbund (entspricht in DSM dem Volume)
+        # Bewusst KEINE Belegungskanäle aus der RAID-MIB.
+        #
+        # Sie listet Storage Pools und Volumes in derselben Tabelle, ohne
+        # Spalte zur Unterscheidung - und "freeSize" bedeutet je Ebene etwas
+        # anderes: beim Volume der freie Speicher, beim Pool der noch NICHT
+        # einem Volume zugewiesene Platz. Ein normal eingerichteter Pool ist
+        # vollständig zugewiesen und meldet damit zwangsläufig ~100 %, was
+        # hier einen Dauer-Fehlalarm erzeugen würde (an einem DS224+ mit
+        # DSM 7.2 verifiziert: Pool 100 %, Volume darauf 54,9 %).
+        #
+        # Kapazität ist deshalb Sache des capacity-Sensors: der bekommt über
+        # volume_status eindeutige Volume-Werte. Hier zählt nur der Zustand.
         budget = MAX_TOTAL_CHANNELS - len(channels)
         notes: List[str] = []
         if missing:
             notes.append("ohne " + ", ".join(missing))
-        for raid in raid_list:
-            if budget <= 0:
-                break
-            if raid.get("used_percent") is None:
-                continue
-            channels.append(
-                make_channel(
-                    f"{raid['name']} Belegung",
-                    raid["used_percent"],
-                    unit="Percent",
-                    decimals=1,
-                    warn_max=VOLUME_WARN_PERCENT,
-                    err_max=VOLUME_ERR_PERCENT,
-                    warn_msg=f"{raid['name']} füllt sich",
-                    err_msg=f"{raid['name']} ist nahezu voll",
-                    with_limits=limits,
-                )
-            )
-            budget -= 1
 
         if ups:
             for name, value, unit, extra in (

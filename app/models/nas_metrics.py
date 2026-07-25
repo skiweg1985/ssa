@@ -54,6 +54,15 @@ class DiskMetrics(BaseModel):
 
 
 class RaidMetrics(BaseModel):
+    """
+    Ein Eintrag der RAID-MIB - das kann ein Volume ODER ein Storage Pool sein.
+
+    `used_percent` ist deshalb nicht zum Alarmieren geeignet: bei einem Pool
+    zählt SNMP den nicht zugewiesenen Platz als "frei", ein vollständig
+    zugewiesener Pool meldet also ~100 %. Für Kapazitätsalarme die Volumes aus
+    `CapacityMetrics` verwenden.
+    """
+
     name: str
     status: str          # "ok" | "busy" | "error" | "unknown"
     status_label: str

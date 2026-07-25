@@ -534,12 +534,59 @@ class TestHealthSensor:
             "Systemstatus", "Temperatur", "Netzteil", "Systemlüfter", "CPU-Lüfter",
             "DSM-Update verfügbar", "Platten", "Platten nicht normal",
             "Höchste Plattentemperatur", "RAID-Verbünde", "RAID mit Fehler",
-            "RAID in Wartung", "CPU", "RAM belegt", "Volume 1 Belegung",
+            "RAID in Wartung", "CPU", "RAM belegt",
         ):
             assert name in channels, f"Kanal '{name}' fehlt"
         assert channels["Platten"]["value"] == "2"
         assert channels["Platten nicht normal"]["value"] == "1"
         assert channels["Höchste Plattentemperatur"]["value"] == "58.0"
+
+    def test_no_capacity_channels_from_raid_mib(
+        self, client, auth_headers, connection, mock_health, monkeypatch
+    ):
+        """
+        Die RAID-MIB liefert keine alarmtauglichen Belegungswerte.
+
+        Sie listet Storage Pools und Volumes in derselben Tabelle ohne
+        Typ-Spalte; beim Pool zählt der nicht zugewiesene Platz als "frei".
+        Ein vollständig zugewiesener Pool meldet damit ~100 % - als
+        PRTG-Kanal mit err_max=95 wäre das ein Dauer-Fehlalarm auf jedem
+        normal eingerichteten NAS. Verifiziert an einem DS224+ (DSM 7.2):
+        Pool 100 %, Volume darauf 54,9 %.
+
+        Kapazität kommt deshalb ausschließlich aus dem capacity-Sensor.
+        """
+        import app.services.nas_metrics as metrics_module
+        import app.services.snmp_client as snmp_module
+
+        async def pool_and_volume(config):
+            data = dict(HEALTH)
+            data["raids"] = [
+                {"name": "Storage Pool 1", "status": "ok", "status_label": "Normal",
+                 "total_bytes": 3_829_772_845_056, "free_bytes": 796_917_760,
+                 "used_percent": 100.0},
+                {"name": "Volume 1", "status": "ok", "status_label": "Normal",
+                 "total_bytes": 3_675_804_811_264, "free_bytes": 1_658_928_500_736,
+                 "used_percent": 54.9},
+            ]
+            return data
+
+        monkeypatch.setattr(snmp_module, "collect_snmp_health", pool_and_volume)
+        metrics_module.clear_cache()
+
+        channels = channels_by_name(
+            client.get(
+                f"/api/prtg/nas/{connection['id']}/health", headers=auth_headers
+            ).json()
+        )
+        for name in channels:
+            assert "Belegung" not in name, (
+                f"'{name}' stammt aus der RAID-MIB und würde bei einem "
+                "vollständig zugewiesenen Storage Pool dauerhaft alarmieren"
+            )
+        # Der Zustand der Verbünde wird sehr wohl gemeldet
+        assert channels["RAID-Verbünde"]["value"] == "2"
+        assert channels["RAID mit Fehler"]["value"] == "0"
 
     def test_degraded_raid_is_an_error(self, client, auth_headers, connection, mock_health):
         body = client.get(

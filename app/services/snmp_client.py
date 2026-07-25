@@ -328,6 +328,19 @@ def _build_disks(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def _build_raids(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    RAID-Verbünde aus der RAID-MIB.
+
+    ACHTUNG bei used_percent: Die Tabelle enthält Storage Pools UND Volumes,
+    ohne Spalte zur Unterscheidung (an einem DS224+/DSM 7.2 verifiziert). Bei
+    einem Volume ist freeSize der freie Speicher, bei einem Pool dagegen der
+    noch nicht einem Volume zugewiesene Platz - ein vollständig zugewiesener
+    Pool meldet also ~100 %, obwohl nichts voll ist.
+
+    Der Wert bleibt hier erhalten (im JSON ist er mit dem Namen einzuordnen),
+    taugt aber nicht zum Alarmieren. Dafür ist die Volume-Kapazität aus der
+    File-Station-Quelle zuständig.
+    """
     raids = []
     for row in rows:
         status, label = _map_status(_as_int(row.get("status")), _RAID_STATUS)
