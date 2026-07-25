@@ -439,6 +439,12 @@ class ScannerService:
                 # Speichere erwartete Pfade im Status für korrekte finished-Prüfung (normalisiert)
                 self._set_expected_paths(scan_slug, paths)
 
+                # Erwartete Ordnerzahl am Ergebnis festhalten: gespeichert werden
+                # nur erfolgreiche Ordner, also liesse sich später sonst nicht
+                # sagen, ob ein fehlender Ordner fehlschlug oder erst nach dem
+                # Lauf konfiguriert wurde.
+                scan_result.expected_folders = len(paths)
+
                 # Führe Scans für alle Pfade aus
                 result_items = []
                 

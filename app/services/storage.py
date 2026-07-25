@@ -147,6 +147,7 @@ class ScanStorage:
                         elapsed_time_ms INTEGER,
                         error TEXT,
                         scan_error TEXT,
+                        expected_folders INTEGER,
                         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         UNIQUE(nas_host, folder_path, timestamp)
@@ -186,7 +187,24 @@ class ScanStorage:
                 
                 conn.commit()
             else:
-                # Tabelle existiert bereits - erstelle nur fehlende Indizes
+                # Tabelle existiert bereits - fehlende Spalten nachziehen.
+                # Ohne expected_folders liesse sich bei Ergebnissen aus
+                # aelteren Versionen nicht sagen, wie viele Ordner der Lauf
+                # scannen sollte (es werden nur erfolgreiche persistiert).
+                columns = {
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(scan_results)")
+                }
+                if "expected_folders" not in columns:
+                    logger.info(
+                        "Migration: Spalte 'expected_folders' zu scan_results hinzufuegen"
+                    )
+                    conn.execute(
+                        "ALTER TABLE scan_results ADD COLUMN expected_folders INTEGER"
+                    )
+                    conn.commit()
+
+                # Erstelle nur fehlende Indizes
                 # Prüfe welche Indizes bereits existieren
                 cursor = conn.execute("""
                     SELECT name FROM sqlite_master 
@@ -269,7 +287,8 @@ class ScanStorage:
                         total_size_unit,
                         elapsed_time_ms,
                         error,
-                        scan_error
+                        scan_error,
+                        expected_folders
                     FROM scan_results
                     ORDER BY scan_slug, timestamp ASC, folder_path
                 """)
@@ -283,13 +302,15 @@ class ScanStorage:
                 # Status eines nachfolgenden Fehllaufs.
                 current_status = None
                 current_scan_error = None
+                current_expected_folders = None
                 results_for_scan = []
                 items_for_result = []
                 
                 for row in cursor.fetchall():
                     (scan_slug, scan_name, timestamp_str, nas_host, folder_path, status, success,
                      num_dir, num_file, total_size_bytes, total_size_formatted,
-                     total_size_unit, elapsed_time_ms, error, scan_error) = row
+                     total_size_unit, elapsed_time_ms, error, scan_error,
+                     expected_folders) = row
                     
                     timestamp = datetime.fromisoformat(timestamp_str)
                     
@@ -303,6 +324,7 @@ class ScanStorage:
                                 timestamp=current_timestamp,
                                 status=current_status or "completed",
                                 error=current_scan_error,
+                                expected_folders=current_expected_folders,
                                 results=items_for_result
                             )
                             results_for_scan.append(result)
@@ -325,6 +347,7 @@ class ScanStorage:
                             timestamp=timestamp,
                             status=status,
                             error=scan_error,
+                            expected_folders=expected_folders,
                             results=[]  # Leere results für fehlgeschlagene Scans
                         )
                         results_for_scan.append(result)
@@ -334,6 +357,7 @@ class ScanStorage:
                         current_timestamp = timestamp
                         current_status = status
                         current_scan_error = scan_error
+                        current_expected_folders = expected_folders
                         continue
                     
                     # Neue ScanResult-Gruppe?
@@ -346,6 +370,7 @@ class ScanStorage:
                                 timestamp=current_timestamp,
                                 status=current_status or "completed",
                                 error=current_scan_error,
+                                expected_folders=current_expected_folders,
                                 results=items_for_result
                             )
                             results_for_scan.append(result)
@@ -363,6 +388,7 @@ class ScanStorage:
                     current_timestamp = timestamp
                     current_status = status
                     current_scan_error = scan_error
+                    current_expected_folders = expected_folders
                     
                     # Erstelle ScanResultItem
                     total_size = None
@@ -398,6 +424,7 @@ class ScanStorage:
                         timestamp=current_timestamp,
                         status=current_status or "completed",
                         error=current_scan_error,
+                        expected_folders=current_expected_folders,
                         results=items_for_result
                     )
                     results_for_scan.append(result)
@@ -452,8 +479,9 @@ class ScanStorage:
                             INSERT OR REPLACE INTO scan_results 
                             (id, nas_host, folder_path, scan_slug, scan_name, timestamp, status, success,
                              num_dir, num_file, total_size_bytes, total_size_formatted,
-                             total_size_unit, elapsed_time_ms, error, scan_error, updated_at)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             total_size_unit, elapsed_time_ms, error, scan_error,
+                             expected_folders, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
                             primary_key,
                             nas_host,
@@ -471,6 +499,7 @@ class ScanStorage:
                             item.elapsed_time_ms,
                             item.error,
                             result.error,
+                            result.expected_folders,
                             datetime.now(timezone.utc).isoformat()
                         ))
                     
@@ -493,8 +522,9 @@ class ScanStorage:
                         INSERT OR REPLACE INTO scan_results 
                         (id, nas_host, folder_path, scan_slug, scan_name, timestamp, status, success,
                          num_dir, num_file, total_size_bytes, total_size_formatted,
-                         total_size_unit, elapsed_time_ms, error, scan_error, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         total_size_unit, elapsed_time_ms, error, scan_error,
+                         expected_folders, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         primary_key,
                         nas_host,
@@ -512,6 +542,7 @@ class ScanStorage:
                         None,
                         None,
                         result.error,
+                        result.expected_folders,
                         datetime.now(timezone.utc).isoformat()
                     ))
                     conn.commit()

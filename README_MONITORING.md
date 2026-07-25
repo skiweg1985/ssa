@@ -202,11 +202,14 @@ Zwei Festlegungen, die Rückfragen erübrigen:
   Lauf. Die **Messwerte** stehen in `last_success` und stammen vom letzten
   erfolgreichen Lauf. Ein Fehllauf setzt also `severity` auf 2, lässt die
   Messwerte aber stehen — die Charts reißen nicht auf 0.
-- `folders_failed` wird als `max(erwartete Pfade - erfolgreiche, explizite
-  Fehler, 0)` berechnet. Nötig, weil nur erfolgreiche Ordner gespeichert
-  werden: nach einem Neustart stünde dort sonst fälschlich 0. **Ausnahme:** wurde
-  die Job-Konfiguration nach dem Lauf geändert, zählen nur belegte Fehler — ein
-  neu hinzugefügter Pfad ist kein rückwirkender Fehlschlag.
+- `folders_failed` wird als `max(Sollwert des Laufs - erfolgreiche, explizite
+  Fehler, 0)` berechnet. Nötig, weil nur erfolgreiche Ordner gespeichert werden:
+  nach einem Neustart stünde dort sonst fälschlich 0. Der **Sollwert gehört zum
+  Lauf**, nicht zum Job — damit ist ein Pfad, der erst nach dem Lauf
+  konfiguriert wurde, kein rückwirkender Fehlschlag, und ein echter Fehler
+  bleibt trotz Job-Änderungen sichtbar. Läufe aus Versionen vor dieser
+  Änderung tragen keinen Sollwert; dort gilt die aktuelle Konfiguration, und
+  im Zweifel wird ein Fehler gemeldet statt verschwiegen.
 
 ### Beispiel: alles in Ordnung
 
@@ -579,7 +582,7 @@ plus **ein Kanal je gescanntem Ordner** (Kanalname = Pfad, z.B. `/design`).
 | 0 | letzter Lauf erfolgreich | OK |
 | 1 | Scan läuft gerade | OK |
 | 2 | Job deaktiviert | OK |
-| 3 | Job nicht eingeplant | Warning |
+| 3 | Job nicht eingeplant **oder** letzter Lauf abgebrochen | Warning |
 | 4 | letzter Lauf fehlgeschlagen | Error |
 
 Messwerte stammen immer vom letzten **erfolgreichen** Lauf — ein Fehllauf macht
@@ -626,6 +629,7 @@ einzelnen Zahlenkanal mit einem Schwellwertpaar auswertet:
 | `partial` | 1 | 0 — Signal über den Kanal „Ordner Fehler" |
 | `stale` | 1 | 0 — Signal über die Limits des Alters-Kanals |
 | `unscheduled` | 1 | **3** |
+| `cancelled` | 1 | **3** — teilt den Wert mit `unscheduled` |
 | `overdue` | 2 | 0 — Signal über die Limits des Alters-Kanals |
 | `failed` | 2 | 4 |
 | `never_run` | 1 | `prtg.error`, HTTP 200 |

@@ -51,6 +51,13 @@ STATUS_DISABLED = 2    # Job deaktiviert
 STATUS_STALE = 3       # eingeplant, aber kein aktueller Lauf -> Warning
 STATUS_FAILED = 4      # letzter Lauf fehlgeschlagen -> Error
 
+# Ein abgebrochener Lauf teilt den Wert mit STATUS_STALE. Der Warnbereich des
+# Kanals ist durch die Limits (2.5/3.5) genau ein Wert breit, und "abgebrochen"
+# ist eine Warnung: kein Fehler, aber auch keine frischen Daten. Ein eigener
+# Wert wäre entweder OK (< 2.5) oder Error (> 3.5) - beides falsch. Welcher der
+# beiden Gründe zutrifft, steht in der Sensormeldung.
+STATUS_CANCELLED = STATUS_STALE
+
 
 # Zeit-, Pfad- und Schwellwert-Helfer stehen in app/services/monitoring.py,
 # damit PRTG- und generische Monitoring-Endpoints dieselben Werte berechnen.
@@ -111,7 +118,7 @@ async def prtg_scan(
         # der aber ausgesetzt wird, wenn die Konfiguration nach dem Lauf
         # geändert wurde (neu hinzugefügte Pfade sind keine Fehler).
         _, failed_folders, _ = folder_balance(
-            job, latest_completed, expected_path_count(job)
+            latest_completed, expected_path_count(job)
         )
 
         # Status ermitteln
@@ -124,6 +131,11 @@ async def prtg_scan(
         elif latest.status == "failed":
             status_code = STATUS_FAILED
             status_text = f"Letzter Lauf fehlgeschlagen: {latest.error or 'unbekannt'}"
+        elif latest.status == "cancelled":
+            # Ohne diesen Zweig fiele ein abgebrochener Lauf auf STATUS_OK
+            # durch - der Sensor stünde nach einem Abbruch auf grün.
+            status_code = STATUS_CANCELLED
+            status_text = f"Letzter Lauf abgebrochen: {latest.error or 'ohne Angabe'}"
         elif scheduler_service.get_job_info(slug) is None:
             status_code = STATUS_STALE
             status_text = "Job ist nicht eingeplant"
@@ -175,7 +187,7 @@ async def prtg_scan(
                 custom_unit="Code",
                 warn_max=2.5,
                 err_max=3.5,
-                warn_msg="Job ist nicht eingeplant",
+                warn_msg="Job ist nicht eingeplant oder letzter Lauf abgebrochen",
                 err_msg="Letzter Scan-Lauf fehlgeschlagen",
                 with_limits=limits,
             ),

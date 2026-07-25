@@ -276,6 +276,36 @@ def test_run_state_is_cleaned_up_after_cancel(storage, monkeypatch):
     assert scanner_service.get_scan_started_at("abbruch-test") is None
 
 
+def test_run_records_the_expected_folder_count(storage, monkeypatch):
+    """
+    Jeder Lauf hält fest, wie viele Ordner er scannen sollte - auch der
+    abgebrochene. Sonst wäre nach einem Neustart nicht unterscheidbar, ob ein
+    fehlender Ordner fehlschlug oder erst danach konfiguriert wurde.
+    """
+    from app.services import scanner as scanner_module
+    from app.services.scanner import scanner_service
+
+    monkeypatch.setattr(scanner_module, "SynologyAPI", FakeAPI)
+    result = asyncio.run(scanner_service.run_scan(_config(["/a", "/b", "/c"])))
+    assert result.expected_folders == 3
+
+    with scanner_service._state_lock:
+        scanner_service._scan_finished_at.clear()
+        scanner_service._scan_status.clear()
+
+    class CancelImmediately(FakeAPI):
+        async def get_dir_size_async(self, path, **kwargs):
+            scanner_service.request_cancel("abbruch-test")
+            return await super().get_dir_size_async(path, **kwargs)
+
+    monkeypatch.setattr(scanner_module, "SynologyAPI", CancelImmediately)
+    cancelled = asyncio.run(scanner_service.run_scan(_config(["/a", "/b", "/c"])))
+    assert cancelled.status == "cancelled"
+    assert cancelled.expected_folders == 3, (
+        "auch ein abgebrochener Lauf kennt seinen Sollwert"
+    )
+
+
 def test_started_at_is_set_while_running(storage, monkeypatch):
     """Die Startzeit steht während des Laufs bereit - Basis der stuck-Erkennung"""
     from app.services import scanner as scanner_module

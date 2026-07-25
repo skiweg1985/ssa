@@ -60,6 +60,16 @@ class ScanResult(BaseModel):
     )
     results: List[ScanResultItem] = Field(default_factory=list, description="Liste der Scan-Ergebnisse")
     error: Optional[str] = Field(None, description="Fehlermeldung bei Fehlschlag")
+    expected_folders: Optional[int] = Field(
+        None,
+        description=(
+            "Anzahl der Pfade, die dieser Lauf scannen sollte. Nötig, weil nur "
+            "erfolgreiche Ordner persistiert werden: ohne diese Zahl liesse sich "
+            "nach einem Neustart nicht unterscheiden, ob ein Ordner fehlt, weil "
+            "er fehlschlug oder weil er erst danach konfiguriert wurde. "
+            "None bei Läufen aus älteren Versionen."
+        ),
+    )
 
 
 class NASConfigPublic(BaseModel):

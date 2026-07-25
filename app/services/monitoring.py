@@ -140,24 +140,28 @@ def age_limits(
 
 
 def folder_balance(
-    job: Dict[str, Any], result: Optional[Any], expected_paths: int
+    result: Optional[Any], configured_paths: int
 ) -> Tuple[int, int, List[str]]:
     """
     Ordnerbilanz eines Laufs: (erfolgreich, fehlgeschlagen, Namen der Fehler).
 
     Warum nicht einfach die Items zählen: in die Datenbank werden NUR
-    erfolgreiche Ordner geschrieben (storage.add_result). Nach einem Neustart
-    enthält ein Ergebnis also keine Fehler-Items mehr - ohne Abgleich mit der
-    konfigurierten Pfadanzahl wären Fehler dann unsichtbar.
+    erfolgreiche Ordner geschrieben (storage._save_to_disk). Nach einem Neustart
+    enthält ein Ergebnis also keine Fehler-Items mehr - ohne Sollwert wären
+    Fehler dann unsichtbar.
 
-    Der Abgleich gilt aber nur, solange die Pfadliste zum Lauf passt. Wird ein
-    Pfad NACH dem Lauf hinzugefügt, wäre er sonst rückwirkend ein "Fehler" -
-    der Job stünde bis zum nächsten Lauf auf `partial`, obwohl nichts
-    fehlgeschlagen ist. Deshalb wird die Subtraktion übersprungen, wenn die
-    Job-Konfiguration nach dem Lauf geändert wurde.
+    Der Sollwert kommt aus dem Lauf selbst (`result.expected_folders`), nicht aus
+    der aktuellen Job-Konfiguration. Nur so bleiben beide Fälle unterscheidbar:
+    ein Pfad, der NACH dem Lauf konfiguriert wurde, ist kein rückwirkender
+    Fehlschlag - und ein echter Fehler bleibt auch nach einem Neustart sichtbar.
+
+    Für Läufe aus älteren Versionen (`expected_folders is None`) bleibt nur die
+    aktuelle Konfiguration als Näherung. Dort wird bewusst die sichere Seite
+    gewählt - ein Fehler zu viel ist besser als ein verschwiegener -, und der
+    Fall heilt mit dem ersten Lauf unter dieser Version.
     """
     if result is None:
-        return 0, expected_paths, []
+        return 0, configured_paths, []
 
     ok_items = [item for item in result.results if item.success]
     failed_items = [item for item in result.results if not item.success]
@@ -165,23 +169,11 @@ def folder_balance(
     explicit_failures = len(failed_items)
     failed_names = [item.folder_name for item in failed_items]
 
-    if _config_changed_after(job, result):
-        # Pfadliste passt nicht mehr zum Lauf - nur belegte Fehler zählen
-        return folders_ok, explicit_failures, failed_names
+    expected = getattr(result, "expected_folders", None)
+    if expected is None:
+        expected = configured_paths
 
-    return folders_ok, max(expected_paths - folders_ok, explicit_failures, 0), failed_names
-
-
-def _config_changed_after(job: Dict[str, Any], result: Any) -> bool:
-    """Ob die Job-Konfiguration nach diesem Lauf geändert wurde"""
-    raw = job.get("updated_at")
-    if not raw:
-        return False
-    try:
-        updated_at = as_utc(datetime.fromisoformat(raw))
-    except (TypeError, ValueError):
-        return False
-    return updated_at > as_utc(result.timestamp)
+    return folders_ok, max(expected - folders_ok, explicit_failures, 0), failed_names
 
 
 def stuck_after_seconds(path_count: int) -> float:
@@ -457,7 +449,7 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
 
     # --- Ordnerzahlen: beziehen sich auf den letzten Lauf ---
     folders_ok, folders_failed, folders_failed_names = folder_balance(
-        job, latest, expected_paths
+        latest, expected_paths
     )
 
     last_run_age = age_seconds(latest.timestamp) if latest is not None else None

@@ -130,16 +130,33 @@ def api_token_headers(client, auth_headers):
     return {"Authorization": f"Bearer {response.json()['token']}"}
 
 
-def _result(slug, name, timestamp=None, status="completed", folders=None, error=None):
-    """Ein Scan-Ergebnis; folders ist eine Liste (name, bytes, success)"""
+def _result(
+    slug,
+    name,
+    timestamp=None,
+    status="completed",
+    folders=None,
+    error=None,
+    expected_folders=-1,
+):
+    """
+    Ein Scan-Ergebnis; folders ist eine Liste (name, bytes, success).
+
+    `expected_folders` entspricht der Pfadanzahl, die der Lauf scannen sollte -
+    der echte Scanner setzt das Feld. Standard ist die Länge von `folders`;
+    `None` simuliert einen Lauf aus einer älteren Version.
+    """
     if folders is None:
         folders = [("/design", 1073741824, True), ("/photo", 500000000, True)]
+    if expected_folders == -1:
+        expected_folders = len(folders)
     return ScanResult(
         scan_slug=slug,
         scan_name=name,
         timestamp=timestamp or datetime.now(timezone.utc),
         status=status,
         error=error,
+        expected_folders=expected_folders,
         results=[
             ScanResultItem(
                 folder_name=folder,
@@ -825,17 +842,66 @@ class TestReviewRegressions:
         self, client, auth_headers, seeded_job
     ):
         """
-        Gegenprobe: bei unveränderter Konfiguration muss ein fehlender Ordner
-        weiterhin als Fehler zählen - in die Datenbank kommen nur erfolgreiche
-        Ordner, ohne diesen Abgleich wären Fehler nach einem Neustart unsichtbar.
+        Der wichtigere Fall: ein Lauf sollte 2 Ordner scannen, gemeldet ist nur
+        einer. In die Datenbank kommen nur erfolgreiche Ordner - ohne den
+        Sollwert aus dem Lauf wäre der Fehler nach einem Neustart unsichtbar.
         """
-        _add_result(seeded_job, folders=[("/design", 100, True)])
+        _add_result(
+            seeded_job, folders=[("/design", 100, True)], expected_folders=2
+        )
 
         body = _get(client, auth_headers, seeded_job).json()
         assert body["last_run"]["folders_ok"] == 1
         assert body["last_run"]["folders_failed"] == 1, (
             "der nicht gemeldete Ordner bleibt ein Fehler"
         )
+        assert body["state"] == "partial"
+
+    def test_failure_survives_an_unrelated_job_edit(
+        self, client, auth_headers, seeded_job
+    ):
+        """
+        Regression zum zweiten Review-Durchlauf: eine Änderung, die die Pfade
+        NICHT betrifft (hier das Intervall), darf einen belegten Ordnerfehler
+        nicht verschlucken. Der Sollwert steht am Lauf, nicht am Job.
+        """
+        _add_result(
+            seeded_job, folders=[("/design", 100, True)], expected_folders=2
+        )
+        client.put(
+            f"/api/scan-jobs/{seeded_job['slug']}",
+            headers=auth_headers,
+            json={
+                "name": "Umbenannt",
+                "nas_connection_id": seeded_job["nas_connection_id"],
+                "paths": seeded_job["paths"],
+                "interval": "12h",
+                "enabled": True,
+            },
+        )
+
+        body = _get(client, auth_headers, seeded_job).json()
+        assert body["last_run"]["folders_failed"] == 1, (
+            "der Fehler bleibt sichtbar, obwohl der Job bearbeitet wurde"
+        )
+        assert body["state"] == "partial"
+
+    def test_legacy_result_without_expected_folders_errs_on_the_safe_side(
+        self, client, auth_headers, seeded_job
+    ):
+        """
+        Läufe aus älteren Versionen tragen keinen Sollwert. Dann bleibt nur die
+        aktuelle Konfiguration - und dort wird bewusst die sichere Seite gewählt:
+        ein Fehler zu viel ist besser als ein verschwiegener.
+        """
+        _add_result(
+            seeded_job,
+            folders=[("/design", 100, True)],
+            expected_folders=None,
+        )
+
+        body = _get(client, auth_headers, seeded_job).json()
+        assert body["last_run"]["folders_failed"] == 1
         assert body["state"] == "partial"
 
     def test_deprecation_link_survives_unicode_job_names(self, client, auth_headers):
@@ -1227,6 +1293,25 @@ class TestPrtgConsistency:
         assert channels["Status"]["value"] == "1"
         assert monitor["run"]["active"] is True
         assert monitor["state"] == "ok"
+
+    def test_cancelled_run_is_not_green_in_prtg(self, client, auth_headers, seeded_job):
+        """
+        Ohne eigenen Zweig fiele ein abgebrochener Lauf im PRTG-Sensor auf
+        STATUS_OK durch - der Sensor stünde nach einem Abbruch auf grün,
+        während der generische Bericht warnt.
+        """
+        _add_result(
+            seeded_job, status="cancelled", folders=[], error="Abgebrochen nach 42s"
+        )
+        monitor = _get(client, auth_headers, seeded_job).json()
+        channels = self._prtg_channels(client, auth_headers, seeded_job["slug"])
+
+        assert monitor["state"] == "cancelled" and monitor["severity"] == 1
+        status = channels["Status"]
+        assert status["value"] != "0", "der Sensor darf nicht grün stehen"
+        # Der Wert muss im Warnbereich liegen (> warn_max, <= err_max)
+        assert float(status["value"]) > float(status["limitmaxwarning"])
+        assert float(status["value"]) <= float(status["limitmaxerror"])
 
     def test_shared_age_and_folder_numbers(self, client, auth_headers, seeded_job):
         """Beide Endpoints müssen dieselbe Wahrheit berichten"""
