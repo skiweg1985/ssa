@@ -752,6 +752,123 @@ class TestInstanceAndServer:
 
 
 # ----------------------------------------------------------------------
+# Regressionen aus dem Code-Review
+# ----------------------------------------------------------------------
+
+class TestReviewRegressions:
+    def test_config_warnings_with_null_values_do_not_break_the_report(
+        self, client, auth_headers, monkeypatch
+    ):
+        """
+        Konfigurationswarnungen tragen optionale Felder, die None sein können
+        (z.B. kept_created_at ohne created_at in der config.yaml). Mit einem
+        strikten Dict[str, str] hätte Pydantic den Bericht genau dann
+        abgebrochen, wenn es etwas zu melden gibt.
+        """
+        monkeypatch.setattr(
+            "app.services.health.collect_config_warnings",
+            lambda: [
+                {
+                    "type": "duplicate_slug",
+                    "slug": "doppelt",
+                    "removed_scan": "A",
+                    "removed_created_at": None,
+                    "kept_scan": "B",
+                    "kept_created_at": None,
+                    "message": "WARNUNG: Duplikat-Slug 'doppelt' gefunden.",
+                }
+            ],
+        )
+
+        response = client.get("/api/monitor/server", headers=auth_headers)
+        assert response.status_code == 200, "kein 500, wenn Warnungen anliegen"
+        body = response.json()
+        assert body["state"] == "config_warnings"
+        assert body["severity"] == 1
+        assert body["warnings"][0]["kept_created_at"] is None
+
+        # Auch der Instanz-Bericht darf daran nicht scheitern
+        assert client.get("/api/monitor", headers=auth_headers).status_code == 200
+
+    def test_newly_added_path_is_not_reported_as_failure(
+        self, client, auth_headers, seeded_job
+    ):
+        """
+        Wird ein Pfad NACH dem letzten Lauf konfiguriert, darf er nicht
+        rückwirkend als fehlgeschlagen gelten - sonst stünde der Job bis zum
+        nächsten Lauf auf 'partial', obwohl nichts schiefgegangen ist.
+        """
+        vorher = _get(client, auth_headers, seeded_job).json()
+        assert vorher["state"] == "ok"
+        assert vorher["last_run"]["folders_total"] == 2
+
+        # Dritten Pfad ergänzen - der letzte Lauf kannte nur zwei
+        client.put(
+            f"/api/scan-jobs/{seeded_job['slug']}",
+            headers=auth_headers,
+            json={
+                "name": seeded_job["name"],
+                "nas_connection_id": seeded_job["nas_connection_id"],
+                "paths": ["/design", "/photo", "/neu"],
+                "interval": seeded_job["interval"],
+                "enabled": True,
+            },
+        )
+
+        nachher = _get(client, auth_headers, seeded_job).json()
+        assert nachher["state"] == "ok", "der neue Pfad ist kein Fehler"
+        assert nachher["severity"] == 0
+        assert nachher["last_run"]["folders_failed"] == 0
+        assert nachher["last_run"]["folders_ok"] == 2
+
+    def test_real_failure_still_counts_after_a_restart(
+        self, client, auth_headers, seeded_job
+    ):
+        """
+        Gegenprobe: bei unveränderter Konfiguration muss ein fehlender Ordner
+        weiterhin als Fehler zählen - in die Datenbank kommen nur erfolgreiche
+        Ordner, ohne diesen Abgleich wären Fehler nach einem Neustart unsichtbar.
+        """
+        _add_result(seeded_job, folders=[("/design", 100, True)])
+
+        body = _get(client, auth_headers, seeded_job).json()
+        assert body["last_run"]["folders_ok"] == 1
+        assert body["last_run"]["folders_failed"] == 1, (
+            "der nicht gemeldete Ordner bleibt ein Fehler"
+        )
+        assert body["state"] == "partial"
+
+    def test_deprecation_link_survives_unicode_job_names(self, client, auth_headers):
+        """
+        Der Status-Endpunkt akzeptiert auch Job-NAMEN, und Namen erlauben
+        beliebiges Unicode. HTTP-Header sind Latin-1 - ein Emoji im Namen hätte
+        den Endpunkt sonst mit 500 beendet.
+        """
+        name = "Fotos 📸 Archiv"
+        job = _create_job(client, auth_headers, name, ["/fotos"])
+        _add_result(job)
+
+        response = client.get(f"/api/scans/{name}/status", headers=auth_headers)
+        assert response.status_code == 200
+        link = response.headers["Link"]
+        assert link.isascii(), f"Header muss ASCII sein, war: {link!r}"
+        assert "%F0%9F%93%B8" in link, "das Emoji muss percent-kodiert sein"
+        assert 'rel="successor-version"' in link
+
+    def test_deprecation_link_encodes_spaces_and_slashes(
+        self, client, auth_headers
+    ):
+        """Leerzeichen und reservierte Zeichen dürfen das Link-Ziel nicht zerlegen"""
+        name = "Sicherung / Woche"
+        job = _create_job(client, auth_headers, name, ["/s"])
+        _add_result(job)
+
+        response = client.get(f"/api/scans/{job['slug']}/status", headers=auth_headers)
+        assert response.status_code == 200
+        assert " " not in response.headers["Link"].split(">")[0]
+
+
+# ----------------------------------------------------------------------
 # Fortschrittsberechnung (geteilt zwischen /progress und den Berichten)
 # ----------------------------------------------------------------------
 

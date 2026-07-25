@@ -160,11 +160,18 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
   ]
 
   const urlFor = (endpoint: Endpoint) => `${fullBaseUrl}${endpoint.endpoint}`
+
+  // Schreibende Endpunkte brauchen ein Login-Token: require_auth lehnt statische
+  // API-Tokens bei allem außer GET mit 403 ab. Ein Beispiel mit $SSA_TOKEN wäre
+  // hier also garantiert nicht funktionsfähig.
+  const tokenVarFor = (endpoint: Endpoint) =>
+    endpoint.method === "GET" ? "$SSA_TOKEN" : "$SSA_LOGIN_TOKEN"
+
   const curlFor = (endpoint: Endpoint) =>
     [
       "curl",
       ...(endpoint.method === "POST" ? ["-X", "POST"] : []),
-      '-H "Authorization: Bearer $SSA_TOKEN"',
+      `-H "Authorization: Bearer ${tokenVarFor(endpoint)}"`,
       `"${urlFor(endpoint)}"`,
     ].join(" ")
 
@@ -379,8 +386,19 @@ echo "$RESULT" | jq '.results[0].total_size.bytes'`,
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
               <p className="text-sm text-amber-800 dark:text-amber-200">
                 Schreibender Zugriff: read-only API-Tokens dürfen{" "}
-                <strong>nicht</strong> triggern — dieser Endpunkt erfordert eine
-                angemeldete Sitzung.
+                <strong>nicht</strong> triggern oder abbrechen — diese Endpunkte
+                erfordern eine angemeldete Sitzung.
+              </p>
+              <p className="text-sm text-amber-700 dark:text-amber-300 mt-2">
+                Die Befehle erwarten das Login-Token deshalb in{" "}
+                <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+                  SSA_LOGIN_TOKEN
+                </code>
+                . Es kommt aus{" "}
+                <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1 py-0.5 rounded text-xs">
+                  POST /api/auth/login
+                </code>{" "}
+                — nicht aus „API-Tokens verwalten".
               </p>
             </div>
             {endpointsFor("aktionen").map(endpointCard)}

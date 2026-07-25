@@ -13,7 +13,7 @@ Schema-Grundsätze (bewusst anders als bei den PRTG-Modellen):
 """
 from datetime import datetime
 from enum import Enum, IntEnum
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -340,7 +340,11 @@ class ServerMonitorReport(BaseModel):
     system: SystemInfo
     storage: StorageInfo
     jobs: JobsInfo
-    warnings: List[Dict[str, str]] = Field(default_factory=list)
+    # Werte bewusst als Any: Konfigurationswarnungen tragen optionale Felder,
+    # die None sein können (z.B. `kept_created_at`, wenn ein Scan in der
+    # config.yaml kein created_at hat). Mit Dict[str, str] würde Pydantic hier
+    # abbrechen - und zwar genau dann, wenn es Warnungen zu melden gibt.
+    warnings: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 # ----------------------------------------------------------------------

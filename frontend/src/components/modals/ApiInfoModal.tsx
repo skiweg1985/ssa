@@ -104,10 +104,12 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
     },
     {
       title: "Scan manuell starten",
-      description: "Startet einen Scan manuell",
+      description:
+        "Startet einen Scan manuell. Erfordert ein Login-Token - read-only "
+        + "API-Tokens dürfen nur GET und werden hier mit 403 abgelehnt.",
       method: "POST",
       endpoint: `${API_BASE}/scans/{scan_slug}/trigger`,
-      curl: `curl -X POST -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/trigger"`,
+      curl: `curl -X POST -H "Authorization: Bearer $SSA_LOGIN_TOKEN" "${window.location.origin}${API_BASE}/scans/mein-scan/trigger"`,
     },
   ]
 
@@ -142,7 +144,7 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
             <div className="text-sm text-blue-700 dark:text-blue-300 space-y-1">
               <p><strong>Base URL:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">{window.location.origin}{API_BASE}</code></p>
               <p><strong>Content-Type:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">application/json</code></p>
-              <p><strong>Authentifizierung:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">Authorization: Bearer &lt;token&gt;</code> — die cURL-Beispiele erwarten das Token in <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">SSA_TOKEN</code></p>
+              <p><strong>Authentifizierung:</strong> <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">Authorization: Bearer &lt;token&gt;</code> — lesende Beispiele erwarten ein read-only API-Token in <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">SSA_TOKEN</code>, schreibende ein Login-Token in <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">SSA_LOGIN_TOKEN</code> (aus <code className="bg-blue-100 dark:bg-blue-900/40 dark:text-blue-200 px-1.5 py-0.5 rounded">POST /api/auth/login</code>)</p>
             </div>
           </div>
 

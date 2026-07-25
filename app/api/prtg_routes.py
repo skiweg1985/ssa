@@ -23,7 +23,13 @@ from app.services.health import (
     get_uptime_seconds,
 )
 from app.services.jobs_store import jobs_store
-from app.services.monitoring import age_limits, age_seconds, as_utc, expected_path_count
+from app.services.monitoring import (
+    age_limits,
+    age_seconds,
+    as_utc,
+    expected_path_count,
+    folder_balance,
+)
 from app.services.scanner import scanner_service
 from app.services.scheduler import scheduler_service
 from app.services.storage import storage
@@ -100,11 +106,13 @@ async def prtg_scan(
             sum(item.elapsed_time_ms or 0 for item in successful) / 1000.0
         )
 
-        expected_paths = expected_path_count(job)
-        explicit_failures = len(
-            [item for item in latest_completed.results if not item.success]
+        # Ordnerbilanz über den geteilten Helfer: nur erfolgreiche Ordner werden
+        # persistiert, deshalb der Abgleich mit der konfigurierten Pfadanzahl -
+        # der aber ausgesetzt wird, wenn die Konfiguration nach dem Lauf
+        # geändert wurde (neu hinzugefügte Pfade sind keine Fehler).
+        _, failed_folders, _ = folder_balance(
+            job, latest_completed, expected_path_count(job)
         )
-        failed_folders = max(expected_paths - len(successful), explicit_failures, 0)
 
         # Status ermitteln
         if is_running:

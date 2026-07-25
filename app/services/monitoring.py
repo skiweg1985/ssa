@@ -139,6 +139,51 @@ def age_limits(
     }
 
 
+def folder_balance(
+    job: Dict[str, Any], result: Optional[Any], expected_paths: int
+) -> Tuple[int, int, List[str]]:
+    """
+    Ordnerbilanz eines Laufs: (erfolgreich, fehlgeschlagen, Namen der Fehler).
+
+    Warum nicht einfach die Items zählen: in die Datenbank werden NUR
+    erfolgreiche Ordner geschrieben (storage.add_result). Nach einem Neustart
+    enthält ein Ergebnis also keine Fehler-Items mehr - ohne Abgleich mit der
+    konfigurierten Pfadanzahl wären Fehler dann unsichtbar.
+
+    Der Abgleich gilt aber nur, solange die Pfadliste zum Lauf passt. Wird ein
+    Pfad NACH dem Lauf hinzugefügt, wäre er sonst rückwirkend ein "Fehler" -
+    der Job stünde bis zum nächsten Lauf auf `partial`, obwohl nichts
+    fehlgeschlagen ist. Deshalb wird die Subtraktion übersprungen, wenn die
+    Job-Konfiguration nach dem Lauf geändert wurde.
+    """
+    if result is None:
+        return 0, expected_paths, []
+
+    ok_items = [item for item in result.results if item.success]
+    failed_items = [item for item in result.results if not item.success]
+    folders_ok = len(ok_items)
+    explicit_failures = len(failed_items)
+    failed_names = [item.folder_name for item in failed_items]
+
+    if _config_changed_after(job, result):
+        # Pfadliste passt nicht mehr zum Lauf - nur belegte Fehler zählen
+        return folders_ok, explicit_failures, failed_names
+
+    return folders_ok, max(expected_paths - folders_ok, explicit_failures, 0), failed_names
+
+
+def _config_changed_after(job: Dict[str, Any], result: Any) -> bool:
+    """Ob die Job-Konfiguration nach diesem Lauf geändert wurde"""
+    raw = job.get("updated_at")
+    if not raw:
+        return False
+    try:
+        updated_at = as_utc(datetime.fromisoformat(raw))
+    except (TypeError, ValueError):
+        return False
+    return updated_at > as_utc(result.timestamp)
+
+
 def stuck_after_seconds(path_count: int) -> float:
     """
     Ab welcher Laufzeit ein Scan als hängend gilt.
@@ -411,18 +456,9 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
     )
 
     # --- Ordnerzahlen: beziehen sich auf den letzten Lauf ---
-    if latest is not None:
-        run_ok_items = [item for item in latest.results if item.success]
-        run_failed_items = [item for item in latest.results if not item.success]
-        folders_ok = len(run_ok_items)
-        # Gleiche Formel wie PRTG: nur erfolgreiche Ordner werden persistiert,
-        # nach einem Neustart wäre "fehlgeschlagen" sonst fälschlich 0.
-        folders_failed = max(expected_paths - folders_ok, len(run_failed_items), 0)
-        folders_failed_names = [item.folder_name for item in run_failed_items]
-    else:
-        folders_ok = 0
-        folders_failed = expected_paths
-        folders_failed_names = []
+    folders_ok, folders_failed, folders_failed_names = folder_balance(
+        job, latest, expected_paths
+    )
 
     last_run_age = age_seconds(latest.timestamp) if latest is not None else None
 

@@ -204,7 +204,9 @@ Zwei Festlegungen, die Rückfragen erübrigen:
   Messwerte aber stehen — die Charts reißen nicht auf 0.
 - `folders_failed` wird als `max(erwartete Pfade - erfolgreiche, explizite
   Fehler, 0)` berechnet. Nötig, weil nur erfolgreiche Ordner gespeichert
-  werden: nach einem Neustart stünde dort sonst fälschlich 0.
+  werden: nach einem Neustart stünde dort sonst fälschlich 0. **Ausnahme:** wurde
+  die Job-Konfiguration nach dem Lauf geändert, zählen nur belegte Fehler — ein
+  neu hinzugefügter Pfad ist kein rückwirkender Fehlschlag.
 
 ### Beispiel: alles in Ordnung
 

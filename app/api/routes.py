@@ -2,6 +2,7 @@
 import logging
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Response
 from typing import List, Optional
+from urllib.parse import quote
 from datetime import datetime
 
 from app.models.scan import (
@@ -236,10 +237,14 @@ async def get_scan_status(scan_identifier: str, response: Response):
     """
     # RFC 8594: Nachfolger maschinenlesbar bekanntgeben. Bewusst ohne
     # "Sunset"-Header - es gibt keine Zusage, den Endpoint zu entfernen.
+    #
+    # Der Identifier darf ein Job-NAME sein, und Namen erlauben beliebiges
+    # Unicode sowie Leer- und Sonderzeichen. HTTP-Header werden als Latin-1
+    # kodiert - ein Emoji im Namen hätte den Endpoint sonst mit 500 beendet,
+    # statt wie bisher den Status zu liefern. Deshalb percent-kodiert.
     response.headers["Deprecation"] = "true"
-    response.headers["Link"] = (
-        f'</api/monitor/scans/{scan_identifier}>; rel="successor-version"'
-    )
+    successor = f"/api/monitor/scans/{quote(scan_identifier, safe='')}"
+    response.headers["Link"] = f'<{successor}>; rel="successor-version"'
     return await get_scan(scan_identifier)
 
 
