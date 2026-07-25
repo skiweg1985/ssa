@@ -1,5 +1,5 @@
 """API Routes für FastAPI"""
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Response
 from typing import List, Optional
 from datetime import datetime
 
@@ -208,11 +208,33 @@ async def get_scan(scan_identifier: str):
         raise HTTPException(status_code=500, detail=f"Fehler beim Laden des Scans: {str(e)}")
 
 
-@router.get("/scans/{scan_identifier}/status", response_model=ScanStatus)
-async def get_scan_status(scan_identifier: str):
+@router.get(
+    "/scans/{scan_identifier}/status",
+    response_model=ScanStatus,
+    deprecated=True,
+)
+async def get_scan_status(scan_identifier: str, response: Response):
     """
-    Gibt den Status eines Scans zurück
+    Gibt den Status eines Scans zurück.
+
+    VERALTET - abgelöst von `GET /api/monitor/scans/{slug}`.
+
+    Für Monitoring ist diese Antwort schwer auszuwerten: `status` mischt
+    Lebenszyklus und Ergebnis ("running" überschreibt das Ergebnis des
+    vorherigen Laufs), "completed" bedeutet nicht "alle Ordner ok", es gibt
+    keinen Fehlertext und keinen Zeitstempel des letzten Erfolgs, und die
+    Überfälligkeit müsste der Client selbst aus `interval` errechnen.
+    Der Monitoring-Endpoint liefert das alles vorberechnet als `severity`.
+
+    Verhalten und Schema bleiben aus Kompatibilitätsgründen unverändert;
+    ein Entfernungsdatum ist nicht gesetzt.
     """
+    # RFC 8594: Nachfolger maschinenlesbar bekanntgeben. Bewusst ohne
+    # "Sunset"-Header - es gibt keine Zusage, den Endpoint zu entfernen.
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = (
+        f'</api/monitor/scans/{scan_identifier}>; rel="successor-version"'
+    )
     return await get_scan(scan_identifier)
 
 

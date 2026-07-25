@@ -13,6 +13,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import { fetchApiTokens, createApiToken, deleteApiToken } from "@/lib/api"
 import type { ApiTokenPublic, ApiTokenCreated } from "@/types/api"
 import { formatRelativeTime } from "@/lib/utils"
+import { useCopyToClipboard } from "@/hooks/useCopyToClipboard"
 import {
   KeyRound,
   Plus,
@@ -36,13 +37,17 @@ interface ApiTokensModalProps {
  */
 export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
   const { showToast } = useToast()
+  const { copiedKey, copy } = useCopyToClipboard({
+    // Das Token wird nie wieder angezeigt - ein stiller Fehlschlag wäre hier fatal.
+    onError: () =>
+      showToast("Fehler", "Kopieren nicht möglich - bitte manuell markieren", "error"),
+  })
   const [tokens, setTokens] = useState<ApiTokenPublic[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [newName, setNewName] = useState("")
   const [creating, setCreating] = useState(false)
   const [created, setCreated] = useState<ApiTokenCreated | null>(null)
-  const [copied, setCopied] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<ApiTokenPublic | null>(null)
 
   const loadTokens = useCallback(async () => {
@@ -61,7 +66,6 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
     if (open) {
       setCreated(null)
       setNewName("")
-      setCopied(false)
       loadTokens()
     }
   }, [open, loadTokens])
@@ -73,7 +77,6 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
     try {
       const result = await createApiToken(name)
       setCreated(result)
-      setCopied(false)
       setNewName("")
       loadTokens()
     } catch (err) {
@@ -87,15 +90,9 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
     }
   }
 
-  async function handleCopy() {
+  function handleCopy() {
     if (!created) return
-    try {
-      await navigator.clipboard.writeText(created.token)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      showToast("Fehler", "Kopieren nicht möglich - bitte manuell markieren", "error")
-    }
+    copy(created.token, "token")
   }
 
   function handleDelete(token: ApiTokenPublic) {
@@ -158,7 +155,7 @@ export function ApiTokensModal({ open, onOpenChange }: ApiTokensModalProps) {
                   onClick={handleCopy}
                   aria-label="Token kopieren"
                 >
-                  {copied ? (
+                  {copiedKey === "token" ? (
                     <Check className="h-4 w-4 text-green-600" />
                   ) : (
                     <Copy className="h-4 w-4" />

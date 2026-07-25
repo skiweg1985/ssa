@@ -9,8 +9,7 @@ im Antwortkörper (`prtg.error`) bzw. über Kanal-Schwellwerte, nicht als HTTP-S
 """
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import List
 
 from fastapi import APIRouter, Query
 
@@ -24,6 +23,7 @@ from app.services.health import (
     get_uptime_seconds,
 )
 from app.services.jobs_store import jobs_store
+from app.services.monitoring import age_limits, age_seconds, as_utc, expected_path_count
 from app.services.scanner import scanner_service
 from app.services.scheduler import scheduler_service
 from app.services.storage import storage
@@ -46,58 +46,8 @@ STATUS_STALE = 3       # eingeplant, aber kein aktueller Lauf -> Warning
 STATUS_FAILED = 4      # letzter Lauf fehlgeschlagen -> Error
 
 
-def _as_utc(value: datetime) -> datetime:
-    """
-    Stellt sicher, dass ein Timestamp tz-bewusst ist.
-
-    Ältere Datensätze können naive Timestamps enthalten (der Scanner nutzte im
-    Fehlerpfad datetime.utcnow()). Ohne diese Normalisierung würde die
-    Altersberechnung mit TypeError abbrechen.
-    """
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
-
-
-def _age_seconds(timestamp: Optional[datetime]) -> Optional[float]:
-    if timestamp is None:
-        return None
-    return (datetime.now(timezone.utc) - _as_utc(timestamp)).total_seconds()
-
-
-def _expected_path_count(job: Dict[str, Any]) -> int:
-    """
-    Anzahl der Pfade, die dieser Job scannen soll.
-
-    Nötig, weil nur erfolgreiche Ordner persistiert werden: nach einem Neustart
-    wäre "Ordner Fehler" sonst fälschlich 0.
-    """
-    try:
-        from app.api.routes import _job_to_view_config
-
-        config = _job_to_view_config(job)
-        if config is None:
-            return 0
-        return len(scanner_service._determine_paths(config))
-    except Exception as e:
-        logger.debug(f"Erwartete Pfadanzahl nicht ermittelbar: {e}")
-        return 0
-
-
-def _age_limits(
-    interval_seconds: Optional[float], warn_factor: float, err_factor: float
-) -> Dict[str, Optional[float]]:
-    """
-    Schwellwerte für die Alters-Kanäle aus dem Scan-Intervall.
-
-    Untergrenze verhindert, dass Minuten-Jobs bei jedem kleinen Verzug flattern.
-    """
-    if interval_seconds is None or interval_seconds <= 0:
-        return {"warn_max": None, "err_max": None}
-    return {
-        "warn_max": max(interval_seconds * warn_factor, interval_seconds + 300),
-        "err_max": max(interval_seconds * err_factor, interval_seconds + 600),
-    }
+# Zeit-, Pfad- und Schwellwert-Helfer stehen in app/services/monitoring.py,
+# damit PRTG- und generische Monitoring-Endpoints dieselben Werte berechnen.
 
 
 # ----------------------------------------------------------------------
@@ -150,7 +100,7 @@ async def prtg_scan(
             sum(item.elapsed_time_ms or 0 for item in successful) / 1000.0
         )
 
-        expected_paths = _expected_path_count(job)
+        expected_paths = expected_path_count(job)
         explicit_failures = len(
             [item for item in latest_completed.results if not item.success]
         )
@@ -180,8 +130,8 @@ async def prtg_scan(
             if job["enabled"]
             else None
         )
-        run_limits = _age_limits(interval_seconds, 2, 3)
-        data_limits = _age_limits(interval_seconds, 3, 5)
+        run_limits = age_limits(interval_seconds, 2, 3)
+        data_limits = age_limits(interval_seconds, 3, 5)
 
         channels: List[PrtgChannel] = [
             make_channel("Gesamtgröße", total_bytes, unit="BytesDisk"),
@@ -192,7 +142,7 @@ async def prtg_scan(
             ),
             make_channel(
                 "Alter letzter Lauf",
-                _age_seconds(latest.timestamp),
+                age_seconds(latest.timestamp),
                 unit="TimeSeconds",
                 warn_max=run_limits["warn_max"],
                 err_max=run_limits["err_max"],
@@ -202,7 +152,7 @@ async def prtg_scan(
             ),
             make_channel(
                 "Alter letzte Daten",
-                _age_seconds(latest_completed.timestamp),
+                age_seconds(latest_completed.timestamp),
                 unit="TimeSeconds",
                 warn_max=data_limits["warn_max"],
                 err_max=data_limits["err_max"],
@@ -254,7 +204,7 @@ async def prtg_scan(
                     )
                 )
 
-        last_run = _as_utc(latest.timestamp).strftime("%d.%m.%Y %H:%M UTC")
+        last_run = as_utc(latest.timestamp).strftime("%d.%m.%Y %H:%M UTC")
         text = (
             f"{status_text} | Letzter Lauf {last_run} | "
             f"{len(successful)} Ordner OK{truncation_note}"

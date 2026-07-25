@@ -145,9 +145,9 @@ Für Monitoring-Systeme gibt es **statische, read-only API-Tokens**, die im
 Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
 
 - Token wird bei Erstellung **einmalig** angezeigt (gespeichert wird nur der Hash).
-- Zugriff: nur `GET` auf `/api/prtg*` (Sensordaten, s.u.), `/api/scans*` (Status,
-  Ergebnisse, Historie, Fortschritt) und `/api/storage/stats` — kein Triggern,
-  keine Verwaltung.
+- Zugriff: nur `GET` auf `/api/monitor*` (Zustandsberichte, s.u.), `/api/prtg*`
+  (PRTG-Sensordaten), `/api/scans*` (Status, Ergebnisse, Historie, Fortschritt)
+  und `/api/storage/stats` — kein Triggern, keine Verwaltung.
 - Verwendung: Header `Authorization: Bearer <token>`.
 - `/health` ist weiterhin ohne Token erreichbar (Up/Down-Checks).
 
@@ -155,65 +155,30 @@ Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
 curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/scans
 ```
 
-### PRTG: HTTP Data Advanced (empfohlen)
+### Endpoints für Monitoring-Systeme
 
-Zwei Endpoints liefern fertige Sensordaten im PRTG-Format — PRTG legt die Kanäle
-automatisch an, JSONPath-Filter entfallen:
-
-| Endpoint | Sensor |
+| Endpoint | Wofür |
 |---|---|
-| `GET /api/prtg/scans/<slug>` | ein Sensor **pro Scan-Job** |
-| `GET /api/prtg/server` | ein Sensor für den **Server selbst** |
+| `GET /api/monitor` | Gesamtzustand — ein Check für die ganze Instanz |
+| `GET /api/monitor/scans` | alle Scan-Jobs, mit Roll-up und Problemliste |
+| `GET /api/monitor/scans/<slug>` | ein einzelner Scan-Job |
+| `GET /api/monitor/server` | Infrastruktur — Scheduler, System, Storage |
+| `GET /api/prtg/scans/<slug>` | PRTG-Sensor pro Scan-Job |
+| `GET /api/prtg/server` | PRTG-Sensor für den Server selbst |
 
-**Sensor anlegen:** Gerät → *Sensor hinzufügen* → **HTTP Data Advanced** → URL
-eintragen → unter den erweiterten Einstellungen den Header
-`Authorization: Bearer ssa_...` setzen. Scan-Intervall des Sensors sinnvollerweise
-≥ Scan-Intervall des Jobs wählen.
-
-**Kanäle pro Job:** Gesamtgröße · Ordner · Dateien · Scan-Dauer ·
-Alter letzter Lauf · Alter letzte Daten · Status · Ordner OK · Ordner Fehler —
-plus **ein Kanal je gescanntem Ordner** (Kanalname = Pfad, z.B. `/design`).
-
-**Status-Kanal:**
-
-| Wert | Bedeutung | Sensor |
-|---|---|---|
-| 0 | letzter Lauf erfolgreich | OK |
-| 1 | Scan läuft gerade | OK |
-| 2 | Job deaktiviert | OK |
-| 3 | Job nicht eingeplant | Warning |
-| 4 | letzter Lauf fehlgeschlagen | Error |
-
-Messwerte stammen immer vom letzten **erfolgreichen** Lauf — ein Fehllauf macht
-den Sensor rot, reißt die Charts aber nicht auf 0.
-
-**Kanäle Server:** Uptime · CPU · RAM belegt/frei · Disk belegt/frei · Scheduler ·
-Jobs gesamt/aktiv/laufend · Jobs mit Fehler · Jobs ohne Ergebnisse · Ältester Lauf ·
-DB-Größe · Ergebnisse in DB · Konfigurationswarnungen.
-
-**Query-Parameter:**
-
-| Parameter | Default | Wirkung |
-|---|---|---|
-| `folders` | `1` | `0` = keine Ordner-Kanäle, nur Summen |
-| `max_folders` | `40` | Obergrenze für Ordner-Kanäle |
-| `limits` | `1` | `0` = keine Schwellwerte (eigene in PRTG pflegen) |
-
-**Gut zu wissen:**
-- PRTG identifiziert Kanäle über den **Namen** — wird ein Scan-Pfad umbenannt,
-  entsteht ein neuer Kanal; der alte bleibt leer stehen und kann in PRTG gelöscht werden.
-- PRTG unterstützt max. **50 Kanäle** pro Sensor; darüber wird gekappt (Hinweis
-  erscheint in der Sensormeldung).
-- Mitgelieferte Schwellwerte überschreiben in PRTG manuell gesetzte Limits —
-  bei eigenen Schwellwerten `?limits=0` verwenden.
-- Sensor erst **nach dem ersten erfolgreichen Scan** anlegen; vorher meldet der
-  Endpoint bewusst einen Fehler statt Nullwerte.
-- Fehler (unbekannter Job, noch keine Daten) kommen als HTTP **200** mit
-  `prtg.error` — so wie PRTG es erwartet.
+Die `/api/monitor*`-Endpoints liefern den Zustand fertig ausgewertet: das Feld
+`severity` (0 = OK, 1 = Warnung, 2 = kritisch) genügt für die Alarmentscheidung —
+kein Zweit-Call, keine Client-Logik, kein Parsen von Cron-Ausdrücken. Für PRTG
+gibt es stattdessen Sensordaten im Format „HTTP Data Advanced", die ihre Kanäle
+selbst anlegen.
 
 ```bash
-curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/prtg/scans/design-scan
+curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/monitor
 ```
+
+Siehe [README_MONITORING.md](README_MONITORING.md) für Details — Feldreferenz,
+Beispielantworten, PRTG-Sensoreinrichtung und fertige Rezepte für Nagios,
+Zabbix, Checkmk, Grafana und Uptime-Kuma.
 
 ## Sicherheit
 
