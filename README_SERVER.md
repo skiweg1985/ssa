@@ -172,6 +172,30 @@ GET /api/scans/{scan_slug}/status
 > Überfälligkeit müsste der Client selbst berechnen. Siehe
 > [README_MONITORING.md](README_MONITORING.md), Kapitel „Veraltet".
 
+#### Laufenden Scan abbrechen
+
+```http
+POST /api/scans/{scan_slug}/cancel
+```
+
+Beendet einen laufenden Scan. Der Abbruch ist kooperativ — der Lauf endet beim
+nächsten Prüfpunkt, in der Regel innerhalb weniger Sekunden. Bereits gemessene
+Ordner bleiben erhalten, der Lauf wird mit Status `cancelled` gespeichert und
+zählt nicht als erfolgreicher Lauf.
+
+**Response:**
+```json
+{
+  "scan_slug": "homes-scan",
+  "message": "Abbruch für 'homes_scan' angefordert",
+  "cancelling": true
+}
+```
+
+`cancelling: false` bedeutet, dass gerade kein Scan lief — das ist kein Fehler.
+Siehe [README_MONITORING.md](README_MONITORING.md) für die Erkennung hängender
+Läufe.
+
 #### Scan-Fortschritt abrufen
 
 ```http

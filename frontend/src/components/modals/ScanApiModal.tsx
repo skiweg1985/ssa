@@ -145,6 +145,18 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
       method: "POST",
       endpoint: `${API_BASE}/scans/${scanSlug}/trigger`,
     },
+    {
+      id: "cancel",
+      tab: "aktionen",
+      title: "Scan abbrechen",
+      description:
+        "Einen laufenden Scan beenden. Der Abbruch ist kooperativ: der Lauf " +
+        "endet beim nächsten Prüfpunkt, in der Regel innerhalb weniger " +
+        "Sekunden. Bereits gemessene Ordner bleiben erhalten, der Lauf wird " +
+        "mit Status \"cancelled\" gespeichert.",
+      method: "POST",
+      endpoint: `${API_BASE}/scans/${scanSlug}/cancel`,
+    },
   ]
 
   const urlFor = (endpoint: Endpoint) => `${fullBaseUrl}${endpoint.endpoint}`
@@ -272,6 +284,21 @@ curl -s -H "Authorization: Bearer $SSA_TOKEN" \\
 # check_http oder Docker-Healthchecks
 curl -fsS -H "Authorization: Bearer $SSA_TOKEN" \\
   "${fullBaseUrl}${API_BASE}/monitor/scans/${scanSlug}?http_status=1" > /dev/null`,
+    },
+    {
+      id: "stuck",
+      title: "Hängenden Scan erkennen und abbrechen",
+      code: `# run.stuck wird true, wenn der Lauf die erwartete Dauer deutlich
+# überschreitet (state wird dann "stuck", severity 2)
+REPORT=$(curl -s -H "Authorization: Bearer $SSA_TOKEN" \\
+  "${fullBaseUrl}${API_BASE}/monitor/scans/${scanSlug}")
+
+if [ "$(echo "$REPORT" | jq -r '.run.stuck')" = "true" ]; then
+  echo "$REPORT" | jq -r '"hängt seit \\(.run.active_seconds | floor)s bei \\(.run.progress_percent // "?")%"'
+  # Abbruch erfordert eine angemeldete Sitzung, kein read-only Token
+  curl -s -X POST -H "Authorization: Bearer $SSA_LOGIN_TOKEN" \\
+    "${fullBaseUrl}${API_BASE}/scans/${scanSlug}/cancel" | jq -r '.message'
+fi`,
     },
     {
       id: "python",

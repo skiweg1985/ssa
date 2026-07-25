@@ -1135,10 +1135,11 @@ class SynologyAPI:
     async def get_dir_size_async(self, folder_path: str, max_wait: int = 300,
                                  poll_interval: int = 2,
                                  status_callback: Optional[Callable] = None,
-                                 progress_update_callback: Optional[Callable] = None) -> Optional[Dict]:
+                                 progress_update_callback: Optional[Callable] = None,
+                                 cancel_check: Optional[Callable] = None) -> Optional[Dict]:
         """
         Ruft die Größe eines Verzeichnisses asynchron ab
-        
+
         Args:
             folder_path: Pfad zum Verzeichnis
             max_wait: Maximale Wartezeit in Sekunden (Standard: 300 = 5 Minuten)
@@ -1146,6 +1147,10 @@ class SynologyAPI:
             status_callback: Optionaler Callback für Status-Updates (für FastAPI-Server)
                             Wird mit Dict aufgerufen: {num_dir, num_file, total_size, waited, finished}
             progress_update_callback: Optionaler Callback für Rich Progress Updates (für CLI)
+            cancel_check: Optionaler Callback ohne Argumente, der True liefert, wenn
+                          der Aufrufer abbrechen will. Wird bei jedem Poll geprüft;
+                          bei True wird der DirSize-Task am NAS gestoppt und None
+                          zurückgegeben. Ohne Callback (CLI) ändert sich nichts.
                                       Wird mit String aufgerufen: neue Description für Progress
         
         Returns:
@@ -1253,6 +1258,17 @@ class SynologyAPI:
             
             try:
                 while waited < max_wait:
+                    # Abbruchwunsch des Aufrufers: den Task am NAS stoppen,
+                    # damit er dort nicht weiterrechnet, und aufgeben.
+                    if cancel_check is not None and cancel_check():
+                        if not self.output_json:
+                            console.print(
+                                f"[yellow]![/yellow] [{folder_name}] Abbruch angefordert - "
+                                "stoppe Task am NAS"
+                            )
+                        self._stop_task(task_id, ignore_errors=True)
+                        return None
+
                     # Längere Wartezeit bei 599-Fehlern
                     if error_599_count > 0:
                         wait_time = 5

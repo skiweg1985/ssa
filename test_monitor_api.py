@@ -22,7 +22,10 @@ SCAN_REPORT_KEYS = {
     "schema_version", "generated_at", "severity", "severity_text", "state",
     "reasons", "message", "scan", "run", "last_run", "last_success", "schedule",
 }
-RUN_KEYS = {"active", "started_at", "active_seconds", "progress_percent", "current_path"}
+RUN_KEYS = {
+    "active", "started_at", "active_seconds", "progress_percent", "current_path",
+    "stuck_after_seconds", "stuck", "cancel_requested",
+}
 LAST_RUN_KEYS = {
     "at", "age_seconds", "status", "error", "duration_seconds",
     "folders_total", "folders_ok", "folders_failed", "folders_failed_names",
@@ -318,6 +321,122 @@ class TestScanStates:
         assert body["run"]["active"] is True
         assert body["schedule"]["overdue"] is False
         assert body["state"] != "overdue"
+
+    def test_running_scan_reports_start_time_and_threshold(
+        self, client, auth_headers, seeded_job
+    ):
+        """Laufzeit und Hängen-Schwelle sind sichtbar, solange der Scan läuft"""
+        from app.services.scanner import PATH_MAX_WAIT_SECONDS, scanner_service
+
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        try:
+            body = _get(client, auth_headers, seeded_job).json()
+        finally:
+            _reset_scanner_state()
+
+        assert body["run"]["active"] is True
+        assert body["run"]["started_at"] is not None
+        assert body["run"]["active_seconds"] is not None
+        assert body["run"]["active_seconds"] >= 0
+        assert body["run"]["stuck"] is False
+        assert body["run"]["cancel_requested"] is False
+        # 2 Pfade -> 2 * 300 * 2 = 1200, unter der Untergrenze von 1800
+        assert body["run"]["stuck_after_seconds"] == pytest.approx(
+            max(1800, 2 * PATH_MAX_WAIT_SECONDS * 2)
+        )
+
+    def test_long_running_scan_is_stuck_and_critical(
+        self, client, auth_headers, seeded_job
+    ):
+        """Der eigentliche Zweck: ein hängender Lauf darf nicht unsichtbar bleiben"""
+        from app.services.scanner import scanner_service
+
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        # Startzeitpunkt künstlich zurückdatieren
+        with scanner_service._state_lock:
+            scanner_service._scan_started_at[seeded_job["slug"]] = datetime.now(
+                timezone.utc
+            ) - timedelta(hours=5)
+        try:
+            body = _get(client, auth_headers, seeded_job).json()
+        finally:
+            _reset_scanner_state()
+
+        assert_monitor_contract(body)
+        assert body["run"]["active"] is True
+        assert body["run"]["stuck"] is True
+        assert body["severity"] == 2
+        assert body["state"] == "stuck"
+        assert "hängt" in body["message"]
+        assert "cancel" in body["message"], (
+            "die Meldung soll den Weg zum Abbruch nennen"
+        )
+
+    def test_stuck_beats_a_failed_previous_run(self, client, auth_headers, seeded_job):
+        """Der akute Zustand gewinnt gegen das Ergebnis eines alten Laufs"""
+        from app.services.scanner import scanner_service
+
+        _add_result(seeded_job, status="failed", folders=[], error="alter Fehler")
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        with scanner_service._state_lock:
+            scanner_service._scan_started_at[seeded_job["slug"]] = datetime.now(
+                timezone.utc
+            ) - timedelta(hours=5)
+        try:
+            body = _get(client, auth_headers, seeded_job).json()
+        finally:
+            _reset_scanner_state()
+
+        assert body["state"] == "stuck"
+        assert body["reasons"][0] == "stuck"
+        assert "failed" in body["reasons"], "der alte Fehllauf bleibt als Grund sichtbar"
+
+    def test_disabled_job_is_never_stuck(self, client, auth_headers, seeded_job):
+        """Auch ein hängender Lauf alarmiert nicht, wenn der Job deaktiviert ist"""
+        from app.services.scanner import scanner_service
+
+        client.put(
+            f"/api/scan-jobs/{seeded_job['slug']}",
+            headers=auth_headers,
+            json={
+                "name": seeded_job["name"],
+                "nas_connection_id": seeded_job["nas_connection_id"],
+                "paths": seeded_job["paths"],
+                "interval": seeded_job["interval"],
+                "enabled": False,
+            },
+        )
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        with scanner_service._state_lock:
+            scanner_service._scan_started_at[seeded_job["slug"]] = datetime.now(
+                timezone.utc
+            ) - timedelta(hours=5)
+        try:
+            body = _get(client, auth_headers, seeded_job).json()
+        finally:
+            _reset_scanner_state()
+
+        assert body["state"] == "disabled"
+        assert body["severity"] == 0
+        assert "stuck" in body["reasons"]
+
+    def test_cancelled_run_is_warning_not_failure(self, client, auth_headers, seeded_job):
+        """Ein Abbruch ist kein Fehler - Warnung statt kritisch"""
+        _add_result(
+            seeded_job,
+            status="cancelled",
+            folders=[],
+            error="Abgebrochen nach 42s - 0 von 2 Pfad(en) gemessen",
+        )
+        body = _get(client, auth_headers, seeded_job).json()
+        assert_monitor_contract(body)
+        assert body["severity"] == 1
+        assert body["state"] == "cancelled"
+        assert body["last_run"]["status"] == "cancelled"
+        assert "Abgebrochen" in body["message"]
+        # Die Messwerte des letzten erfolgreichen Laufs bleiben erhalten
+        assert body["last_success"]["at"] is not None
+        assert body["last_success"]["total_bytes"] == 1073741824 + 500000000
 
     def test_never_run_is_warning_not_error_response(self, client, auth_headers):
         """HTTP 200 mit Daten - anders als der PRTG-Endpoint (prtg.error)"""
@@ -630,6 +749,252 @@ class TestInstanceAndServer:
         assert body["jobs"]["failed"] == 1
         assert body["severity"] == 0
         assert body["state"] == "ok"
+
+
+# ----------------------------------------------------------------------
+# Fortschrittsberechnung (geteilt zwischen /progress und den Berichten)
+# ----------------------------------------------------------------------
+
+class TestProgressPercent:
+    """
+    Die Rechnung lag vorher inline in der /progress-Route und war ungetestet.
+    Sie ist jetzt geteilt, also lohnt sie eigene Prüfungen mit Handrechnung.
+    """
+
+    def _completed(self, folders):
+        """folders: Liste (name, size, dirs, files)"""
+        return ScanResult(
+            scan_slug="s",
+            scan_name="S",
+            timestamp=datetime.now(timezone.utc),
+            status="completed",
+            results=[
+                ScanResultItem(
+                    folder_name=name,
+                    success=True,
+                    num_dir=dirs,
+                    num_file=files,
+                    total_size=TotalSize(bytes=size, formatted=1.0, unit="B"),
+                )
+                for name, size, dirs, files in folders
+            ],
+        )
+
+    def test_half_way_through_a_single_path(self):
+        from app.services.monitoring import compute_progress_percent
+
+        historical = self._completed([("/a", 1000, 10, 100)])
+        progress = {
+            "path_status": {
+                "/a": {"total_size": 500, "num_dir": 5, "num_file": 50, "finished": False}
+            }
+        }
+        # Alle drei Metriken bei 50 % -> 50*0.7 + 50*0.2 + 50*0.1 = 50.0
+        assert compute_progress_percent(progress, historical) == pytest.approx(50.0)
+
+    def test_weighting_follows_historical_size(self):
+        """Ein fertiger großer Ordner zählt mehr als ein offener kleiner"""
+        from app.services.monitoring import compute_progress_percent
+
+        historical = self._completed([("/big", 900, 9, 90), ("/small", 100, 1, 10)])
+        progress = {
+            "path_status": {
+                "/big": {"total_size": 900, "num_dir": 9, "num_file": 90, "finished": True},
+                "/small": {"total_size": 0, "num_dir": 0, "num_file": 0, "finished": False},
+            }
+        }
+        # Gewichte 900 und 100 -> (100 % * 900 + 0 % * 100) / 1000 = 90 %
+        assert compute_progress_percent(progress, historical) == pytest.approx(90.0)
+
+    def test_without_historical_run_no_estimate(self):
+        from app.services.monitoring import compute_progress_percent
+
+        assert compute_progress_percent({"path_status": {}}, None) is None
+        empty = ScanResult(
+            scan_slug="s",
+            scan_name="S",
+            timestamp=datetime.now(timezone.utc),
+            status="completed",
+            results=[],
+        )
+        assert compute_progress_percent({"path_status": {}}, empty) is None
+
+    def test_paths_are_matched_regardless_of_slashes(self):
+        from app.services.monitoring import compute_progress_percent
+
+        historical = self._completed([("/a/", 1000, 10, 100)])
+        progress = {
+            "path_status": {
+                "a": {"total_size": 1000, "num_dir": 10, "num_file": 100, "finished": True}
+            }
+        }
+        assert compute_progress_percent(progress, historical) == pytest.approx(100.0)
+
+    def test_empty_folder_counts_only_when_finished(self):
+        """Größe 0 ist ein gültiger Messwert - das finished-Flag entscheidet"""
+        from app.services.monitoring import compute_progress_percent
+
+        historical = self._completed([("/leer", 0, 0, 0)])
+        offen = {"path_status": {"/leer": {"total_size": 0, "finished": False}}}
+        fertig = {"path_status": {"/leer": {"total_size": 0, "finished": True}}}
+        assert compute_progress_percent(offen, historical) == pytest.approx(0.0)
+        assert compute_progress_percent(fertig, historical) == pytest.approx(100.0)
+
+    def test_no_path_status_means_no_progress_yet(self):
+        """
+        Solange kein Pfad Werte gemeldet hat, ist der Fortschritt 0 - auch wenn
+        der Snapshot aggregierte Summen trägt. Die gewichtete Rechnung pro Pfad
+        hat Vorrang; der Summen-Fallback greift erst, wenn KEIN historischer
+        Pfad Gewicht hat. Verhalten unverändert gegenüber der früheren
+        Inline-Rechnung in der /progress-Route.
+        """
+        from app.services.monitoring import compute_progress_percent
+
+        historical = self._completed([("/a", 1000, 10, 100)])
+        progress = {"path_status": {}, "total_size": 400, "num_dir": 4, "num_file": 40}
+        assert compute_progress_percent(progress, historical) == pytest.approx(0.0)
+
+    def test_unmatched_paths_are_treated_as_not_started(self):
+        """Ein umbenannter Pfad findet keinen historischen Partner -> 0 %"""
+        from app.services.monitoring import compute_progress_percent
+
+        historical = self._completed([("/alt", 1000, 10, 100)])
+        progress = {
+            "path_status": {
+                "/neu": {"total_size": 1000, "num_dir": 10, "num_file": 100,
+                         "finished": True}
+            }
+        }
+        assert compute_progress_percent(progress, historical) == pytest.approx(0.0)
+
+    def test_progress_endpoint_still_reports_percent(
+        self, client, auth_headers, seeded_job
+    ):
+        """Der Endpunkt liefert nach der Extraktion unverändert progress_percent"""
+        from app.services.scanner import scanner_service
+
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        scanner_service._set_path_status(
+            seeded_job["slug"],
+            "/design",
+            {"num_dir": 5, "num_file": 50, "total_size": 536870912, "waited": 4,
+             "finished": False},
+        )
+        try:
+            response = client.get(
+                f"/api/scans/{seeded_job['slug']}/progress", headers=auth_headers
+            )
+            assert response.status_code == 200
+            body = response.json()
+        finally:
+            _reset_scanner_state()
+
+        assert set(body.keys()) == {"scan_slug", "scan_name", "status", "progress"}
+        assert body["status"] == "running"
+        assert "progress_percent" in body["progress"]
+        assert body["progress"]["progress_percent"] is not None
+        assert 0 <= body["progress"]["progress_percent"] <= 100
+
+    def test_progress_endpoint_404_without_running_scan(
+        self, client, auth_headers, seeded_job
+    ):
+        response = client.get(
+            f"/api/scans/{seeded_job['slug']}/progress", headers=auth_headers
+        )
+        assert response.status_code == 404
+
+
+# ----------------------------------------------------------------------
+# Abbruch eines laufenden Scans
+# ----------------------------------------------------------------------
+
+class TestCancelScan:
+    def test_cancel_marks_running_scan(self, client, auth_headers, seeded_job):
+        from app.services.scanner import scanner_service
+
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        try:
+            response = client.post(
+                f"/api/scans/{seeded_job['slug']}/cancel", headers=auth_headers
+            )
+            assert response.status_code == 200
+            body = response.json()
+            assert body["cancelling"] is True
+            assert body["scan_slug"] == seeded_job["slug"]
+            assert scanner_service.is_cancel_requested(seeded_job["slug"]) is True
+
+            # Der Monitoring-Bericht macht den angeforderten Abbruch sichtbar
+            report = _get(client, auth_headers, seeded_job).json()
+            assert report["run"]["cancel_requested"] is True
+        finally:
+            _reset_scanner_state()
+
+    def test_cancel_without_running_scan_is_not_an_error(
+        self, client, auth_headers, seeded_job
+    ):
+        """Ein doppelter Klick soll keine Fehlermeldung produzieren"""
+        response = client.post(
+            f"/api/scans/{seeded_job['slug']}/cancel", headers=auth_headers
+        )
+        assert response.status_code == 200
+        assert response.json()["cancelling"] is False
+
+    def test_cancel_unknown_slug_is_404(self, client, auth_headers):
+        response = client.post(
+            "/api/scans/gibtsnicht/cancel", headers=auth_headers
+        )
+        assert response.status_code == 404
+
+    def test_cancel_needs_login_token(self, client, api_token_headers, seeded_job):
+        """Read-only API-Tokens dürfen nur GET - kein Abbrechen"""
+        response = client.post(
+            f"/api/scans/{seeded_job['slug']}/cancel", headers=api_token_headers
+        )
+        assert response.status_code == 403
+
+    def test_cancel_requires_authentication(self, client, seeded_job):
+        assert client.post(f"/api/scans/{seeded_job['slug']}/cancel").status_code == 401
+
+    def test_cancel_flag_does_not_leak_into_next_run(
+        self, client, auth_headers, seeded_job
+    ):
+        """Ein alter Abbruchwunsch darf den nächsten Lauf nicht sofort beenden"""
+        from app.services.scanner import scanner_service
+
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        client.post(f"/api/scans/{seeded_job['slug']}/cancel", headers=auth_headers)
+        assert scanner_service.is_cancel_requested(seeded_job["slug"]) is True
+
+        scanner_service._finish_scan(seeded_job["slug"])
+        assert scanner_service.is_cancel_requested(seeded_job["slug"]) is False
+
+        _reset_scanner_state()
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        try:
+            assert scanner_service.is_cancel_requested(seeded_job["slug"]) is False
+        finally:
+            _reset_scanner_state()
+
+    def test_cancel_during_grace_period_does_nothing(
+        self, client, auth_headers, seeded_job
+    ):
+        """
+        Nach dem Ende gilt ein Scan 5 s lang noch als "laufend" (fürs Frontend).
+        Ein Abbruch in diesem Fenster würde nur den nächsten Lauf belasten.
+        """
+        from app.services.scanner import scanner_service
+
+        assert scanner_service._try_start_scan(seeded_job["slug"]) is True
+        scanner_service._finish_scan(seeded_job["slug"])
+        try:
+            assert scanner_service.is_scan_running(seeded_job["slug"]) is True
+            response = client.post(
+                f"/api/scans/{seeded_job['slug']}/cancel", headers=auth_headers
+            )
+            assert response.json()["cancelling"] is False
+            assert scanner_service.is_cancel_requested(seeded_job["slug"]) is False
+        finally:
+            _reset_scanner_state()
 
 
 # ----------------------------------------------------------------------

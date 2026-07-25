@@ -29,10 +29,12 @@ class MonitorState(str, Enum):
     """Grund für die Severity. Reihenfolge hier = Reihenfolge der Auswertung."""
     ERROR = "error"                # Auswertung selbst fehlgeschlagen
     DISABLED = "disabled"          # Job bewusst deaktiviert -> kein Alarm
+    STUCK = "stuck"                # läuft ungewöhnlich lange -> hängt vermutlich
     FAILED = "failed"              # letzter beendeter Lauf fehlgeschlagen
     OVERDUE = "overdue"            # deutlich überfällig
     NEVER_RUN = "never_run"        # noch keine Ergebnisse
     UNSCHEDULED = "unscheduled"    # aktiv, aber nicht eingeplant
+    CANCELLED = "cancelled"        # letzter Lauf wurde abgebrochen
     STALE = "stale"                # länger nicht gelaufen als erwartet
     PARTIAL = "partial"            # Lauf ok, aber Ordner fehlgeschlagen
     OK = "ok"
@@ -53,10 +55,16 @@ SEVERITY_BY_STATE: Dict[MonitorState, MonitorSeverity] = {
     # Ein absichtlich deaktivierter Job darf nie alarmieren - deshalb OK,
     # obwohl "disabled" in der Kaskade Vorrang vor Fehlergründen hat.
     MonitorState.DISABLED: MonitorSeverity.OK,
+    # Ein hängender Lauf ist kritisch: solange er als laufend gilt, setzt er
+    # die Überfälligkeit aus - das Monitoring wäre sonst dauerhaft blind.
+    MonitorState.STUCK: MonitorSeverity.CRITICAL,
     MonitorState.FAILED: MonitorSeverity.CRITICAL,
     MonitorState.OVERDUE: MonitorSeverity.CRITICAL,
     MonitorState.NEVER_RUN: MonitorSeverity.WARNING,
     MonitorState.UNSCHEDULED: MonitorSeverity.WARNING,
+    # Abbruch war eine bewusste Handlung - keine frischen Daten, aber kein
+    # Fehler, der jemanden aus dem Bett holen müsste.
+    MonitorState.CANCELLED: MonitorSeverity.WARNING,
     MonitorState.STALE: MonitorSeverity.WARNING,
     MonitorState.PARTIAL: MonitorSeverity.WARNING,
     MonitorState.OK: MonitorSeverity.OK,
@@ -104,16 +112,30 @@ class RunInfo(BaseModel):
     """
     active: bool = Field(..., description="Ob gerade ein Scan dieses Jobs läuft")
     started_at: Optional[datetime] = Field(
-        None, description="Startzeitpunkt des laufenden Scans (derzeit immer null)"
+        None, description="Startzeitpunkt des laufenden Scans"
     )
     active_seconds: Optional[float] = Field(
-        None, description="Laufzeit des laufenden Scans (derzeit immer null)"
+        None, description="Bisherige Laufzeit des laufenden Scans in Sekunden"
     )
     progress_percent: Optional[float] = Field(
-        None, description="Fortschritt in Prozent (derzeit immer null)"
+        None, description="Fortschritt in Prozent, sofern ermittelbar"
     )
     current_path: Optional[str] = Field(
-        None, description="Gerade gescannter Pfad (derzeit immer null)"
+        None, description="Gerade gescannter Pfad"
+    )
+    stuck_after_seconds: Optional[float] = Field(
+        None,
+        description=(
+            "Ab dieser Laufzeit gilt der Lauf als hängend. Abgeleitet aus der "
+            "Pfadanzahl (je Pfad gilt ein Timeout von 300 s), verdoppelt als "
+            "Puffer, mindestens 30 Minuten"
+        ),
+    )
+    stuck: bool = Field(
+        False, description="Ob der laufende Scan die Hängen-Schwelle überschritten hat"
+    )
+    cancel_requested: bool = Field(
+        False, description="Ob für diesen Lauf ein Abbruch angefordert wurde"
     )
 
 
@@ -233,6 +255,8 @@ class ScansSummary(BaseModel):
     failed: int = 0
     partial: int = 0
     unscheduled: int = 0
+    stuck: int = 0
+    cancelled: int = 0
     worst_slug: Optional[str] = Field(None, description="Slug des schlimmsten Jobs")
     stalest_slug: Optional[str] = Field(None, description="Job mit dem ältesten Lauf")
     stalest_age_seconds: Optional[float] = Field(None, description="Alter dieses Laufs")

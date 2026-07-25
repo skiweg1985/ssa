@@ -42,6 +42,10 @@ from app.models.monitor import (
 
 logger = logging.getLogger(__name__)
 
+# Untergrenze der Hängen-Schwelle: ein Job mit einem einzigen Pfad soll nicht
+# schon nach zehn Minuten als hängend gelten.
+MIN_STUCK_AFTER_SECONDS = 1800
+
 # Auswertungsreihenfolge der Gründe: der erste zutreffende bestimmt `state`.
 # Bewusst NICHT nach Severity sortiert - DISABLED hat Severity 0, muss aber
 # jeden Fehlergrund überstimmen: ein absichtlich deaktivierter Job darf nicht
@@ -49,10 +53,14 @@ logger = logging.getLogger(__name__)
 STATE_PRECEDENCE: Tuple[MonitorState, ...] = (
     MonitorState.ERROR,
     MonitorState.DISABLED,
+    # STUCK vor FAILED: der Zustand ist akut und blockiert den Job gerade,
+    # während FAILED einen bereits beendeten Lauf beschreibt.
+    MonitorState.STUCK,
     MonitorState.FAILED,
     MonitorState.OVERDUE,
     MonitorState.NEVER_RUN,
     MonitorState.UNSCHEDULED,
+    MonitorState.CANCELLED,
     MonitorState.STALE,
     MonitorState.PARTIAL,
     MonitorState.OK,  # Schlusslicht: gilt, wenn kein anderer Grund zutrifft
@@ -131,6 +139,131 @@ def age_limits(
     }
 
 
+def stuck_after_seconds(path_count: int) -> float:
+    """
+    Ab welcher Laufzeit ein Scan als hängend gilt.
+
+    Abgeleitet aus der Pfadanzahl statt aus dem Scan-Intervall: der Scanner
+    räumt jedem Pfad ein Timeout von PATH_MAX_WAIT_SECONDS ein, damit ist die
+    plausible Obergrenze eines Laufs berechenbar - auch für Jobs, deren
+    Intervall sich nicht ermitteln lässt. Verdoppelt als Puffer (Login, Logout,
+    Wiederholungen), mit einer Untergrenze, damit kleine Jobs nicht bei jeder
+    Verzögerung als hängend gelten.
+    """
+    from app.services.scanner import PATH_MAX_WAIT_SECONDS
+
+    return max(
+        MIN_STUCK_AFTER_SECONDS, max(1, path_count) * PATH_MAX_WAIT_SECONDS * 2
+    )
+
+
+def compute_progress_percent(
+    progress: Dict[str, Any], last_completed: Optional[Any]
+) -> Optional[float]:
+    """
+    Fortschritt eines laufenden Scans in Prozent, gemessen am letzten
+    erfolgreichen Lauf.
+
+    Gewichtet pro Ordner nach dessen historischer Größe und mischt die
+    Metriken (Größe 70 %, Ordner 20 %, Dateien 10 %). Ohne historischen
+    Vergleichslauf ist keine Aussage möglich - dann None.
+
+    Genutzt von GET /api/scans/{slug}/progress und den Monitoring-Berichten,
+    damit Oberfläche und Monitoring dieselbe Zahl zeigen.
+    """
+    if not last_completed or not last_completed.results:
+        return None
+
+    path_status = progress.get("path_status", {})
+
+    def normalize(p: str) -> str:
+        return p.strip().strip("/")
+
+    # Historische Werte je Pfad
+    historical_by_path: Dict[str, Dict[str, int]] = {}
+    for item in last_completed.results:
+        if item.success:
+            historical_by_path[normalize(item.folder_name)] = {
+                "size": item.total_size.bytes if item.total_size else 0,
+                "dirs": item.num_dir or 0,
+                "files": item.num_file or 0,
+            }
+
+    # Aktuelle Werte je Pfad; bei Kollision gewinnt der weiter fortgeschrittene
+    normalized_path_status: Dict[str, Dict[str, Any]] = {}
+    for path, status in path_status.items():
+        key = normalize(path)
+        existing = normalized_path_status.get(key)
+        if existing is None or status.get("total_size", 0) > existing.get("total_size", 0):
+            normalized_path_status[key] = status
+
+    weighted_size = weighted_dirs = weighted_files = 0.0
+    total_weight = 0.0
+
+    for key, historical in historical_by_path.items():
+        current = normalized_path_status.get(key, {})
+        current_size = current.get("total_size", 0) or 0
+        current_dirs = current.get("num_dir", 0) or 0
+        current_files = current.get("num_file", 0) or 0
+        finished = bool(current.get("finished", False))
+
+        hist_size = historical["size"]
+        hist_dirs = historical["dirs"]
+        hist_files = historical["files"]
+
+        # Gewicht: die Größe ist der genaueste Indikator, sonst Ordner/Dateien
+        if hist_size > 0:
+            weight = float(hist_size)
+        elif hist_dirs > 0:
+            weight = hist_dirs * 1000.0
+        elif hist_files > 0:
+            weight = float(hist_files)
+        else:
+            weight = 1.0
+
+        def ratio(current_value: int, historical_value: int) -> float:
+            if historical_value > 0:
+                return min(100.0, max(0.0, (current_value / historical_value) * 100))
+            # Leerer Ordner: erst mit dem finished-Flag zu 100 %
+            return 100.0 if finished else 0.0
+
+        weighted_size += ratio(current_size, hist_size) * weight
+        weighted_dirs += ratio(current_dirs, hist_dirs) * weight
+        weighted_files += ratio(current_files, hist_files) * weight
+        total_weight += weight
+
+    if total_weight > 0:
+        size_percent = weighted_size / total_weight
+        dirs_percent = weighted_dirs / total_weight
+        files_percent = weighted_files / total_weight
+    else:
+        # Greift nur, wenn KEIN historischer Pfad Gewicht hat - also praktisch
+        # nur, wenn der Vergleichslauf keine erfolgreichen Ordner enthält.
+        # Ein leerer path_status allein führt NICHT hierher, sondern oben zu 0 %.
+        historical_total_size = sum(
+            item.total_size.bytes
+            for item in last_completed.results
+            if item.success and item.total_size and item.total_size.bytes > 0
+        )
+        historical_total_dirs = sum(
+            item.num_dir or 0 for item in last_completed.results if item.success
+        )
+        historical_total_files = sum(
+            item.num_file or 0 for item in last_completed.results if item.success
+        )
+
+        def total_ratio(current_value: int, historical_value: int) -> float:
+            if historical_value > 0:
+                return min(100.0, max(0.0, (current_value / historical_value) * 100))
+            return 0.0
+
+        size_percent = total_ratio(progress.get("total_size", 0) or 0, historical_total_size)
+        dirs_percent = total_ratio(progress.get("num_dir", 0) or 0, historical_total_dirs)
+        files_percent = total_ratio(progress.get("num_file", 0) or 0, historical_total_files)
+
+    return round(size_percent * 0.7 + dirs_percent * 0.2 + files_percent * 0.1, 1)
+
+
 def format_age(seconds: Optional[float]) -> str:
     """Alter als deutscher Text ("vor 12 Minuten") für das `message`-Feld"""
     if seconds is None:
@@ -150,6 +283,25 @@ def format_age(seconds: Optional[float]) -> str:
         return f"vor {value} Stunde{'n' if value != 1 else ''}"
     value = int(round(seconds / 86400))
     return f"vor {value} Tag{'en' if value != 1 else ''}"
+
+
+def format_duration(seconds: Optional[float]) -> str:
+    """Dauer als deutscher Text ("2 Stunden") - für Laufzeiten, nicht für Alter"""
+    if seconds is None:
+        return "unbekannt"
+    seconds = max(0.0, seconds)
+    if seconds < 90:
+        return f"{int(seconds)} Sekunden"
+    minutes = seconds / 60
+    if minutes < 90:
+        value = int(round(minutes))
+        return f"{value} Minute{'n' if value != 1 else ''}"
+    hours = seconds / 3600
+    if hours < 48:
+        value = int(round(hours))
+        return f"{value} Stunde{'n' if value != 1 else ''}"
+    value = int(round(seconds / 86400))
+    return f"{value} Tag{'en' if value != 1 else ''}"
 
 
 def format_interval(seconds: Optional[float]) -> str:
@@ -231,8 +383,34 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
     stale_after = limits["warn_max"]
     overdue_after = limits["err_max"]
 
-    # --- Ordnerzahlen: beziehen sich auf den letzten Lauf ---
+    # Einmal ermitteln - der Aufruf baut die Job-Konfiguration nach und ist
+    # nicht kostenlos. Wird für die Ordnerbilanz UND die Hängen-Schwelle gebraucht.
     expected_paths = expected_path_count(job)
+
+    # --- Der laufende Scan ---
+    started_at = scanner_service.get_scan_started_at(slug)
+    active_seconds = age_seconds(started_at) if started_at is not None else None
+    stuck_after = stuck_after_seconds(expected_paths)
+    stuck = bool(
+        run_active and active_seconds is not None and active_seconds > stuck_after
+    )
+    progress = scanner_service.get_scan_progress(slug) if run_active else None
+    run = RunInfo(
+        active=run_active,
+        started_at=started_at,
+        active_seconds=active_seconds,
+        progress_percent=(
+            compute_progress_percent(progress, latest_completed)
+            if progress is not None
+            else None
+        ),
+        current_path=progress.get("current_path") if progress else None,
+        stuck_after_seconds=stuck_after,
+        stuck=stuck,
+        cancel_requested=scanner_service.is_cancel_requested(slug),
+    )
+
+    # --- Ordnerzahlen: beziehen sich auf den letzten Lauf ---
     if latest is not None:
         run_ok_items = [item for item in latest.results if item.success]
         run_failed_items = [item for item in latest.results if not item.success]
@@ -318,11 +496,15 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
     reasons: List[MonitorState] = []
     if not enabled:
         reasons.append(MonitorState.DISABLED)
+    if stuck:
+        reasons.append(MonitorState.STUCK)
     if latest is None:
         reasons.append(MonitorState.NEVER_RUN)
     else:
         if latest.status == "failed":
             reasons.append(MonitorState.FAILED)
+        if latest.status == "cancelled":
+            reasons.append(MonitorState.CANCELLED)
         if folders_failed > 0:
             reasons.append(MonitorState.PARTIAL)
         if overdue:
@@ -338,8 +520,6 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
     # sonst würde ein deaktivierter Job mit Fehllauf doch alarmieren.
     severity = SEVERITY_BY_STATE[state]
 
-    run = RunInfo(active=run_active)
-
     return ScanMonitorReport(
         generated_at=datetime.now(timezone.utc),
         severity=severity,
@@ -350,6 +530,7 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
             state=state,
             job_name=job["name"],
             run_active=run_active,
+            run=run,
             last_run=last_run,
             last_success=last_success,
             schedule=schedule,
@@ -367,6 +548,7 @@ def _build_scan_message(
     state: MonitorState,
     job_name: str,
     run_active: bool,
+    run: RunInfo,
     last_run: LastRunInfo,
     last_success: LastSuccessInfo,
     schedule: ScheduleInfo,
@@ -376,6 +558,23 @@ def _build_scan_message(
 
     if state == MonitorState.DISABLED:
         return "Job ist deaktiviert"
+    if state == MonitorState.STUCK:
+        detail = ""
+        if run.progress_percent is not None:
+            detail = f" bei {run.progress_percent:.0f} %"
+        if run.current_path:
+            detail += f", zuletzt '{run.current_path}'"
+        hint = (
+            " - Abbruch bereits angefordert"
+            if run.cancel_requested
+            else " - Abbruch über POST /api/scans/<slug>/cancel möglich"
+        )
+        return (
+            f"Scan läuft seit {format_duration(run.active_seconds)} und hängt "
+            f"vermutlich{detail}{hint}"
+        )
+    if state == MonitorState.CANCELLED:
+        return f"Letzter Lauf {age} abgebrochen: {last_run.error or 'ohne Angabe'}"
     if state == MonitorState.NEVER_RUN:
         return "Job hat noch keine Ergebnisse geliefert"
     if state == MonitorState.FAILED:
@@ -473,6 +672,10 @@ def evaluate_scans(include_scans: bool = True) -> ScansMonitorReport:
             summary.partial += 1
         elif report.state == MonitorState.UNSCHEDULED:
             summary.unscheduled += 1
+        elif report.state == MonitorState.STUCK:
+            summary.stuck += 1
+        elif report.state == MonitorState.CANCELLED:
+            summary.cancelled += 1
 
         # Ältester letzter Lauf, nur aktivierte Jobs - deaktivierte laufen
         # bewusst nicht und würden den Wert sonst dauerhaft verzerren.

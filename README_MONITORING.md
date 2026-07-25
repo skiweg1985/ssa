@@ -15,6 +15,7 @@ Werkzeuge, speziell für PRTG, und den offenen Health-Check.
 | `GET /api/prtg/scans/<slug>` | PRTG-Sensor **pro Scan-Job** | ja |
 | `GET /api/prtg/server` | PRTG-Sensor für den **Server selbst** | ja |
 | `GET /health` | reiner Up/Down-Check, z.B. Docker-Healthcheck | nein |
+| `POST /api/scans/<slug>/cancel` | laufenden Scan abbrechen — nur mit Login | ja |
 | `GET /api/scans/<slug>/results` | Rohdaten und Historie zur Auswertung | ja |
 
 Für PRTG die `/api/prtg/*`-Sensoren nehmen — sie legen ihre Kanäle selbst an.
@@ -63,13 +64,18 @@ Es gilt der erste zutreffende Grund von oben:
 |---|---|---|
 | `error` | 2 | Zustand nicht ermittelbar — Details im Server-Log |
 | `disabled` | **0** | Job ist deaktiviert |
+| `stuck` | 2 | läuft ungewöhnlich lange — hängt vermutlich |
 | `failed` | 2 | letzter beendeter Lauf ist fehlgeschlagen |
 | `overdue` | 2 | Lauf deutlich überfällig — ab 3x Intervall |
 | `never_run` | 1 | noch keine Ergebnisse vorhanden |
 | `unscheduled` | 1 | aktiviert, aber nicht im Scheduler eingeplant |
+| `cancelled` | 1 | letzter Lauf wurde abgebrochen |
 | `stale` | 1 | länger nicht gelaufen als erwartet — ab 2x Intervall |
 | `partial` | 1 | Lauf abgeschlossen, aber Ordner fehlgeschlagen |
 | `ok` | 0 | letzter Lauf erfolgreich, alle Ordner gescannt |
+
+`stuck` steht **vor** `failed`: der Zustand ist akut und blockiert den Job
+gerade, während `failed` einen bereits beendeten Lauf beschreibt.
 
 `disabled` steht bewusst **vor** allen Fehlergründen und hat Severity 0: ein
 absichtlich deaktivierter Job darf nicht alarmieren. Der Fehlergrund bleibt in
@@ -84,7 +90,78 @@ blind war — bei einem Sechs-Stunden-Job mit 40 Minuten Laufzeit rund 10 % der
 Zeit.
 
 Ein laufender Scan kann die Severity nie verschlechtern und setzt die
-Überfälligkeit aus. Nur ein **beendeter** Lauf ändert `state`.
+Überfälligkeit aus. Nur ein **beendeter** Lauf ändert `state` — mit einer
+Ausnahme: einem Lauf, der hängt.
+
+### Hängende Läufe
+
+Genau weil ein laufender Scan die Überfälligkeit aussetzt, wäre ein Lauf, der
+nie endet, ein blinder Fleck: der Job gilt dauerhaft als „läuft", und kein
+Alter-Schwellwert greift mehr. Deshalb bekommt ein zu lange laufender Scan
+`run.stuck: true` und `state: "stuck"` mit **severity 2**.
+
+Die Schwelle steht in `run.stuck_after_seconds` und wird aus der **Pfadanzahl**
+abgeleitet, nicht aus dem Intervall: der Scanner räumt jedem Pfad ein Timeout
+von 300 s ein, also ist die plausible Obergrenze eines Laufs berechenbar —
+`Pfadanzahl × 300 s × 2`, mindestens 30 Minuten. Das funktioniert auch für Jobs,
+deren Intervall sich nicht ermitteln lässt.
+
+```json
+{
+  "severity": 2,
+  "severity_text": "critical",
+  "state": "stuck",
+  "reasons": ["stuck"],
+  "message": "Scan läuft seit 5 Stunden und hängt vermutlich bei 12 %, zuletzt '/photo' - Abbruch über POST /api/scans/<slug>/cancel möglich",
+  "run": {
+    "active": true,
+    "started_at": "2026-07-25T04:12:00Z",
+    "active_seconds": 18000.0,
+    "progress_percent": 12.4,
+    "current_path": "/photo",
+    "stuck_after_seconds": 1800.0,
+    "stuck": true,
+    "cancel_requested": false
+  }
+}
+```
+
+Ein **deaktivierter** Job alarmiert auch dann nicht — `disabled` überstimmt
+`stuck`, der Grund bleibt in `reasons` sichtbar.
+
+### Laufenden Scan abbrechen
+
+```http
+POST /api/scans/{scan_slug}/cancel
+```
+
+Erfordert eine **angemeldete Sitzung** — read-only API-Tokens dürfen nur `GET`.
+
+Der Abbruch ist **kooperativ**: Scans laufen als Hintergrund-Task bzw. als
+Scheduler-Job, es gibt kein Task-Handle zum harten Beenden. Der Lauf prüft den
+Wunsch zwischen zwei Pfaden und bei jedem Poll der Größenabfrage, endet also in
+der Regel innerhalb weniger Sekunden. Der laufende DirSize-Task wird zusätzlich
+am NAS gestoppt, damit dort nicht weitergerechnet wird.
+
+| Feld | Bedeutung |
+|---|---|
+| `cancelling: true` | Abbruch wurde hinterlegt |
+| `cancelling: false` | es lief gerade kein Scan — **kein Fehler**, damit ein doppelter Klick keine Fehlermeldung erzeugt |
+
+Ein unbekannter Slug ergibt HTTP 404. Solange der Wunsch hinterlegt und der Lauf
+noch nicht beendet ist, steht `run.cancel_requested: true` im Bericht.
+
+Der abgebrochene Lauf landet mit Status `cancelled` in der Historie: bereits
+gemessene Ordner bleiben erhalten, der Lauf zählt aber **nicht** als
+erfolgreicher Lauf — `last_success` bleibt also auf dem vorherigen guten Lauf
+stehen. Im Bericht wird daraus `state: "cancelled"` mit severity 1: keine
+frischen Daten, aber eine bewusste Handlung und damit kein Grund, jemanden aus
+dem Bett zu holen.
+
+Ein automatischer Abbruch hängender Läufe findet **nicht** statt — ein Job mit
+zwanzig Pfaden darf zulässig über eine Stunde brauchen, und ein Watchdog würde
+solche Läufe abschießen. `stuck` meldet, die Entscheidung bleibt beim Menschen
+oder bei einer Automatik, die ihr eigenes Urteil mitbringt.
 
 ### Felder des Job-Berichts
 
@@ -99,9 +176,12 @@ Zustand des Jobs.
 | `severity`, `severity_text`, `state`, `reasons`, `message` | siehe oben |
 | `scan.slug`, `scan.name`, `scan.enabled` | Identität des Jobs |
 | `run.active` | ob gerade ein Lauf aktiv ist |
-| `run.started_at`, `run.active_seconds`, `run.progress_percent`, `run.current_path` | derzeit immer `null` — für später vorgesehen |
+| `run.started_at`, `run.active_seconds` | Start und bisherige Laufzeit des aktiven Scans |
+| `run.progress_percent`, `run.current_path` | Fortschritt und aktueller Pfad, sofern ermittelbar |
+| `run.stuck`, `run.stuck_after_seconds` | ob der Lauf hängt, und ab wann er als hängend gilt |
+| `run.cancel_requested` | ob für diesen Lauf ein Abbruch angefordert wurde |
 | `last_run.at`, `last_run.age_seconds` | Zeitpunkt und Alter des letzten Laufs |
-| `last_run.status` | roher Lauf-Status: `completed`, `failed`, `running` |
+| `last_run.status` | roher Lauf-Status: `completed`, `failed`, `cancelled`, `running` |
 | `last_run.error` | Fehlermeldung des letzten Laufs |
 | `last_run.duration_seconds` | summierte Scan-Dauer |
 | `last_run.folders_total`, `folders_ok`, `folders_failed` | Ordnerbilanz des letzten Laufs |
@@ -605,6 +685,7 @@ Für Monitoring ist seine Antwort schwer auszuwerten:
 | Zweit-Call `/results` für Teilfehler | `last_run.folders_failed` |
 | kein Fehlertext | `last_run.error`, `message` |
 | eigene OK/Warn/Fehler-Logik | `severity` |
+| hängender Lauf nicht erkennbar | `run.stuck`, `state == "stuck"` |
 
 ## Rezepte
 
@@ -675,7 +756,9 @@ curl -s -H "Authorization: Bearer ssa_..." \
 - Messwerte stammen vom letzten **erfolgreichen** Lauf, die Ordnerbilanz vom
   letzten Lauf.
 - Ein laufender Scan verschlechtert die Severity nie und setzt die
-  Überfälligkeit aus.
+  Überfälligkeit aus — es sei denn, er hängt (`state: "stuck"`).
+- Der Abbruch wirkt nicht sofort: er ist kooperativ und greift beim nächsten
+  Prüfpunkt des Laufs.
 - Die Alters-Schwellwerte sind `2x` bzw. `3x` des erwarteten Intervalls, mit
   einer Untergrenze von `Intervall + 300 s` bzw. `+ 600 s` — damit
   Minuten-Jobs bei kleinem Verzug nicht flattern.

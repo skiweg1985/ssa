@@ -6,6 +6,7 @@ import type {
   ScanHistoryResponse,
   ScanProgress,
   TriggerResponse,
+  CancelResponse,
   ConfigReloadResponse,
   StorageStats,
   FoldersResponse,
@@ -209,6 +210,12 @@ export async function fetchScanProgress(scanName: string): Promise<ScanProgress>
 
 export async function triggerScan(scanName: string): Promise<TriggerResponse> {
   return fetchAPI<TriggerResponse>(`/scans/${scanName}/trigger`, {
+    method: 'POST',
+  });
+}
+
+export async function cancelScan(scanSlug: string): Promise<CancelResponse> {
+  return fetchAPI<CancelResponse>(`/scans/${scanSlug}/cancel`, {
     method: 'POST',
   });
 }

@@ -51,7 +51,13 @@ class ScanResult(BaseModel):
     scan_slug: str = Field(..., description="Slug des Scan-Tasks")
     scan_name: str = Field(..., description="Name des Scan-Tasks (für Anzeige)")
     timestamp: datetime = Field(..., description="Zeitstempel des Scans (ISO 8601)")
-    status: str = Field(..., description="Status: 'running', 'completed', 'failed'")
+    status: str = Field(
+        ...,
+        description=(
+            "Status: 'running', 'completed', 'failed', 'cancelled' "
+            "(manuell abgebrochen - kein Fehler, aber auch kein Erfolg)"
+        ),
+    )
     results: List[ScanResultItem] = Field(default_factory=list, description="Liste der Scan-Ergebnisse")
     error: Optional[str] = Field(None, description="Fehlermeldung bei Fehlschlag")
 
@@ -69,7 +75,12 @@ class ScanStatus(BaseModel):
     """Status eines Scan-Tasks"""
     scan_slug: str = Field(..., description="Slug des Scan-Tasks")
     scan_name: str = Field(..., description="Name des Scan-Tasks")
-    status: str = Field(..., description="Status: 'running', 'completed', 'failed', 'pending'")
+    status: str = Field(
+        ...,
+        description=(
+            "Status: 'running', 'completed', 'failed', 'cancelled', 'pending'"
+        ),
+    )
     last_run: Optional[datetime] = Field(None, description="Zeitpunkt des letzten Laufs")
     next_run: Optional[datetime] = Field(None, description="Zeitpunkt des nächsten geplanten Laufs")
     enabled: bool = Field(..., description="Ob der Scan aktiviert ist")
@@ -91,6 +102,20 @@ class TriggerResponse(BaseModel):
     scan_slug: str = Field(..., description="Slug des Scan-Tasks")
     message: str = Field(..., description="Status-Meldung")
     triggered: bool = Field(..., description="Ob der Scan erfolgreich gestartet wurde")
+
+
+class CancelResponse(BaseModel):
+    """Response für den Abbruch eines laufenden Scans"""
+    scan_slug: str = Field(..., description="Slug des Scan-Tasks")
+    message: str = Field(..., description="Status-Meldung")
+    cancelling: bool = Field(
+        ...,
+        description=(
+            "Ob ein Abbruch angefordert wurde. Der Abbruch ist kooperativ - "
+            "der Lauf endet erst beim nächsten Prüfpunkt, in der Regel "
+            "innerhalb weniger Sekunden"
+        ),
+    )
 
 
 class ScanHistoryResponse(BaseModel):
