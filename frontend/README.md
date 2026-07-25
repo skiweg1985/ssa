@@ -15,7 +15,7 @@ Modernisiertes React-Dashboard für den Synology Space Analyzer.
 
 ### Voraussetzungen
 
-- Node.js 18+ und npm
+- Node.js 22 LTS und npm (Vite 7 verlangt mindestens `20.19` bzw. `22.12`)
 
 ### Installation
 

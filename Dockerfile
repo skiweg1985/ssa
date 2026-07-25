@@ -10,7 +10,9 @@
 # ==============================================================================
 
 # ---------- Stage 1: Frontend-Build ----------
-FROM node:20-alpine AS frontend-build
+# Node 22 LTS: Vite 7 verlangt ^20.19.0 || >=22.12.0, und Node 20 ist seit
+# April 2026 aus dem Support.
+FROM node:22-alpine AS frontend-build
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
