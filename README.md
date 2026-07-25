@@ -146,7 +146,8 @@ Frontend verwaltet werden (API-Modal → „API-Tokens verwalten" oder ⌘K):
 
 - Token wird bei Erstellung **einmalig** angezeigt (gespeichert wird nur der Hash).
 - Zugriff: nur `GET` auf `/api/monitor*` (Zustandsberichte, s.u.), `/api/prtg*`
-  (PRTG-Sensordaten), `/api/scans*` (Status, Ergebnisse, Historie, Fortschritt)
+  (PRTG-Sensordaten), `/api/scans*` (Status, Ergebnisse, Historie, Fortschritt),
+  `/api/nas-metrics*` (Systemmetriken der NAS)
   und `/api/storage/stats` — kein Triggern, keine Verwaltung.
 - Verwendung: Header `Authorization: Bearer <token>`.
 - `/health` ist weiterhin ohne Token erreichbar (Up/Down-Checks).
@@ -165,12 +166,19 @@ curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/scans
 | `GET /api/monitor/server` | Infrastruktur — Scheduler, System, Storage |
 | `GET /api/prtg/scans/<slug>` | PRTG-Sensor pro Scan-Job |
 | `GET /api/prtg/server` | PRTG-Sensor für den Server selbst |
+| `GET /api/prtg/nas/<id>/capacity` | PRTG-Sensor: Volume-Belegung eines NAS |
+| `GET /api/prtg/nas/<id>/health` | PRTG-Sensor: Temperatur, Platten, RAID (SNMP) |
+| `GET /api/nas-metrics[/<id>]` | NAS-Systemmetriken als rohes JSON |
 
 Die `/api/monitor*`-Endpoints liefern den Zustand fertig ausgewertet: das Feld
 `severity` (0 = OK, 1 = Warnung, 2 = kritisch) genügt für die Alarmentscheidung —
 kein Zweit-Call, keine Client-Logik, kein Parsen von Cron-Ausdrücken. Für PRTG
 gibt es stattdessen Sensordaten im Format „HTTP Data Advanced", die ihre Kanäle
 selbst anlegen.
+
+Die `nas`-Endpoints messen die **NAS-Geräte selbst** — Kapazität, Temperatur,
+Plattenstatus, RAID. Nicht zu verwechseln mit `/api/prtg/server`, dessen CPU-
+und RAM-Kanäle den Rechner betreffen, auf dem SSA läuft.
 
 ```bash
 curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/monitor

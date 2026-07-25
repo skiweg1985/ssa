@@ -408,6 +408,64 @@ DELETE /api/storage/all
 
 Löscht alle gespeicherten Ergebnisse.
 
+### NAS-Systemmetriken
+
+```http
+GET /api/nas-metrics
+GET /api/nas-metrics/{id-oder-name}
+```
+
+Query-Parameter: `connection_id` (nur Listenendpoint), `groups=capacity,health`.
+
+Liefert Kapazität (File Station API) und Systemgesundheit (SNMP) je NAS. Es
+wird nichts persistiert - die Werte werden live geholt und ca. 60 s
+zwischengespeichert.
+
+```json
+{
+  "connection_id": 1,
+  "name": "NAS-01",
+  "host": "nas.local",
+  "collected_at": "2026-07-25T09:12:44.183000+00:00",
+  "cached": false,
+  "sources": {
+    "filestation": {
+      "available": true,
+      "error": null,
+      "data": {
+        "volumes": [
+          {
+            "name": "volume1",
+            "total_bytes": 8001563222016,
+            "free_bytes": 1200234512384,
+            "used_bytes": 6801328709632,
+            "used_percent": 85.0,
+            "readonly": false,
+            "share_count": 6
+          }
+        ],
+        "share_count": 7,
+        "shares_without_write": 1,
+        "virtual_mounts": 0,
+        "response_seconds": 0.412
+      }
+    },
+    "snmp": {
+      "available": false,
+      "error": "SNMP ist für diese NAS-Verbindung nicht aktiviert",
+      "data": null
+    }
+  }
+}
+```
+
+Jede Quelle trägt ihren eigenen Status - eine ausgefallene Quelle reißt die
+andere nicht mit. Die `snmp`-Quelle liefert unter `data` zusätzlich `system`
+(Status, Temperatur, Lüfter, CPU, RAM), `disks`, `raids` und `ups`.
+
+Für PRTG gibt es aufbereitete Sensoren unter `/api/prtg/nas/{id}/capacity`
+und `/api/prtg/nas/{id}/health` - siehe README.md.
+
 ### Health-Check
 
 ```http
@@ -416,7 +474,8 @@ GET /health
 
 Gibt erweiterte Health-Informationen zurück:
 - Server-Status und Uptime
-- Systemressourcen (CPU, RAM, Disk) - wenn `psutil` installiert
+- Systemressourcen (CPU, RAM, Disk) des **SSA-Hosts** - wenn `psutil` installiert
+  (für die Werte des NAS selbst: `/api/nas-metrics`)
 - Scheduler-Status
 - Storage-Statistiken
 - Laufende Scans

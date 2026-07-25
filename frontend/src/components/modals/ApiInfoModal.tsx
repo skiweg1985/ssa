@@ -61,10 +61,39 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
     },
     {
       title: "PRTG-Sensordaten (Server)",
-      description: "Ein Sensor für den Server selbst",
+      description:
+        "Ein Sensor für den Server selbst. CPU, RAM und Disk beziehen sich auf den "
+        + "SSA-Host - für die Werte des NAS die nas-Sensoren verwenden.",
       method: "GET",
       endpoint: `${API_BASE}/prtg/server`,
       curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/server"`,
+    },
+    {
+      title: "PRTG-Sensordaten (NAS-Kapazität)",
+      description:
+        "Volume-Belegung, schreibgeschützte Volumes und Freigaben eines NAS. "
+        + "Adressierbar per Verbindungs-ID oder -Name.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/capacity`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/capacity"`,
+    },
+    {
+      title: "PRTG-Sensordaten (NAS-Systemzustand)",
+      description:
+        "Temperatur, Lüfter, Plattenstatus, RAID und USV über SNMP. "
+        + "Setzt einen hinterlegten SNMP-Zugang an der NAS-Verbindung voraus.",
+      method: "GET",
+      endpoint: `${API_BASE}/prtg/nas/{id_oder_name}/health`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/prtg/nas/NAS-01/health"`,
+    },
+    {
+      title: "NAS-Systemmetriken (JSON)",
+      description:
+        "Kapazität und Systemzustand aller NAS als rohes JSON, für Grafana und "
+        + "eigene Auswertungen. ?groups=capacity,health schränkt die Quellen ein.",
+      method: "GET",
+      endpoint: `${API_BASE}/nas-metrics/{id_oder_name}`,
+      curl: `curl -H "Authorization: Bearer $SSA_TOKEN" "${window.location.origin}${API_BASE}/nas-metrics/NAS-01"`,
     },
     {
       title: "Alle Scans abrufen",
@@ -224,6 +253,18 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
                   <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/prtg/scans/{scan_slug}"}</code>{" "}
                   bzw. <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/prtg/server</code>.
                   PRTG legt die Kanäle selbst an.
+                </p>
+              </div>
+              <div>
+                <strong className="text-slate-900 dark:text-slate-100">PRTG für die NAS selbst:</strong>
+                <p className="mt-1">
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/prtg/nas/{id}/capacity"}</code>{" "}
+                  liefert Volume-Belegung und Freigaben,{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">{"/api/prtg/nas/{id}/health"}</code>{" "}
+                  Temperatur, Plattenstatus und RAID-Zustand über SNMP. Beachten:
+                  CPU und RAM in{" "}
+                  <code className="bg-white dark:bg-slate-700 dark:text-slate-300 px-1.5 py-0.5 rounded border">/api/prtg/server</code>{" "}
+                  messen den SSA-Host, nicht das NAS.
                 </p>
               </div>
               <div>

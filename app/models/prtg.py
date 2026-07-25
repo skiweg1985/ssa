@@ -62,9 +62,15 @@ class PrtgResponse(BaseModel):
 
 
 def _format_value(value: Optional[Union[int, float]], decimals: int) -> str:
-    """Formatiert einen Zahlenwert als PRTG-String (Punkt als Dezimaltrenner)"""
+    """
+    Formatiert einen Zahlenwert als PRTG-String (Punkt als Dezimaltrenner).
+
+    None wird zu 0 - aber in der Genauigkeit des Kanals: bei decimals > 0
+    setzt make_channel float="1", und dazu muss der Wert auch Nachkommastellen
+    tragen, sonst widersprechen sich Flag und Wert.
+    """
     if value is None:
-        return "0"
+        value = 0
     if decimals <= 0:
         return str(int(round(value)))
     return f"{value:.{decimals}f}"

@@ -26,6 +26,8 @@ from app.api.job_routes import router as job_router
 from app.api.token_routes import router as token_router
 from app.api.monitor_routes import router as monitor_router
 from app.api.prtg_routes import router as prtg_router
+from app.api.prtg_nas_routes import router as prtg_nas_router
+from app.api.nas_metrics_routes import router as nas_metrics_router
 from app.api.deps import require_auth
 from app.services.scheduler import scheduler_service
 from app.services.storage import storage, get_storage
@@ -206,10 +208,24 @@ app.include_router(
     tags=["api-tokens"],
     dependencies=[Depends(require_auth)],
 )
+# NAS-Systemmetriken (read-only, auch für Monitoring-API-Tokens erreichbar).
+# Der Pfad heißt bewusst nas-metrics, nicht nas - siehe app/api/deps.py.
+app.include_router(
+    nas_metrics_router,
+    prefix="/api/nas-metrics",
+    tags=["nas-metrics"],
+    dependencies=[Depends(require_auth)],
+)
 # PRTG-Sensor-Endpoints (read-only, auch für Monitoring-API-Tokens erreichbar)
 app.include_router(
     prtg_router,
     prefix="/api/prtg",
+    tags=["prtg"],
+    dependencies=[Depends(require_auth)],
+)
+app.include_router(
+    prtg_nas_router,
+    prefix="/api/prtg/nas",
     tags=["prtg"],
     dependencies=[Depends(require_auth)],
 )

@@ -1,5 +1,5 @@
 """Pydantic-Modelle für Auth, NAS-Verbindungen und Scan-Job-Verwaltung"""
-from typing import Annotated, List, Optional
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +45,52 @@ class MeResponse(BaseModel):
 # NAS-Verbindungen
 # ----------------------------------------------------------------------
 
+class SNMPSettings(BaseModel):
+    """
+    SNMP-Zugang eines NAS (Systemmetriken: Temperatur, Platten, RAID, UPS).
+
+    Systemwerte kommen ausschließlich über SNMP - die einzige von Synology
+    öffentlich dokumentierte Schnittstelle dafür (DiskStation MIB Guide).
+    Die FileStation-HTTP-API liefert sie nicht.
+
+    Leere Zugangsdaten beim Update = gespeicherte behalten (wie beim Passwort).
+    """
+
+    enabled: bool = False
+    version: Literal["2c", "3"] = "2c"
+    port: int = Field(161, ge=1, le=65535)
+
+    # v2c
+    community: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
+
+    # v3
+    v3_user: Optional[str] = Field(default=None, max_length=MAX_USERNAME_LENGTH)
+    v3_auth_protocol: Optional[Literal["SHA", "MD5"]] = None
+    v3_auth_key: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
+    v3_priv_protocol: Optional[Literal["AES", "DES"]] = None
+    v3_priv_key: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
+
+    def to_secrets(self) -> Optional[Dict[str, Any]]:
+        """Zugangsdaten als Dict für die verschlüsselte Speicherung, sonst None"""
+        if self.version == "2c":
+            if not self.community:
+                return None
+            return {"community": self.community}
+
+        if not self.v3_user:
+            return None
+        secrets: Dict[str, Any] = {"user": self.v3_user}
+        for key, value in (
+            ("auth_protocol", self.v3_auth_protocol),
+            ("auth_key", self.v3_auth_key),
+            ("priv_protocol", self.v3_priv_protocol),
+            ("priv_key", self.v3_priv_key),
+        ):
+            if value:
+                secrets[key] = value
+        return secrets
+
+
 class NASConnectionCreate(BaseModel):
     name: str = Field(min_length=1, max_length=MAX_NAME_LENGTH)
     host: str = Field(min_length=1, max_length=MAX_HOST_LENGTH)
@@ -53,6 +99,7 @@ class NASConnectionCreate(BaseModel):
     port: Optional[int] = Field(default=None, ge=1, le=65535)
     use_https: bool = True
     verify_ssl: bool = True
+    snmp: Optional[SNMPSettings] = None
 
 
 class NASConnectionUpdate(BaseModel):
@@ -64,6 +111,7 @@ class NASConnectionUpdate(BaseModel):
     port: Optional[int] = Field(default=None, ge=1, le=65535)
     use_https: bool = True
     verify_ssl: bool = True
+    snmp: Optional[SNMPSettings] = None
 
 
 class NASConnectionPublic(BaseModel):
@@ -74,6 +122,10 @@ class NASConnectionPublic(BaseModel):
     use_https: bool
     verify_ssl: bool
     username: str
+    # Nur der Zustand des SNMP-Zugangs - niemals Community oder v3-Schlüssel
+    snmp_enabled: bool = False
+    snmp_version: str = "2c"
+    snmp_port: int = 161
     job_count: int = 0
     created_at: str
     updated_at: str
