@@ -50,6 +50,9 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
+// Provider und zugehoeriger Hook gehoeren bewusst in dieselbe Datei.
+// Die Regel betrifft nur Fast Refresh im Dev, nicht die Korrektheit.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   const context = React.useContext(ToastContext)
   if (!context) {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { fetchScanProgress } from "@/lib/api"
+import { ApiError, fetchScanProgress } from "@/lib/api"
 import type { ScanProgress } from "@/types/api"
 
 export function useScanProgress(scanName: string, isRunning: boolean, interval: number = 1000) {
@@ -78,9 +78,9 @@ export function useScanProgress(scanName: string, isRunning: boolean, interval: 
       } catch (err) {
         // 404 means scan is not running or finished - this is normal, don't show error
         if (err instanceof Error) {
-          const is404 = err.message.includes("404") || 
-                       err.message.includes("status: 404") ||
-                       (err as any).status === 404
+          const is404 = err instanceof ApiError
+            ? err.status === 404
+            : err.message.includes("404") || err.message.includes("status: 404")
           if (!is404) {
             setError(err)
           } else {

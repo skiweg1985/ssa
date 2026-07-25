@@ -51,6 +51,17 @@ export function clearToken(): void {
   }
 }
 
+/** Fehler einer API-Antwort - traegt den HTTP-Status typisiert mit */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = getToken();
   const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -75,9 +86,10 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     } catch {
       // Response ohne JSON-Body
     }
-    const error = new Error(detail || `HTTP error! status: ${response.status}`);
-    (error as any).status = response.status;
-    throw error;
+    throw new ApiError(
+      detail || `HTTP error! status: ${response.status}`,
+      response.status
+    );
   }
 
   // 204 No Content

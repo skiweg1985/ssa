@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Dialog,
   DialogHeader,
@@ -35,13 +35,7 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
   const [cleanupDays, setCleanupDays] = useState(90)
   const { showToast } = useToast()
 
-  useEffect(() => {
-    if (open) {
-      loadData()
-    }
-  }, [open, activeTab])
-
-  async function loadData() {
+  const loadData = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -60,7 +54,14 @@ export function StorageModal({ open, onOpenChange }: StorageModalProps) {
     } finally {
       setLoading(false)
     }
-  }
+    // cleanupDays gehoert dazu: die Cleanup-Vorschau haengt direkt davon ab
+  }, [activeTab, cleanupDays])
+
+  useEffect(() => {
+    if (open) {
+      loadData()
+    }
+  }, [open, loadData])
 
   async function handleCleanup() {
     try {

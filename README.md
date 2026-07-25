@@ -16,6 +16,12 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 pip install -r requirements.txt
 ```
 
+Die Abhängigkeiten sind auf exakte Versionen gepinnt (`==`), damit jede
+Installation dieselben Pakete bekommt. `requirements.txt` enthält
+ausschließlich die **Laufzeit**-Abhängigkeiten – das Test-Werkzeug steht in
+`requirements-dev.txt` und landet damit weder im Docker-Image noch im
+Release-Paket (siehe [Tests](#tests)).
+
 ### Lokal auf macOS/Linux (venv)
 
 Die App läuft ohne Anpassungen lokal, z.B. auf einem Mac – benötigt wird nur
@@ -212,13 +218,27 @@ curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/prtg/scans/design-sc
 ## Sicherheit
 
 - **Login erforderlich**: Das Frontend/die API ist per Passwort geschützt. Setze `SSA_ADMIN_PASSWORD` in der Umgebung (z.B. `.env`); Standard-Benutzer ist `admin` (änderbar via `SSA_ADMIN_USER`). Ohne gesetztes Passwort ist der Login deaktiviert.
+- **Brute-Force-Schutz**: Nach mehreren Fehlversuchen wird der Login pro Client-IP gesperrt (HTTP 429 mit `Retry-After`). Jede weitere Sperre verdoppelt die Dauer, gedeckelt bei einer Stunde. Ein erfolgreicher Login setzt den Zähler zurück, damit legitime Nutzer nie ausgesperrt werden.
+
+  | Variable | Default | Bedeutung |
+  |---|---|---|
+  | `SSA_LOGIN_MAX_ATTEMPTS` | `5` | Fehlversuche bis zur Sperre |
+  | `SSA_LOGIN_WINDOW_SECONDS` | `300` | Zeitfenster, in dem Fehlversuche zusammenzählen |
+  | `SSA_LOGIN_BLOCK_SECONDS` | `300` | Basis-Sperrdauer (verdoppelt sich progressiv) |
+  | `SSA_TRUST_PROXY_HEADERS` | *(aus)* | `X-Forwarded-For` als Client-IP werten |
+
+  ⚠️ `SSA_TRUST_PROXY_HEADERS` nur setzen, wenn die App **wirklich** hinter einem Reverse-Proxy steht, der den Header selbst schreibt. Ist die App direkt erreichbar, kann jeder Client das Limit mit einem gefälschten Header umgehen. Der Zähler liegt im Prozessspeicher – bei mehreren Workern/Instanzen zählt jeder Prozess für sich; dann gehört ein Limit zusätzlich in den vorgelagerten Proxy.
 - **Verschlüsselte NAS-Passwörter**: gespeicherte Zugangsdaten werden mit einem Key aus `SSA_SECRET_KEY` bzw. der auto-generierten `data/secret.key` verschlüsselt. Bei Key-Verlust/-Rotation müssen die NAS-Passwörter neu eingegeben werden.
 - Standard ist **SSL-Verifizierung an**.
 - Für self-signed Zertifikate: SSL-Prüfung pro NAS-Verbindung im Frontend deaktivierbar (CLI: `SYNO_VERIFY_SSL=false`).
 
 ## Tests
 
+Zum Testen zusätzlich die Entwicklungs-Abhängigkeiten installieren
+(`requirements-dev.txt` zieht `requirements.txt` selbst mit):
+
 ```bash
+pip install -r requirements-dev.txt
 pytest
 ```
 

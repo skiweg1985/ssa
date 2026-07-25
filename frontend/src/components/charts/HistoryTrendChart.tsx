@@ -8,6 +8,7 @@ import {
   Tooltip,
   Legend,
   Filler,
+  type TooltipItem,
 } from "chart.js"
 import { Line } from "react-chartjs-2"
 import type { ScanResult } from "@/types/api"
@@ -95,8 +96,8 @@ export function HistoryTrendChart({ history, height = 300 }: HistoryTrendChartPr
       },
       tooltip: {
         callbacks: {
-          label: function (context: any) {
-            const gb = context.parsed.y
+          label: function (context: TooltipItem<"line">) {
+            const gb = context.parsed.y ?? 0
             const bytes = gb * 1024 ** 3
             return `Größe: ${formatBytes(bytes)}`
           },
@@ -111,8 +112,8 @@ export function HistoryTrendChart({ history, height = 300 }: HistoryTrendChartPr
           text: "Größe (GB)",
         },
         ticks: {
-          callback: function (value: any) {
-            return `${value.toFixed(2)} GB`
+          callback: function (value: number | string) {
+            return `${Number(value).toFixed(2)} GB`
           },
         },
       },

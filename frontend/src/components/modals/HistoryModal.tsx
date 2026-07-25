@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useCallback } from "react"
 import {
   Dialog,
   DialogHeader,
@@ -32,13 +32,7 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
   const [filter, setFilter] = useState<HistoryFilter>("all")
   const [searchQuery, setSearchQuery] = useState("")
 
-  useEffect(() => {
-    if (open && scanName) {
-      loadHistory()
-    }
-  }, [open, scanName])
-
-  async function loadHistory() {
+  const loadHistory = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -50,7 +44,13 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
     } finally {
       setLoading(false)
     }
-  }
+  }, [scanName])
+
+  useEffect(() => {
+    if (open && scanName) {
+      loadHistory()
+    }
+  }, [open, scanName, loadHistory])
 
   // Berechne Gesamtgröße für einen Scan
   function getTotalSize(scanResult: ScanResult): number {

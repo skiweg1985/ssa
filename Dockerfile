@@ -28,6 +28,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Bewusst NUR requirements.txt (Runtime): Test-Werkzeug steht in
+# requirements-dev.txt und hat in einem Produktions-Image nichts verloren.
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
