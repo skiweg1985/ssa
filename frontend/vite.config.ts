@@ -15,7 +15,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:80',
+        // Muss zum lokalen Backend passen (uvicorn --port 8080, siehe
+        // README_SERVER.md); vorher stand hier faelschlich Port 80.
+        target: 'http://localhost:8080',
         changeOrigin: true,
       },
     },

@@ -52,7 +52,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
-          node-version: "20"
+          # Vite 7 verlangt ^20.19.0 || >=22.12.0; Node 20 ist ausserdem
+          # seit April 2026 aus dem Support.
+          node-version: "22"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -71,7 +73,8 @@ jobs:
       - name: Security-Audit (Produktionsabhaengigkeiten)
         working-directory: frontend
         # Nur Runtime-Deps sind hart: was im Browser landet, muss sauber sein.
-        # Dev-/Build-Tooling wird separat gepflegt (Vite-Major offen).
+        # Dev-/Build-Tooling wird separat gepflegt; offen ist dort noch die
+        # brace-expansion-Kette unter ESLint, die einen ESLint-10-Major braucht.
         run: npm audit --omit=dev --audit-level=high
 
   docker:
