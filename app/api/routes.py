@@ -87,14 +87,20 @@ async def get_scans():
             status = "pending"
             last_run = None
             next_run = None
-            
+
+            # WICHTIG: last_run kommt immer aus dem letzten gespeicherten Lauf -
+            # auch während ein neuer Scan läuft. Sonst verlieren Monitoring-
+            # Clients (und die Oberfläche) für die gesamte Laufzeit den
+            # Zeitstempel des letzten Laufs.
+            if latest_result:
+                last_run = latest_result.timestamp
+
             # Wenn Scan läuft, setze Status auf "running"
             if is_running:
                 status = "running"
             elif latest_result:
                 status = latest_result.status
-                last_run = latest_result.timestamp
-            
+
             if job_info and job_info.get("next_run"):
                 next_run = job_info["next_run"]
             
@@ -156,14 +162,17 @@ async def get_scan(scan_identifier: str):
         status = "pending"
         last_run = None
         next_run = None
-        
+
+        # last_run immer aus dem letzten gespeicherten Lauf (siehe get_scans)
+        if latest_result:
+            last_run = latest_result.timestamp
+
         # Wenn Scan läuft, setze Status auf "running"
         if is_running:
             status = "running"
         elif latest_result:
             status = latest_result.status
-            last_run = latest_result.timestamp
-        
+
         if job_info and job_info.get("next_run"):
             next_run = job_info["next_run"]
         

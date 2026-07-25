@@ -238,13 +238,13 @@ class SchedulerService:
         Returns:
             True wenn erfolgreich entfernt
         """
-        if scan_slug not in self._job_ids:
+        job_id = self._job_ids.get(scan_slug)
+        if job_id is None:
             return False
-        
-        job_id = self._job_ids[scan_slug]
+
         try:
             self.scheduler.remove_job(job_id)
-            del self._job_ids[scan_slug]
+            self._job_ids.pop(scan_slug, None)
             logger.info(f"Job für Scan '{scan_slug}' entfernt")
             return True
         except Exception as e:
@@ -316,12 +316,15 @@ class SchedulerService:
         Returns:
             Dictionary mit Job-Informationen oder None
         """
-        if scan_slug not in self._job_ids:
+        # .get() statt "in"-Prüfung + Zugriff: /health läuft in einem
+        # Worker-Thread und kann sonst genau zwischen beidem auf einen
+        # gerade entfernten Job treffen (KeyError).
+        job_id = self._job_ids.get(scan_slug)
+        if job_id is None:
             return None
-        
-        job_id = self._job_ids[scan_slug]
+
         job = self.scheduler.get_job(job_id)
-        
+
         if not job:
             return None
         
@@ -450,7 +453,10 @@ class SchedulerService:
             Dictionary mit Job-Informationen (Key: scan_slug)
         """
         jobs = {}
-        for scan_slug, job_id in self._job_ids.items():
+        # Über eine Kopie iterieren: /health liest aus einem Worker-Thread,
+        # während der Event-Loop Jobs an-/abmelden kann (sonst
+        # "dictionary changed size during iteration").
+        for scan_slug in list(self._job_ids):
             job_info = self.get_job_info(scan_slug)
             if job_info:
                 jobs[scan_slug] = job_info
