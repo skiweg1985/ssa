@@ -1,0 +1,160 @@
+/* Der Token-Layer des Synology Space Analyzer.
+ * Beschrieben in design.md im Projektwurzelverzeichnis.
+ * Einzige Quelle für Farbe, Schrift, Abstand, Radius und Motion.
+ * Kein Wert in einer Komponente darf an diesem Layer vorbei definiert werden.
+ *
+ * Aufbau:
+ *   --n-* / --a-* / --ok-* / --warn-* / --dg-*   Rampen als OKLCH-Komponenten (L C H, ohne
+ *                                                Funktionshülle), damit Tailwind Alpha-Modifier
+ *                                                wie bg-slate-800/60 weiterhin auflösen kann.
+ *   --color-*                                    semantische Aliase; kippen unter .dark.
+ *
+ * Alle Paarungen sind gegen WCAG AA gerechnet — Fließtext ≥ 4.5:1, Icons und Fokusringe ≥ 3:1.
+ */
+
+:root {
+  /* ---- Neutrale Rampe · Graphit, kühl auf Hue 251–261 ------------------------------
+   * Kein reines Weiß, kein reines Schwarz. Der hellste Ton ist ein kühles Papier,
+   * der dunkelste ein kühles Graphit.
+   * Die Rampe ist FIX — sie kippt nicht im Dark Mode. Die Komponenten schalten selbst
+   * über dark:-Varianten, so wie sie es vorher auch getan haben.
+   */
+  --n-50:  98.5% 0.004 251;
+  --n-100: 94%   0.006 252;
+  --n-200: 86.5% 0.009 253;
+  --n-300: 77.5% 0.012 254;
+  --n-400: 64.5% 0.015 255;
+  --n-500: 53.5% 0.016 256;
+  --n-600: 42.5% 0.018 257;
+  --n-700: 34.5% 0.016 258;
+  --n-800: 24.5% 0.016 259;
+  --n-900: 20%   0.016 260;
+  --n-950: 15%   0.016 261;
+
+  /* Kühles Beinahe-Weiß. Ersetzt projektweit Tailwinds reines #fff. */
+  --n-paper: 99.4% 0.003 250;
+
+  /* ---- Akzent · ein einziges Signalblau -------------------------------------------------
+   * Das EINE Signal. Deckt < 5 % jedes Viewports ab: Primärbutton, Fokusring,
+   * aktiver Zustand, laufender Scan. Sonst nichts.
+   * a-500 sitzt bewusst bei L 52 %: erst dort trägt weiße Schrift auf der Fläche
+   * 5.54:1. Die vorherige Primärfarbe kam nur auf 3.66:1 und lag unter WCAG AA.
+   */
+  --a-50:  97.2% 0.020 256;
+  --a-100: 94%   0.042 256;
+  --a-200: 88%   0.075 256;
+  --a-300: 79%   0.115 256;
+  --a-400: 66%   0.165 257;
+  --a-500: 52%   0.190 257;
+  --a-600: 46%   0.175 258;
+  --a-700: 40%   0.150 259;
+  --a-800: 33%   0.115 259;
+  --a-900: 27%   0.085 260;
+
+  /* ---- Status · genau drei, keine Dubletten ---------------------------------------
+   * Vorher trugen emerald UND green dieselbe Bedeutung, amber UND yellow ebenso.
+   * Hier gibt es pro Bedeutung eine Rampe; die Tailwind-Aliase zeigen alle hierher.
+   */
+  --ok-50:  96.8% 0.022 155;
+  --ok-100: 93%   0.048 155;
+  --ok-200: 87%   0.080 155;
+  --ok-300: 78%   0.120 155;
+  --ok-400: 64%   0.135 155;
+  --ok-500: 54.5% 0.125 155;
+  --ok-600: 48%   0.112 156;
+  --ok-700: 41.5% 0.095 157;
+  --ok-800: 34.5% 0.075 158;
+  --ok-900: 28.5% 0.058 159;
+
+  --warn-50:  97.5% 0.022 80;
+  --warn-100: 94.5% 0.050 80;
+  --warn-200: 88.5% 0.090 78;
+  --warn-300: 82%   0.120 77;
+  --warn-400: 72%   0.140 76;
+  --warn-500: 62%   0.135 75;
+  --warn-600: 53%   0.125 72;
+  --warn-700: 45%   0.105 70;
+  --warn-800: 37%   0.085 68;
+  --warn-900: 30.5% 0.068 66;
+
+  --dg-50:  96.8% 0.018 25;
+  --dg-100: 93.5% 0.038 25;
+  --dg-200: 88%   0.070 25;
+  --dg-300: 79%   0.110 26;
+  --dg-400: 66%   0.165 27;
+  --dg-500: 57%   0.195 27;
+  --dg-600: 50.5% 0.190 27;
+  --dg-700: 43.5% 0.165 27;
+  --dg-800: 36%   0.130 26;
+  --dg-900: 30%   0.100 26;
+
+  /* ---- Semantische Aliase · Hellmodus ---------------------------------------------- */
+  --color-paper:      oklch(var(--n-50));    /* Seitengrund               */
+  --color-surface:    oklch(var(--n-paper)); /* Karte, Tabelle, Dialog    */
+  --color-surface-2:  oklch(var(--n-100));   /* Inset: thead, kbd, Track  */
+  --color-ink:        oklch(var(--n-900));   /* Überschrift, Primärtext   */
+  --color-ink-2:      oklch(var(--n-600));   /* Fließtext                 */
+  --color-ink-3:      oklch(var(--n-500));   /* Meta, Zeitstempel         */
+  --color-rule:       oklch(var(--n-200));   /* Hairline                  */
+  --color-rule-2:     oklch(var(--n-300));   /* Eingabefeld-Rand          */
+  --color-accent:     oklch(var(--a-500));
+  --color-accent-ink: oklch(var(--n-paper));
+  --color-accent-soft:oklch(var(--a-50));
+  --color-focus:      oklch(var(--a-500));
+
+  /* ---- Typografie ------------------------------------------------------------------
+   * Drei Rollen, drei Schnitte. Space Grotesk trägt die Titel (leicht mechanisch,
+   * eng gesetzt), Inter den Fließtext, JetBrains Mono jede Maschinenangabe:
+   * IDs, Größen, Zeitstempel, Statuslabels, Tastenkürzel.
+   */
+  --font-display: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-body:    "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --tracking-display: -0.02em;
+  --tracking-label:    0.06em;  /* Versal-Mono-Labels */
+
+  /* ---- Abstände · 4-pt-Skala -------------------------------------------------------- */
+  --space-3xs: 0.25rem;  --space-2xs: 0.5rem;   --space-xs:  0.75rem;
+  --space-sm:  1rem;     --space-md:  1.5rem;   --space-lg:  2rem;
+  --space-xl:  3rem;     --space-2xl: 4.5rem;   --space-3xl: 7rem;
+
+  /* ---- Radien · mit dem Lineal gezogen, keine Pillen -------------------------------- */
+  --radius-control: 6px;   /* Button, Input, Select, Chip */
+  --radius-card:    10px;  /* Karte, Dialog, Code-Fläche  */
+  --radius-inset:   4px;   /* kbd, Zähler, Mini-Chip      */
+
+  /* ---- Motion · drei benannte Easings, sonst keine ---------------------------------- */
+  --ease-out:    cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:     cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  --dur-instant: 100ms;  /* Farbwechsel bei Hover      */
+  --dur-short:   180ms;  /* Zustandswechsel            */
+  --dur-medium:  320ms;  /* Overlay ein/aus            */
+
+  /* ---- Ebenen · benannte z-Skala, keine 9999er ------------------------------------- */
+  --z-base:    0;
+  --z-sticky:  20;
+  --z-header:  30;
+  --z-overlay: 40;
+  --z-dialog:  50;
+  --z-popover: 60;  /* Tooltip, Menü, Select — muss über einem offenen Dialog liegen */
+  --z-toast:   70;
+}
+
+.dark {
+  /* Nur die semantischen Aliase kippen. Die Rampen oben bleiben unverändert. */
+  --color-paper:      oklch(var(--n-900));
+  --color-surface:    oklch(var(--n-800));
+  --color-surface-2:  oklch(var(--n-700));
+  --color-ink:        oklch(var(--n-50));
+  --color-ink-2:      oklch(var(--n-300));
+  --color-ink-3:      oklch(var(--n-400));
+  --color-rule:       oklch(var(--n-700));
+  --color-rule-2:     oklch(var(--n-600));
+  --color-accent:     oklch(var(--a-400));
+  --color-accent-ink: oklch(var(--n-950));
+  --color-accent-soft:oklch(var(--a-900));
+  --color-focus:      oklch(var(--a-400));
+}

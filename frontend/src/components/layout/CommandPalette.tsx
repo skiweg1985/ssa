@@ -83,7 +83,7 @@ export function CommandPalette({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-in fade-in"
+      className="fixed inset-0 z-dialog flex items-center justify-center p-4 bg-slate-950/60 animate-in fade-in"
       onClick={() => onOpenChange(false)}
     >
       <div
@@ -105,7 +105,7 @@ export function CommandPalette({
                 setQuery(e.target.value)
                 setSelectedIndex(0)
               }}
-              placeholder="Scan-Name, Host, Share oder Status eingeben..."
+              placeholder="Scan-Name, Host, Share oder Status eingeben …"
               className="pl-10"
             />
           </div>
@@ -164,7 +164,7 @@ export function CommandPalette({
           )}
           {filteredScans.length === 0 ? (
             <div className="text-center text-slate-500 text-sm py-8">
-              {debouncedQuery ? "Keine Ergebnisse gefunden" : "Tippen Sie, um zu suchen..."}
+              {debouncedQuery ? "Keine Ergebnisse gefunden" : "Tippen Sie, um zu suchen …"}
             </div>
           ) : (
             <div className="space-y-1">

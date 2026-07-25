@@ -173,7 +173,7 @@ export function ScanTable({
                     key={status}
                     onClick={() => setStatusFilter(status)}
                     className={cn(
-                      "relative px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 min-h-[40px] whitespace-nowrap",
+                      "relative px-2.5 sm:px-3 py-2 sm:py-1.5 text-xs font-medium rounded-md transition-[background-color,color] duration-instant ease-out focus-visible:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1 min-h-[40px] whitespace-nowrap",
                       isActive
                         ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-50 shadow-sm"
                         : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50"
@@ -288,8 +288,10 @@ export function ScanTable({
           // Table with internal scrolling - max-height calculated to prevent page scroll
           // Responsive max-height: accounts for topbar (~80-100px) + card header (~180-220px) + padding
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="overflow-x-auto overflow-y-auto flex-1 scrollbar-hide" style={{ 
-              maxHeight: 'calc(100vh - 20rem)' // ~320px for topbar + header + padding (responsive)
+            {/* scrollbar-thin statt scrollbar-hide: die Tabelle scrollt in beide Richtungen,
+                und das war vorher nirgends zu sehen. dvh statt vh wegen iOS-Adressleiste. */}
+            <div className="overflow-x-auto overflow-y-auto flex-1 scrollbar-thin" style={{
+              maxHeight: 'calc(100dvh - 20rem)'
             }}>
               <table className="w-full border-collapse">
                 <colgroup>
@@ -304,28 +306,28 @@ export function ScanTable({
                 </colgroup>
                 <thead className="sticky top-0 z-10 bg-slate-50/95 dark:bg-slate-800/95 backdrop-blur-sm">
                   <tr className="border-b border-slate-200 dark:border-slate-700">
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider min-w-[200px] w-[200px]">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400 min-w-[200px] w-[200px]">
                       Status
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       Job-Name
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       ID
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       Letzter Lauf
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       Nächster Lauf
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       Intervall
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       Info
                     </th>
-                    <th className="px-3 sm:px-4 py-3 text-left text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    <th className="px-3 sm:px-4 py-3 text-left label-mono text-slate-500 dark:text-slate-400">
                       Aktionen
                     </th>
                   </tr>

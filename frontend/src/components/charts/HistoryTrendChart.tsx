@@ -12,6 +12,7 @@ import {
 } from "chart.js"
 import { Line } from "react-chartjs-2"
 import type { ScanResult } from "@/types/api"
+import { chartTokens, axisStyle, tooltipStyle } from "./theme"
 import { formatDateShort } from "@/lib/utils"
 
 ChartJS.register(
@@ -69,14 +70,19 @@ export function HistoryTrendChart({ history, height = 300 }: HistoryTrendChartPr
     return `${size.toFixed(2)} ${units[unitIndex]}`
   }
 
+  // Farben und Schrift kommen aus dem Token-Layer, nicht aus festen rgba-Werten.
+  const t = chartTokens()
+
   const chartData = {
     labels,
     datasets: [
       {
         label: "Gesamtgröße (GB)",
         data: sizes,
-        borderColor: "rgba(102, 126, 234, 1)",
-        backgroundColor: "rgba(102, 126, 234, 0.1)",
+        borderColor: t.accent,
+        backgroundColor: t.accentFill,
+        pointBackgroundColor: t.accent,
+        pointBorderColor: t.surface,
         borderWidth: 2,
         fill: true,
         tension: 0.4,
@@ -93,8 +99,10 @@ export function HistoryTrendChart({ history, height = 300 }: HistoryTrendChartPr
       legend: {
         display: true,
         position: "top" as const,
+        labels: { color: t.ink, font: { family: t.fontBody, size: 12 }, boxWidth: 12, boxHeight: 12 },
       },
       tooltip: {
+        ...tooltipStyle(t),
         callbacks: {
           label: function (context: TooltipItem<"line">) {
             const gb = context.parsed.y ?? 0
@@ -107,22 +115,30 @@ export function HistoryTrendChart({ history, height = 300 }: HistoryTrendChartPr
     scales: {
       y: {
         beginAtZero: false,
+        ...axisStyle(t),
         title: {
           display: true,
           text: "Größe (GB)",
+          color: t.muted,
+          font: { family: t.fontBody, size: 11 },
         },
         ticks: {
+          ...axisStyle(t).ticks,
           callback: function (value: number | string) {
             return `${Number(value).toFixed(2)} GB`
           },
         },
       },
       x: {
+        ...axisStyle(t),
         title: {
           display: true,
           text: "Zeitpunkt",
+          color: t.muted,
+          font: { family: t.fontBody, size: 11 },
         },
         ticks: {
+          ...axisStyle(t).ticks,
           maxRotation: 45,
           minRotation: 45,
         },

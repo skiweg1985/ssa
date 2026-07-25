@@ -107,7 +107,7 @@ export function DropdownMenu({ trigger, children, align = "end" }: DropdownMenuP
             <div
               ref={menuRef}
               className={cn(
-                "fixed z-[100] min-w-[10rem] overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl",
+                "fixed z-popover min-w-[10rem] overflow-hidden rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl",
                 align === "end" ? "right-auto" : "left-auto"
               )}
               style={{

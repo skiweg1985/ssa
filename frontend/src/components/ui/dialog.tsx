@@ -66,7 +66,7 @@ const Dialog = ({ open, onOpenChange, children, maxWidth = "4xl" }: DialogProps)
   return (
     <DialogContext.Provider value={{ onOpenChange }}>
       <div
-        className="fixed inset-0 z-[1000] flex items-start sm:items-center justify-center p-0 sm:p-4 bg-black/50 animate-in fade-in"
+        className="fixed inset-0 z-dialog flex items-start sm:items-center justify-center p-0 sm:p-4 bg-slate-950/60 animate-in fade-in"
         style={{
           // Für iOS Safari: Berücksichtige safe-area-insets im Overlay
           paddingTop: 'max(env(safe-area-inset-top), 1rem)',
@@ -78,7 +78,7 @@ const Dialog = ({ open, onOpenChange, children, maxWidth = "4xl" }: DialogProps)
       >
         <div
           className={cn(
-            "relative z-[1000] w-full h-[92vh] sm:h-auto sm:max-h-[90vh] bg-white dark:bg-slate-900 rounded-xl shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4",
+            "relative w-full h-[92dvh] sm:h-auto sm:max-h-[90dvh] bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-4",
             maxWidthClasses[maxWidth]
           )}
           onClick={(e) => e.stopPropagation()}
@@ -95,14 +95,25 @@ const Dialog = ({ open, onOpenChange, children, maxWidth = "4xl" }: DialogProps)
   )
 }
 
-const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+/* Die Kopfzeile trägt die Stimme jetzt selbst.
+ * Vorher klebte an jedem der neun Aufrufe ein eigener Farbverlauf
+ * (from-primary-500 to-purple-600 und Verwandte) — neun Kopien einer Entscheidung,
+ * die an genau einen Ort gehört. Hier ist sie: Inset-Fläche, Hairline nach unten,
+ * Titel in der Display-Schrift. Kein Verlauf, keine Vollfläche. */
+const DialogHeader = ({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col space-y-1.5 text-center sm:text-left flex-shrink-0 relative",
+      "flex flex-col space-y-1 text-left flex-shrink-0 relative",
+      "border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-6 py-4 pr-16",
       className
     )}
     {...props}
-  />
+  >
+    {children}
+    {/* Bisher schloss sich jeder Dialog nur über Esc oder einen Klick auf den
+        Hintergrund — sichtbar war das nirgends. Der Knopf gehört in die Kopfzeile. */}
+    <DialogClose />
+  </div>
 )
 DialogHeader.displayName = "DialogHeader"
 
@@ -113,7 +124,7 @@ const DialogTitle = React.forwardRef<
   <h2
     ref={ref}
     className={cn(
-      "text-xl font-semibold leading-none tracking-tight",
+      "font-display text-lg font-semibold leading-tight tracking-display text-slate-900 dark:text-slate-50",
       className
     )}
     {...props}
@@ -182,8 +193,11 @@ const DialogClose = React.forwardRef<HTMLButtonElement, DialogCloseProps>(
         ref={ref}
         type="button"
         className={cn(
-          "absolute right-4 top-4 z-10 rounded-sm opacity-70 ring-offset-white dark:ring-offset-slate-900 transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 touch-manipulation",
-          "min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-900 dark:text-slate-100", // Mindestgröße für Touch-Targets
+          "absolute right-3 top-3 z-10 rounded-md ring-offset-white dark:ring-offset-slate-900 touch-manipulation",
+          "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 hover:bg-slate-200 dark:hover:bg-slate-700",
+          "transition-[color,background-color] duration-instant ease-out",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2",
+          "min-w-[40px] min-h-[40px] flex items-center justify-center",
           className
         )}
         onClick={handleClick}

@@ -67,8 +67,8 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
   if (!scanSlug) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
-          <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 min-w-0">
             <Link2 className="h-5 w-5 flex-shrink-0" />
             <span className="truncate">Fehler</span>
           </DialogTitle>
@@ -133,8 +133,8 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} maxWidth="3xl">
-      <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           <Link2 className="h-5 w-5 flex-shrink-0" />
           <span className="truncate">API-Informationen: {scanName}</span>
         </DialogTitle>
@@ -170,10 +170,10 @@ export function ScanApiModal({ open, onOpenChange, scan }: ScanApiModalProps) {
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                          endpoint.method === "GET" 
-                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" 
-                            : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                        <span className={`rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-label ${
+                          endpoint.method === "GET"
+                            ? "border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                            : "border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
                         }`}>
                           {endpoint.method}
                         </span>

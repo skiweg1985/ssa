@@ -67,7 +67,7 @@ export function Tooltip({ content, children, side = "top", fullWidth = false }: 
         createPortal(
           <div
             className={cn(
-              "fixed z-[100] whitespace-pre-line rounded-md bg-slate-900 px-3 py-2 text-xs text-white shadow-xl min-w-[200px] max-w-[400px] pointer-events-none",
+              "fixed z-popover whitespace-pre-line rounded-md bg-slate-900 px-3 py-2 text-xs text-white shadow-xl min-w-[200px] max-w-[400px] pointer-events-none",
               side === "top" && "-translate-y-full -translate-x-1/2",
               side === "bottom" && "-translate-x-1/2",
               side === "left" && "-translate-x-full -translate-y-1/2",

@@ -159,10 +159,8 @@ export function JobEditorModal({
       }
       if (isEdit && job) {
         await updateScanJob(job.scan_slug, payload)
-        showToast("Erfolg", `Scan '${payload.name}' aktualisiert`, "success")
       } else {
         await createScanJob(payload)
-        showToast("Erfolg", `Scan '${payload.name}' angelegt`, "success")
       }
       onSaved()
       onOpenChange(false)
@@ -179,8 +177,8 @@ export function JobEditorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} maxWidth="2xl">
-      <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           {isEdit ? (
             <Pencil className="h-5 w-5 flex-shrink-0" />
           ) : (

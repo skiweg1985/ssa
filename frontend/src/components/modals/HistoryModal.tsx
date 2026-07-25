@@ -9,8 +9,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
-import { SizeChart } from "@/components/charts/SizeChart"
-import { HistoryTrendChart } from "@/components/charts/HistoryTrendChart"
+// Über charts/lazy: Chart.js landet in einem eigenen Chunk und wird erst
+// geladen, wenn dieser Dialog wirklich ein Diagramm zeigt.
+import { SizeChart, HistoryTrendChart } from "@/components/charts/lazy"
 import { fetchScanHistory } from "@/lib/api"
 import { getStatusConfig, formatDate, formatSize, formatBytes } from "@/lib/utils"
 import type { ScanHistoryResponse, ScanResult } from "@/types/api"
@@ -170,8 +171,8 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           <History className="h-5 w-5 flex-shrink-0" />
           <span className="truncate">Historie: {scanName}</span>
         </DialogTitle>
@@ -197,38 +198,40 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
               {/* Statistiken */}
               {historyStats && (
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-lg p-3">
-                    <div className="text-xs opacity-90 mb-1">Durchschnitt</div>
-                    <div className="text-lg font-bold">{formatBytes(historyStats.avg)}</div>
+                  <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+                    <div className="label-mono text-slate-500 dark:text-slate-400 mb-1.5">Durchschnitt</div>
+                    <div className="font-mono text-lg font-medium tabular-nums text-slate-900 dark:text-slate-50">{formatBytes(historyStats.avg)}</div>
                   </div>
-                  <div className="bg-gradient-to-br from-green-500 to-green-600 text-white rounded-lg p-3">
-                    <div className="text-xs opacity-90 mb-1">Minimum</div>
-                    <div className="text-lg font-bold">{formatBytes(historyStats.min)}</div>
+                  <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+                    <div className="label-mono text-slate-500 dark:text-slate-400 mb-1.5">Minimum</div>
+                    <div className="font-mono text-lg font-medium tabular-nums text-slate-900 dark:text-slate-50">{formatBytes(historyStats.min)}</div>
                   </div>
-                  <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-lg p-3">
-                    <div className="text-xs opacity-90 mb-1">Maximum</div>
-                    <div className="text-lg font-bold">{formatBytes(historyStats.max)}</div>
+                  <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+                    <div className="label-mono text-slate-500 dark:text-slate-400 mb-1.5">Maximum</div>
+                    <div className="font-mono text-lg font-medium tabular-nums text-slate-900 dark:text-slate-50">{formatBytes(historyStats.max)}</div>
                   </div>
-                  <div className={`bg-gradient-to-br rounded-lg p-3 ${
-                    historyStats.growthRate >= 0 
-                      ? "from-red-500 to-red-600" 
-                      : "from-green-500 to-green-600"
-                  } text-white`}>
-                    <div className="text-xs opacity-90 mb-1 flex items-center gap-1">
-                      <TrendingUp className="h-3 w-3" />
+                  <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-3">
+                    <div className="label-mono text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
+                      <TrendingUp className="h-3 w-3 flex-shrink-0" aria-hidden="true" />
                       Wachstum
                     </div>
-                    <div className="text-lg font-bold">
+                    <div className={`font-mono text-lg font-medium tabular-nums ${
+                      historyStats.growthRate >= 0
+                        ? "text-amber-700 dark:text-amber-300"
+                        : "text-emerald-700 dark:text-emerald-300"
+                    }`}>
                       {historyStats.growthRate >= 0 ? "+" : ""}{historyStats.growthRate.toFixed(1)}%
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Trend-Diagramm */}
+              {/* Trend-Diagramm.
+                  Fläche und Titel hatten keine dark:-Variante — im Dunkelmodus stand
+                  hier eine weiße Karte. (Bestand, nicht durch den Redesign entstanden.) */}
               {history.results.length > 1 && (
-                <div className="bg-slate-50 rounded-lg p-4">
-                  <div className="text-sm font-semibold text-slate-900 mb-3 flex items-center gap-2">
+                <div className="rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
+                  <div className="mb-3 flex items-center gap-2 font-display text-sm font-semibold tracking-display text-slate-900 dark:text-slate-50">
                     <TrendingUp className="h-4 w-4" />
                     Speicherverbrauch über Zeit
                   </div>
@@ -241,7 +244,7 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
                 <div className="flex-1 w-full sm:w-auto">
                   <Input
                     type="text"
-                    placeholder="🔍 Historie durchsuchen..."
+                    placeholder="Historie durchsuchen …"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="mb-2 sm:mb-0"
@@ -323,8 +326,8 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
                         <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
                           <span>{result.results.length} Ergebnisse</span>
                           {totalSize > 0 && (
-                            <span className="font-semibold text-slate-900 dark:text-slate-100">
-                              Gesamt: {formatBytes(totalSize)}
+                            <span className="text-slate-900 dark:text-slate-100">
+                              Gesamt <span className="font-mono font-medium tabular-nums">{formatBytes(totalSize)}</span>
                             </span>
                           )}
                           {result.status === "failed" && result.error && (

@@ -60,8 +60,10 @@ export function GridCard({
   return (
     <div
       className={cn(
-        "border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-4 transition-all duration-150",
-        "hover:shadow-md hover:border-slate-300 dark:hover:border-slate-600",
+        // tabular-nums: Größen und Zeiten stehen in einer Spalte untereinander und
+        // müssen ausgerichtet bleiben. Die Listenansicht bekommt das über <table>.
+        "border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 p-4 tabular-nums transition-[background-color,border-color] duration-instant ease-out",
+        "hover:border-slate-300 dark:hover:border-slate-600",
         "focus-within:ring-2 focus-within:ring-primary-500 focus-within:ring-offset-2",
         "flex flex-col h-full",
         isRunning && effectiveStatus !== "completed" && "bg-blue-50/30 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800",
@@ -124,7 +126,7 @@ export function GridCard({
                   {hasProgressPercent && (
                     <div className="h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden relative mb-0.5 w-full">
                       {(progress.progress.finished || progress.status === "completed") ? (
-                        <div className="h-full bg-emerald-500 rounded-full w-full transition-all duration-500 animate-in fade-in" />
+                        <div className="h-full bg-emerald-500 rounded-full w-full transition-[width] duration-medium ease-out animate-in fade-in" />
                       ) : (
                         <>
                           <div 
@@ -155,8 +157,8 @@ export function GridCard({
                   </div>
                 </>
               ) : (
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 italic">
-                  Warte auf Ergebnisse...
+                <div className="label-mono text-slate-500 dark:text-slate-400">
+                  Warte auf Ergebnisse …
                 </div>
               )}
             </div>

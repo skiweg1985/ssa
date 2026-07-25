@@ -11,6 +11,7 @@ import {
 } from "chart.js"
 import { Bar, Doughnut } from "react-chartjs-2"
 import type { ScanResult } from "@/types/api"
+import { chartTokens, axisStyle, tooltipStyle } from "./theme"
 
 ChartJS.register(
   CategoryScale,
@@ -57,15 +58,20 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
     return `${size.toFixed(2)} ${units[unitIndex]}`
   }
 
+  // Farben und Schrift kommen aus dem Token-Layer. Chart.js zeichnet auf Canvas
+  // und erbt keine CSS-Klassen, deshalb werden die Werte hier aktiv gelesen.
+  const t = chartTokens()
+
   const chartData = {
     labels,
     datasets: [
       {
         label: "Größe",
         data: sizes,
-        backgroundColor: "rgba(102, 126, 234, 0.8)",
-        borderColor: "rgba(102, 126, 234, 1)",
-        borderWidth: 1,
+        backgroundColor: t.accentFill,
+        borderColor: t.accent,
+        borderWidth: 1.5,
+        borderRadius: 3,
       },
     ],
   }
@@ -98,6 +104,7 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
       plugins: {
         legend: { display: false },
         tooltip: {
+          ...tooltipStyle(t),
           callbacks: {
             label: (context) => tooltipLabel(context.parsed, context.dataIndex),
           },
@@ -116,6 +123,7 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
     plugins: {
       legend: { display: false },
       tooltip: {
+        ...tooltipStyle(t),
         callbacks: {
           label: (context) => tooltipLabel(context.parsed.y ?? 0, context.dataIndex),
         },
@@ -124,12 +132,15 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
     scales: {
       y: {
         beginAtZero: true,
+        ...axisStyle(t),
         ticks: {
+          ...axisStyle(t).ticks,
           callback: (value) => formatBytes(Number(value)),
         },
       },
       x: {
-        ticks: { maxRotation: 0, minRotation: 0, autoSkip: false },
+        ...axisStyle(t),
+        ticks: { ...axisStyle(t).ticks, maxRotation: 0, minRotation: 0, autoSkip: false },
       },
     },
   }

@@ -8,7 +8,9 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm transition-shadow hover:shadow-md",
+      // Tiefe entsteht aus Hairlines, nicht aus Schatten. Der Hover-Schatten ist raus:
+      // eine Karte, die auf Mauszeiger reagiert, ohne klickbar zu sein, verspricht etwas.
+      "rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800",
       className
     )}
     {...props}
@@ -35,7 +37,7 @@ const CardTitle = React.forwardRef<
   <h3
     ref={ref}
     className={cn(
-      "text-base font-semibold leading-tight tracking-tight text-slate-900 dark:text-slate-50",
+      "font-display text-base font-semibold leading-tight tracking-display text-slate-900 dark:text-slate-50",
       className
     )}
     {...props}

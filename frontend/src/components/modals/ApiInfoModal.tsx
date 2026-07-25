@@ -104,8 +104,8 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogHeader className="bg-gradient-to-r from-primary-500 to-purple-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           <BookOpen className="h-5 w-5 flex-shrink-0" />
           <span className="truncate">API-Dokumentation</span>
         </DialogTitle>
@@ -146,10 +146,10 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
-                          example.method === "GET" 
-                            ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300" 
-                            : "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                        <span className={`rounded-sm border px-1.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-label ${
+                          example.method === "GET"
+                            ? "border-slate-200 dark:border-slate-600 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300"
+                            : "border-primary-200 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
                         }`}>
                           {example.method}
                         </span>
@@ -164,7 +164,7 @@ export function ApiInfoModal({ open, onOpenChange, onOpenApiTokens }: ApiInfoMod
                 </div>
                 <div className="p-4 bg-slate-900 text-slate-100">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-slate-400">cURL-Beispiel:</span>
+                    <span className="label-mono text-slate-400 dark:text-slate-500">cURL-Beispiel</span>
                     <Button
                       variant="ghost"
                       size="sm"

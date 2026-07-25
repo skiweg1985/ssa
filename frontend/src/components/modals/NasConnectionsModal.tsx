@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/components/ui/toast"
+import { ConfirmDialog } from "@/components/ui/confirm-dialog"
 import {
   fetchNasConnections,
   createNasConnection,
@@ -71,6 +72,7 @@ export function NasConnectionsModal({
 
   // null = Liste; "new" = Neuanlage; Objekt = Bearbeitung
   const [editing, setEditing] = useState<NASConnectionPublic | "new" | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<NASConnectionPublic | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [testState, setTestState] = useState<
@@ -160,12 +162,11 @@ export function NasConnectionsModal({
     if (!formValid) return
     setSaving(true)
     try {
+      // Stiller Erfolg: das Formular schließt sich, die Liste zeigt den Eintrag.
       if (editing === "new") {
         await createNasConnection({ ...buildPayload(), password: form.password })
-        showToast("Erfolg", `Verbindung '${form.name}' angelegt`, "success")
       } else if (editing) {
         await updateNasConnection(editing.id, buildPayload())
-        showToast("Erfolg", `Verbindung '${form.name}' aktualisiert`, "success")
       }
       onChanged?.()
       setEditing(null)
@@ -181,19 +182,16 @@ export function NasConnectionsModal({
     }
   }
 
-  async function handleDelete(connection: NASConnectionPublic) {
-    if (
-      !confirm(
-        `NAS-Verbindung '${connection.name}' wirklich löschen?`
-      )
-    ) {
-      return
-    }
+  function handleDelete(connection: NASConnectionPublic) {
+    setDeleteTarget(connection)
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return
     try {
-      await deleteNasConnection(connection.id)
-      showToast("Erfolg", `Verbindung '${connection.name}' gelöscht`, "success")
+      await deleteNasConnection(deleteTarget.id)
       onChanged?.()
-      loadConnections()
+      loadConnections() // der Eintrag verschwindet aus der Liste
     } catch (err) {
       showToast(
         "Fehler",
@@ -205,12 +203,12 @@ export function NasConnectionsModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange} maxWidth="2xl">
-      <DialogHeader className="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-6 py-4">
-        <DialogTitle className="text-white flex items-center gap-2 min-w-0">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2 min-w-0">
           {editing !== null && (
             <button
               onClick={() => setEditing(null)}
-              className="rounded p-1 hover:bg-white/15 flex-shrink-0"
+              className="rounded-sm p-1 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-50 transition-[color,background-color] duration-instant ease-out flex-shrink-0"
               aria-label="Zurück zur Liste"
             >
               <ArrowLeft className="h-4 w-4" />
@@ -254,7 +252,7 @@ export function NasConnectionsModal({
                   key={connection.id}
                   className="flex items-center gap-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3"
                 >
-                  <Server className="h-5 w-5 flex-shrink-0 text-cyan-500" />
+                  <Server className="h-5 w-5 flex-shrink-0 text-primary-500 dark:text-primary-400" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
                       {connection.name}
@@ -426,6 +424,20 @@ export function NasConnectionsModal({
           </>
         )}
       </DialogFooter>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => !o && setDeleteTarget(null)}
+        title="NAS-Verbindung löschen"
+        description={
+          <>
+            Die Verbindung <strong>{deleteTarget?.name}</strong> wird entfernt.
+          </>
+        }
+        consequence="Scan-Jobs, die diese Verbindung verwenden, können danach nicht mehr ausgeführt werden."
+        confirmLabel="Verbindung löschen"
+        onConfirm={confirmDelete}
+      />
     </Dialog>
   )
 }
