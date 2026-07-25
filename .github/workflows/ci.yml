@@ -73,8 +73,9 @@ jobs:
       - name: Security-Audit (Produktionsabhaengigkeiten)
         working-directory: frontend
         # Nur Runtime-Deps sind hart: was im Browser landet, muss sauber sein.
-        # Dev-/Build-Tooling wird separat gepflegt; offen ist dort noch die
-        # brace-expansion-Kette unter ESLint, die einen ESLint-10-Major braucht.
+        # Das Dev-/Build-Tooling ist derzeit ebenfalls ohne Befund; ob das
+        # Gate dauerhaft auf einen vollen Audit gezogen werden kann, wird
+        # separat entschieden.
         run: npm audit --omit=dev --audit-level=high
 
   docker:
