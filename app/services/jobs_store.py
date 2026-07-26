@@ -4,9 +4,6 @@ Die Datenbank (gleiche Datei wie die Scan-Historie) ist die einzige Quelle
 der Wahrheit für Jobs und NAS-Verbindungen. NAS-Passwörter werden per Fernet
 verschlüsselt gespeichert (siehe app/services/security.py).
 
-Bestehende config.yaml-Scans werden beim ersten Start einmalig importiert
-(Marker in app_meta), danach wird die YAML für Jobs nicht mehr gelesen.
-
 In app_meta liegt außerdem das Admin-Konto aus der Ersteinrichtung
 (Benutzername + Passwort-Hash), sofern kein SSA_ADMIN_PASSWORD gesetzt ist.
 """
@@ -23,8 +20,6 @@ from app.services.security import decrypt_secret, encrypt_secret
 from app.utils.slug import generate_slug
 
 logger = logging.getLogger(__name__)
-
-IMPORT_MARKER_KEY = "config_yaml_imported"
 
 # Admin-Konto aus der Ersteinrichtung. Es gibt genau eines, ohne Rollen und
 # ohne Beziehungen - dafür reicht app_meta, eine eigene Tabelle wäre Ballast.
@@ -635,24 +630,6 @@ class JobsStore:
                 "DELETE FROM nas_connections WHERE id = ?", (connection_id,)
             )
 
-    def find_connection(
-        self,
-        host: str,
-        username: str,
-        port: Optional[int],
-        use_https: bool,
-    ) -> Optional[Dict[str, Any]]:
-        """Sucht eine Verbindung anhand des Dedupe-Schlüssels (für den YAML-Import)"""
-        with self._get_connection() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM nas_connections
-                WHERE host = ? AND username = ? AND port IS ? AND use_https = ?
-                """,
-                (host, username, port, int(use_https)),
-            ).fetchone()
-            return dict(row) if row else None
-
     # ------------------------------------------------------------------
     # Scan-Jobs
     # ------------------------------------------------------------------
@@ -679,7 +656,7 @@ class JobsStore:
             return [self._job_row_to_dict(row) for row in rows]
 
     def get_job(self, identifier: str) -> Optional[Dict[str, Any]]:
-        """Job per Slug ODER Name (Slug hat Vorrang, wie get_scan_config bisher)"""
+        """Job per Slug ODER Name (Slug hat Vorrang)"""
         with self._get_connection() as conn:
             row = conn.execute(
                 "SELECT * FROM scan_jobs WHERE slug = ?", (identifier,)
@@ -936,81 +913,6 @@ class JobsStore:
             interval=job["interval"],
             enabled=job["enabled"],
         )
-
-    # ------------------------------------------------------------------
-    # Einmaliger Import aus config.yaml
-    # ------------------------------------------------------------------
-
-    def import_from_config_yaml(self) -> Dict[str, Any]:
-        """
-        Importiert Scans aus config.yaml — genau einmal (Marker in app_meta).
-
-        NAS-Verbindungen werden nach (host, username, port, use_https)
-        dedupliziert; Verbindungsname = host bzw. "host (username)" bei Kollision.
-        """
-        if self.get_meta(IMPORT_MARKER_KEY) is not None:
-            return {"imported": False, "reason": "bereits importiert"}
-
-        try:
-            from app.config.loader import load_config
-
-            config = load_config()
-        except Exception as e:
-            logger.warning(
-                f"config.yaml-Import übersprungen (keine/ungültige Konfiguration): {e}"
-            )
-            self.set_meta(IMPORT_MARKER_KEY, _now_iso())
-            return {"imported": False, "reason": str(e)}
-
-        imported_jobs = 0
-        created_connections = 0
-        for scan in config.scans:
-            nas = scan.nas
-            connection = self.find_connection(
-                nas.host, nas.username, nas.port, nas.use_https
-            )
-            if connection is None:
-                base_name = nas.host
-                name = base_name
-                with self._get_connection() as conn:
-                    if conn.execute(
-                        "SELECT 1 FROM nas_connections WHERE name = ?", (name,)
-                    ).fetchone():
-                        name = f"{base_name} ({nas.username})"
-                connection = self.create_connection(
-                    name=name,
-                    host=nas.host,
-                    username=nas.username,
-                    password=nas.password,
-                    port=nas.port,
-                    use_https=nas.use_https,
-                    verify_ssl=nas.verify_ssl,
-                )
-                created_connections += 1
-
-            self.create_job(
-                name=scan.name,
-                nas_connection_id=connection["id"],
-                interval=scan.interval,
-                enabled=scan.enabled,
-                shares=scan.shares,
-                folders=scan.folders,
-                paths=scan.paths,
-                slug=scan.slug,
-                created_at=scan.created_at.isoformat() if scan.created_at else None,
-            )
-            imported_jobs += 1
-
-        self.set_meta(IMPORT_MARKER_KEY, _now_iso())
-        logger.info(
-            f"config.yaml importiert: {imported_jobs} Job(s), "
-            f"{created_connections} NAS-Verbindung(en)"
-        )
-        return {
-            "imported": True,
-            "jobs": imported_jobs,
-            "connections": created_connections,
-        }
 
 
 # ----------------------------------------------------------------------

@@ -18,16 +18,13 @@ import argparse
 import random
 import logging
 import threading
-import signal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from rich.console import Console
 from rich.spinner import Spinner
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
-from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
-from rich.prompt import Prompt
 from inquirer import Checkbox, List as InquirerList, prompt
 from inquirer.themes import Default
 from blessed import Terminal
@@ -294,33 +291,6 @@ class SynologyAPI:
             status_response, task_id, waited, current_poll_interval,
             min_poll_interval, max_poll_interval, last_progress,
             no_progress_count, last_status_print
-        )
-    
-    def _handle_error_599(self, task_id: str, error_599_count: int,
-                         max_error_599: int, waited: int,
-                         last_status_print: int, start_time: float) -> Tuple[int, Optional[Dict], int]:
-        """
-        Behandelt Fehler 599 (Service unavailable).
-        Delegiert an DirSizePollingHelper.
-        
-        Args:
-            task_id: Die Task-ID
-            error_599_count: Aktueller 599-Fehler-Counter
-            max_error_599: Maximal erlaubte 599-Fehler
-            waited: Verstrichene Zeit in Sekunden
-            last_status_print: Letzter Zeitpunkt für Status-Print
-            start_time: Startzeit des Tasks
-            
-        Returns:
-            Tuple mit (neuer_error_599_count, ergebnis_dict_oder_none, neuer_last_status_print)
-            Wenn ergebnis_dict_oder_none ein Dict ist, sollte die Funktion beendet werden.
-            Wenn es None ist, sollte weiter gemacht werden.
-        """
-        if not hasattr(self, '_polling_helper'):
-            from app.services.dir_size_polling import DirSizePollingHelper
-            self._polling_helper = DirSizePollingHelper(self)
-        return self._polling_helper.handle_error_599(
-            task_id, error_599_count, max_error_599, waited, last_status_print, start_time
         )
     
     def _poll_task_status(self, task_id: str, start_time: float, max_wait: int,
@@ -809,85 +779,6 @@ class SynologyAPI:
                 console.print(f"[yellow]⚠[/yellow] Fehler beim Abbrechen von Task {task_id}: {e}")
             return False
     
-    def check_and_cleanup_background_tasks(self) -> bool:
-        """
-        Prüft auf laufende Background Tasks und räumt auf
-        Behält die letzten 10 beendeten Tasks, löscht nur ältere
-        
-        Returns:
-            True wenn erfolgreich, False sonst
-        """
-        if not self.output_json:
-            console.print("\n[cyan]🔍[/cyan] Prüfe auf laufende Background Tasks...")
-        response = self._api_call(
-            "SYNO.FileStation.BackgroundTask",
-            "list",
-            version="3",
-            additional_params={"api_filter": "SYNO.FileStation.DirSize"},
-            retry_on_error=False
-        )
-        
-        if response and response.get("success"):
-            tasks = response["data"].get("tasks", [])
-            unfinished_tasks = [t for t in tasks if not t.get("finished", True)]
-            finished_tasks = [t for t in tasks if t.get("finished", True)]
-            
-            if unfinished_tasks:
-                if not self.output_json:
-                    console.print(f"[yellow]⚠[/yellow] {len(unfinished_tasks)} laufende DirSize-Task(s) gefunden:")
-                    for task in unfinished_tasks:
-                        task_id = task.get("taskid", "unknown")
-                        console.print(f"  - Task {task_id}")
-            
-            # Beende Tasks: Behalte die letzten 10, lösche ältere
-            if len(finished_tasks) > 10:
-                # Sortiere nach Zeit (neueste zuerst)
-                # Tasks haben möglicherweise ein "finished_time" oder ähnliches Feld
-                # Falls nicht, nehmen wir an, dass die Liste bereits sortiert ist (neueste zuerst)
-                try:
-                    # Versuche nach finished_time zu sortieren, falls vorhanden
-                    finished_tasks_sorted = sorted(
-                        finished_tasks,
-                        key=lambda t: t.get("finished_time", t.get("start_time", 0)),
-                        reverse=True  # Neueste zuerst
-                    )
-                except:
-                    # Falls Sortierung fehlschlägt, verwende Original-Liste
-                    finished_tasks_sorted = finished_tasks
-                
-                # Behalte die letzten 10 (neueste)
-                tasks_to_keep = finished_tasks_sorted[:10]
-                tasks_to_delete = finished_tasks_sorted[10:]
-                
-                if not self.output_json:
-                    console.print(f"[cyan]🧹[/cyan] Lösche {len(tasks_to_delete)} alte beendete Task(s) (behalte die letzten 10)...")
-                
-                # Versuche einzelne Tasks zu löschen, falls die API das unterstützt
-                # Falls nicht, löschen wir alle und hoffen, dass die API die neuesten behält
-                # Die clear_finished API löscht alle beendeten Tasks, daher können wir nicht selektiv löschen
-                # Wir müssen alle löschen, wenn mehr als 10 vorhanden sind
-                clear_response = self._api_call(
-                    "SYNO.FileStation.BackgroundTask",
-                    "clear_finished",
-                    version="3",
-                    retry_on_error=False
-                )
-            elif finished_tasks:
-                if not self.output_json:
-                    console.print(f"[green]✓[/green] {len(finished_tasks)} beendete Task(s) gefunden (behalte alle, da ≤10)")
-            else:
-                if not self.output_json:
-                    console.print("[green]✓[/green] Keine beendeten DirSize-Tasks gefunden")
-            
-            # Laufende Tasks werden auf dem NAS weiterlaufen
-            if unfinished_tasks and not self.output_json:
-                console.print(f"  [yellow]⚠[/yellow] {len(unfinished_tasks)} Task(s) laufen noch auf dem NAS")
-            
-            return True
-        else:
-            # API nicht verfügbar oder Fehler
-            return False
-    
     def cleanup_tasks(self, ignore_errors: bool = False):
         """
         Bricht alle aktiven Tasks ab (Cleanup)
@@ -902,22 +793,6 @@ class SynologyAPI:
             console.print(f"\n[cyan]🧹[/cyan] Räume {len(self._active_tasks)} aktive Task(s) auf...")
         for task_id in self._active_tasks.copy():
             self._stop_task(task_id, ignore_errors=ignore_errors)
-    
-    def get_file_info(self, file_path: str) -> Optional[Dict]:
-        """Ruft Informationen über eine Datei/Verzeichnis ab"""
-        response = self._api_call(
-            "SYNO.FileStation.List",
-            "getinfo",
-            version="2",
-            additional_params={
-                "path": file_path,
-                "additional": '["size","owner","time","perm","type"]'
-            }
-        )
-        
-        if response and response.get("success"):
-            return response["data"]["files"][0]
-        return None
     
     def get_volume_info(self) -> Optional[Dict]:
         """Ruft Informationen über die Volumes ab
@@ -1667,72 +1542,6 @@ def _format_breadcrumb(share_path: str, share_name: str = "") -> str:
     return " > ".join(path_parts) if path_parts else ""
 
 
-def _display_selection_basket(selection_basket: List[Dict]) -> None:
-    """
-    Zeigt kompakte Übersicht der ausgewählten Ordner über alle Ebenen
-    
-    Args:
-        selection_basket: Liste aller ausgewählten Ordner
-    """
-    if not selection_basket:
-        return
-    
-    count = len(selection_basket)
-    # Kompakte Anzeige der Pfade
-    paths = [item['path'].lstrip('/') for item in selection_basket]
-    display = ", ".join(paths[:3])
-    if len(paths) > 3:
-        display += f" (+{len(paths)-3} weitere)"
-    
-    console.print(f"[dim]Auswahl: {count} Ordner | {display}[/dim]")
-
-
-def _add_to_selection_basket(selection_basket: List[Dict], folder_path: str, 
-                              share_name: str, current_level: int) -> bool:
-    """
-    Fügt einen Ordner zur globalen Auswahl-Liste hinzu
-    
-    Args:
-        selection_basket: Liste aller ausgewählten Ordner
-        folder_path: Pfad des Ordners
-        share_name: Name der Freigabe
-        current_level: Aktuelle Verschachtelungsebene
-        
-    Returns:
-        True wenn hinzugefügt, False wenn bereits vorhanden
-    """
-    # Prüfe, ob bereits vorhanden
-    if any(item['path'] == folder_path for item in selection_basket):
-        return False
-    
-    # Füge hinzu
-    selection_basket.append({
-        'name': folder_path.lstrip('/'),
-        'path': folder_path,
-        'share': share_name,
-        'level': current_level
-    })
-    return True
-
-
-def _remove_from_selection_basket(selection_basket: List[Dict], folder_path: str) -> bool:
-    """
-    Entfernt einen Ordner aus der globalen Auswahl-Liste
-    
-    Args:
-        selection_basket: Liste aller ausgewählten Ordner
-        folder_path: Pfad des Ordners
-        
-    Returns:
-        True wenn entfernt, False wenn nicht gefunden
-    """
-    for i, item in enumerate(selection_basket):
-        if item['path'] == folder_path:
-            selection_basket.pop(i)
-            return True
-    return False
-
-
 def select_subfolders_recursive(api: SynologyAPI, share_path: str, 
                                 current_level: int = 0, max_level: int = 4,
                                 share_name: str = "", path_history: List[str] = None) -> List[Dict]:
@@ -2320,11 +2129,6 @@ async def main_async(max_parallel_tasks: int = 3, api: Optional[SynologyAPI] = N
         # 4. Ausgewählte Freigaben analysieren (PARALLEL mit Semaphore)
         # Semaphore für maximale Anzahl paralleler Tasks
         semaphore = asyncio.Semaphore(max_parallel_tasks)
-        
-        async def run_with_semaphore(task_func, folder_name):
-            """Wrapper um Task mit Semaphore zur Begrenzung paralleler Ausführung"""
-            async with semaphore:
-                return await task_func
         
         # Rich Progress für beide Modi (JSON und interaktiv)
         # Prozentbalken nur anzeigen, wenn mehr als ein Ordner gescannt wird

@@ -4,7 +4,7 @@ Kernpunkte: Schema-Konformität (alle Werte sind Strings, float-Flag genau bei
 Dezimalwerten), Zugriff durch Monitoring-API-Tokens, Fehlerfälle und der
 Kanal-Cap.
 """
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import pytest
 from fastapi.testclient import TestClient

@@ -18,7 +18,7 @@ import { LoginScreen } from "@/components/auth/LoginScreen"
 import { SetupScreen } from "@/components/auth/SetupScreen"
 import { useScans } from "@/hooks/useScans"
 import { useAuth } from "@/hooks/useAuth"
-import { cancelScan, triggerScan, reloadConfig, deleteScanJob } from "@/lib/api"
+import { cancelScan, triggerScan, deleteScanJob } from "@/lib/api"
 import type { ScanStatus } from "@/types/api"
 
 function AppContent({ onLogout }: { onLogout: () => void }) {
@@ -79,17 +79,6 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
         err instanceof Error ? err.message : "Unbekannter Fehler",
         "error"
       )
-    }
-  }
-
-  const handleReloadConfig = async () => {
-    try {
-      await reloadConfig()
-      // Diese Aktion hat keine sichtbare Wirkung in der Tabelle — sie bleibt gemeldet.
-      showToast("Scheduler synchronisiert", "config.yaml neu eingelesen, Zeitpläne aktualisiert.", "info")
-      setTimeout(() => refetch(), 1000)
-    } catch (err) {
-      showToast("Neuladen fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")
     }
   }
 
@@ -155,14 +144,12 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
       <Topbar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
-        onReloadConfig={handleReloadConfig}
         onOpenStorage={() => setStorageModalOpen(true)}
         onOpenCommandPalette={() => setCommandPaletteOpen(true)}
         onOpenApiInfo={() => setApiInfoModalOpen(true)}
         onNewScan={handleNewScan}
         onOpenNasConnections={() => setNasConnectionsOpen(true)}
         onLogout={onLogout}
-        isLoading={loading}
         lastUpdated={lastUpdated}
       />
 

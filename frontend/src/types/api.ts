@@ -319,11 +319,3 @@ export interface CleanupResponse {
   stats?: CleanupPreview;
 }
 
-export interface ConfigReloadResponse {
-  success: boolean;
-  message: string;
-  added_scans?: string[];
-  updated_scans?: string[];
-  removed_scans?: string[];
-  total_scans?: number;
-}

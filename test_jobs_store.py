@@ -1,14 +1,12 @@
-"""Tests für app/services/jobs_store.py (DB-Layer, Import, Config-Bridge)"""
+"""Tests für app/services/jobs_store.py (DB-Layer, Config-Bridge)"""
 import threading
 
 import pytest
 
-from app.models.config import ConfigYAML
 from app.services.jobs_store import (
     ADMIN_CREATED_AT_KEY,
     ADMIN_PASSWORD_HASH_KEY,
     ADMIN_USERNAME_KEY,
-    IMPORT_MARKER_KEY,
     ConnectionInUseError,
     JobsStore,
     NotFoundError,
@@ -189,101 +187,6 @@ class TestToScanConfig:
         config = store.to_scan_config(job)
         assert config.shares == ["homes"]
         assert config.folders == ["alice", "bob"]
-
-
-class TestImport:
-    def _fake_config(self):
-        return ConfigYAML(
-            scans=[
-                {
-                    "name": "Scan A",
-                    "nas": {
-                        "host": "10.0.0.1",
-                        "username": "user1",
-                        "password": "pw1",
-                    },
-                    "paths": ["/homes"],
-                    "interval": "6h",
-                    "enabled": True,
-                },
-                {
-                    "name": "Scan B",
-                    "nas": {
-                        "host": "10.0.0.1",
-                        "username": "user1",
-                        "password": "pw1",
-                    },
-                    "shares": ["photo"],
-                    "interval": "0 3 * * *",
-                    "enabled": False,
-                },
-                {
-                    "name": "Scan C",
-                    "nas": {
-                        "host": "10.0.0.2",
-                        "username": "user2",
-                        "password": "pw2",
-                    },
-                    "paths": ["/backup"],
-                    "interval": "12h",
-                    "enabled": True,
-                },
-            ]
-        )
-
-    def test_import_with_nas_dedupe(self, store, monkeypatch):
-        import app.config.loader as loader
-
-        monkeypatch.setattr(loader, "load_config", lambda *a, **k: self._fake_config())
-
-        result = store.import_from_config_yaml()
-        assert result["imported"] is True
-        assert result["jobs"] == 3
-        # Zwei Scans teilen sich dasselbe NAS -> nur 2 Verbindungen
-        assert result["connections"] == 2
-
-        jobs = store.list_jobs()
-        assert len(jobs) == 3
-        job_b = store.get_job("scan-b")
-        assert job_b["enabled"] is False
-        assert job_b["shares"] == ["photo"]
-
-        # Passwörter verschlüsselt übernommen
-        conn_a = store.get_job("scan-a")["nas_connection_id"]
-        assert store.get_connection_password(conn_a) == "pw1"
-
-    def test_import_is_idempotent(self, store, monkeypatch):
-        import app.config.loader as loader
-
-        monkeypatch.setattr(loader, "load_config", lambda *a, **k: self._fake_config())
-
-        store.import_from_config_yaml()
-        result2 = store.import_from_config_yaml()
-        assert result2["imported"] is False
-        assert len(store.list_jobs()) == 3
-
-    def test_import_marker_survives_job_deletion(self, store, monkeypatch):
-        import app.config.loader as loader
-
-        monkeypatch.setattr(loader, "load_config", lambda *a, **k: self._fake_config())
-        store.import_from_config_yaml()
-        for job in store.list_jobs():
-            store.delete_job(job["slug"])
-
-        result = store.import_from_config_yaml()
-        assert result["imported"] is False
-        assert store.list_jobs() == []
-
-    def test_import_without_config_marks_done(self, store, monkeypatch):
-        import app.config.loader as loader
-
-        def boom(*a, **k):
-            raise FileNotFoundError("keine config.yaml")
-
-        monkeypatch.setattr(loader, "load_config", boom)
-        result = store.import_from_config_yaml()
-        assert result["imported"] is False
-        assert store.get_meta(IMPORT_MARKER_KEY) is not None
 
 
 class TestAdminCredentials:

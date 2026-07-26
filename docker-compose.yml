@@ -29,8 +29,6 @@ services:
       # Persistente Daten: SQLite (Historie, Jobs, verschluesselte NAS-Creds,
       # Admin-Konto als Hash) und der auto-generierte secret.key
       - ssa-data:/app/data
-      # Optional: bestehende config.yaml fuer den einmaligen Erst-Import mounten
-      # - ./config.yaml:/app/config.yaml:ro
 
     # --- Betrieb ---
     # Dieser Dienst laeuft als GENAU EIN Prozess und darf nicht repliziert

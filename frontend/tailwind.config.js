@@ -143,21 +143,6 @@ export default {
         popover: "var(--z-popover)",
         toast: "var(--z-toast)",
       },
-
-      keyframes: {
-        "accordion-down": {
-          from: { height: 0 },
-          to: { height: "var(--radix-accordion-content-height)" },
-        },
-        "accordion-up": {
-          from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: 0 },
-        },
-      },
-      animation: {
-        "accordion-down": "accordion-down var(--dur-short) var(--ease-out)",
-        "accordion-up": "accordion-up var(--dur-short) var(--ease-out)",
-      },
     },
   },
   plugins: [require("tailwindcss-animate")],

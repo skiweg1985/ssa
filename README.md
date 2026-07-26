@@ -7,7 +7,7 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 ## Funktionen
 
 - **Misst Größen** für Shares/Ordner/Pfade
-- **Server** mit Scheduler (aus `config.yaml`) und Ergebnis-API
+- **Server** mit Scheduler und Ergebnis-API
 - **Persistente Historie** per SQLite (standardmäßig `data/history.db`)
 
 ## Installation
@@ -77,11 +77,9 @@ Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
 
 </details>
 
-Eine `config.yaml` ist optional (`cp config.yaml.example config.yaml`) — sie
-dient nur dem einmaligen Erst-Import; Scan-Jobs lassen sich vollständig im
-Frontend anlegen. Zugangsdaten musst du vorher nirgends eintragen: beim ersten
-Aufruf der Oberfläche legst du Benutzername und Passwort im Browser an (siehe
-[Ersteinrichtung](#ersteinrichtung)).
+Scan-Jobs werden vollständig im Frontend angelegt. Zugangsdaten musst du vorher
+nirgends eintragen: beim ersten Aufruf der Oberfläche legst du Benutzername und
+Passwort im Browser an (siehe [Ersteinrichtung](#ersteinrichtung)).
 
 Die Abhängigkeiten sind auf exakte Versionen gepinnt (`==`), damit jede
 Installation dieselben Pakete bekommt. `requirements.txt` enthält
@@ -141,9 +139,6 @@ docker compose up -d
   (Historie, Jobs, verschlüsselte NAS-Creds, Admin-Konto als Hash) und den
   auto-generierten `secret.key`. Nicht löschen, sonst müssen NAS-Passwörter und
   Admin-Konto neu eingegeben werden.
-- **Erst-Import:** Eine bestehende `config.yaml` kann optional read-only nach
-  `/app/config.yaml` gemountet werden (auskommentierte Zeile in der
-  `docker-compose.yml`) — sie wird beim ersten Start einmalig importiert.
 - **Healthcheck** ist im Image integriert (`/health`).
 - Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -v ssa-data:/app/data ssa`
 
@@ -159,7 +154,6 @@ neuesten [GitHub Release](../../releases/latest) (`ssa-<version>.tar.gz` oder
 ```bash
 tar -xzf ssa-<version>.tar.gz && cd ssa-<version>
 pip install -r requirements.txt
-cp config.yaml.example config.yaml   # anpassen
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
@@ -184,7 +178,6 @@ Scan-Jobs und NAS-Verbindungen werden **im Web-Frontend** verwaltet:
 
 - **Scan-Jobs**: anlegen/bearbeiten/löschen über „Neuer Scan" bzw. das Aktionsmenü der Tabelle — inkl. Verzeichnisauswahl per NAS-Browser, Intervall-Presets oder Cron.
 - **NAS-Verbindungen**: eigener Bereich (Topbar → Server-Icon) mit „Verbindung testen"; Passwörter werden **verschlüsselt** in der Datenbank gespeichert und nie wieder ans Frontend ausgeliefert.
-- Bestehende `config.yaml`-Scans werden beim **ersten Start einmalig importiert**; danach ist die Datenbank die einzige Quelle.
 
 ## Monitoring (PRTG, Zabbix, Grafana …)
 

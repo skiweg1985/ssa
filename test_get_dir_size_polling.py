@@ -9,7 +9,6 @@ import os
 import time
 import pytest
 from unittest.mock import Mock, patch
-from typing import Dict, Optional
 import threading
 
 # Füge das aktuelle Verzeichnis zum Python-Pfad hinzu

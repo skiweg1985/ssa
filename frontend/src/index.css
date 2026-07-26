@@ -189,13 +189,6 @@
     }
   }
 
-  /* iOS-Safari: Safe-Area am unteren Rand von Dialogen. */
-  @supports (-webkit-touch-callout: none) {
-    .dialog-container {
-      padding-bottom: env(safe-area-inset-bottom);
-    }
-  }
-
   /* Touch-Ziele auf groben Zeigern anheben.
      Bewusst NICHT auf jedes <a>: Inline-Textlinks im Fließtext sollen nicht auf
      44 px aufgeblasen werden. Es trifft echte Bedienelemente. */
@@ -204,8 +197,7 @@
     [role="button"],
     input[type="checkbox"],
     input[type="radio"],
-    select,
-    a[data-control] {
+    select {
       min-height: 44px;
     }
   }
