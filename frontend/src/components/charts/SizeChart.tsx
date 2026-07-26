@@ -6,10 +6,9 @@ import {
   Title,
   Tooltip,
   Legend,
-  ArcElement,
   type ChartOptions,
 } from "chart.js"
-import { Bar, Doughnut } from "react-chartjs-2"
+import { Bar } from "react-chartjs-2"
 import type { ScanResult } from "@/types/api"
 import { chartTokens, axisStyle, tooltipStyle } from "./theme"
 
@@ -19,17 +18,15 @@ ChartJS.register(
   BarElement,
   Title,
   Tooltip,
-  Legend,
-  ArcElement
+  Legend
 )
 
 interface SizeChartProps {
   result: ScanResult
-  type?: "bar" | "doughnut"
   height?: number
 }
 
-export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps) {
+export function SizeChart({ result, height = 400 }: SizeChartProps) {
   // Filter successful results with actual data
   const validResults = result.results.filter(
     (item) => item.success && item.total_size
@@ -76,9 +73,8 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
     ],
   }
 
-  // Gemeinsame Tooltip-Beschriftung fuer beide Chart-Typen.
-  // Bar liefert parsed als {x, y}, Doughnut einen nackten Zahlenwert - deshalb
-  // wird der Byte-Wert je Chart-Typ extrahiert und hier nur noch formatiert.
+  // Bar liefert parsed als {x, y}; der Byte-Wert wird beim Aufruf extrahiert
+  // und hier nur noch formatiert.
   const tooltipLabel = (bytes: number, dataIndex: number): string => {
     const item = validResults[dataIndex]
     let label = formatBytes(bytes)
@@ -92,34 +88,10 @@ export function SizeChart({ result, type = "bar", height = 400 }: SizeChartProps
     return label
   }
 
-  const commonOptions = {
+  const barOptions: ChartOptions<"bar"> = {
     responsive: true,
     maintainAspectRatio: false,
     layout: { padding: { bottom: 20 } },
-  }
-
-  if (type === "doughnut") {
-    const doughnutOptions: ChartOptions<"doughnut"> = {
-      ...commonOptions,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          ...tooltipStyle(t),
-          callbacks: {
-            label: (context) => tooltipLabel(context.parsed, context.dataIndex),
-          },
-        },
-      },
-    }
-    return (
-      <div style={{ height: `${height}px` }}>
-        <Doughnut data={chartData} options={doughnutOptions} />
-      </div>
-    )
-  }
-
-  const barOptions: ChartOptions<"bar"> = {
-    ...commonOptions,
     plugins: {
       legend: { display: false },
       tooltip: {

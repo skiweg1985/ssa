@@ -76,7 +76,6 @@ ssa-v1.0.0/
 ├── explore_syno_api.py   # Synology-API-Client / CLI
 ├── frontend/dist/        # fertig gebautes Frontend (kein Node nötig)
 ├── requirements.txt
-├── config.yaml.example
 ├── .env.example
 ├── README.md, README_CLI.md, README_SERVER.md
 └── install.sh, service.sh, uninstall.sh
@@ -89,7 +88,6 @@ Nicht enthalten (bewusst): `frontend/src`, `node_modules`, Tests, Entwicklungs-D
 ```bash
 tar -xzf ssa-v1.0.0.tar.gz && cd ssa-v1.0.0
 pip install -r requirements.txt
-cp config.yaml.example config.yaml   # anpassen
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 

@@ -12,7 +12,6 @@ venv
 
 # Sensible/lokale Dateien (Secrets kommen per env/Volume in den Container)
 .env
-config.yaml
 data
 
 # Frontend: node_modules und dist werden im Build-Stage frisch erzeugt

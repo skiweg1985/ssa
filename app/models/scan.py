@@ -1,31 +1,7 @@
-"""Pydantic Models für Scan-Ergebnisse und Konfiguration"""
+"""Pydantic Models für Scan-Ergebnisse"""
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from pydantic import BaseModel, Field
-
-
-class NASConfig(BaseModel):
-    """NAS-Zugangsdaten"""
-    host: str = Field(..., description="NAS Hostname oder IP-Adresse")
-    username: str = Field(..., description="Benutzername")
-    password: str = Field(..., description="Passwort")
-    verify_ssl: bool = Field(default=True, description="SSL-Zertifikat verifizieren")
-
-
-class ScanTaskConfig(BaseModel):
-    """Konfiguration für einen Scan-Task"""
-    name: str = Field(..., description="Eindeutiger Name des Scan-Tasks")
-    nas: NASConfig = Field(..., description="NAS-Zugangsdaten")
-    share: Optional[str] = Field(None, description="Freigabe-Name")
-    folder: Optional[str] = Field(None, description="Ordner innerhalb der Freigabe")
-    path: Optional[str] = Field(None, description="Vollständiger Pfad (alternativ zu share/folder)")
-    interval: str = Field(..., description="Cron-Format Intervall (z.B. '0 */6 * * *')")
-    enabled: bool = Field(default=True, description="Ob der Scan aktiviert ist")
-
-
-class ScanConfig(BaseModel):
-    """Haupt-Konfigurationsmodell"""
-    scans: List[ScanTaskConfig] = Field(..., description="Liste der Scan-Tasks")
 
 
 class TotalSize(BaseModel):

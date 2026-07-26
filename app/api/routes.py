@@ -62,7 +62,7 @@ def _job_to_view_config(job: dict) -> Optional[ScanTaskConfigYAML]:
 
 
 def get_scan_config_from_db(identifier: str) -> Optional[ScanTaskConfigYAML]:
-    """DB-basierter Ersatz für get_scan_config (Slug oder Name) - Lese-Ansicht"""
+    """Lese-Ansicht eines Jobs aus der DB (Slug oder Name)"""
     job = jobs_store.get_job(identifier)
     if job is None:
         return None
@@ -498,39 +498,6 @@ async def cancel_scan(scan_identifier: str):
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Fehler beim Abbrechen des Scans: {str(e)}"
-        )
-
-
-@router.post("/config/reload")
-async def reload_config():
-    """
-    Synchronisiert den Scheduler neu aus der Datenbank
-    (früher: Neuladen der config.yaml - Jobs leben jetzt in der DB)
-    """
-    try:
-        result = scheduler_service.resync_from_db()
-        
-        if result["success"]:
-            return {
-                "success": True,
-                "message": result["message"],
-                "added_scans": result.get("added_scans", []),
-                "updated_scans": result.get("updated_scans", []),
-                "removed_scans": result.get("removed_scans", []),
-                "total_scans": result.get("total_scans", 0)
-            }
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=result.get("message", "Fehler beim Neuladen der Konfiguration")
-            )
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Fehler beim Neuladen der Konfiguration: {str(e)}"
         )
 
 

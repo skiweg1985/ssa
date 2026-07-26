@@ -1,11 +1,17 @@
-"""Config Models für YAML-Parsing"""
-from datetime import datetime, timezone
+"""
+Scan-Konfigurationsmodelle.
+
+Die Namen tragen historisch das Suffix "YAML"; die Daten stammen inzwischen aus
+dem Jobs-Store (SQLite) und werden von Scanner, Scheduler und den Routen als
+gemeinsames Übergabeformat genutzt.
+"""
+from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, model_validator
 
 
 class NASConfigYAML(BaseModel):
-    """NAS-Zugangsdaten aus YAML"""
+    """NAS-Zugangsdaten eines Scan-Jobs"""
     host: str
     username: str
     password: str
@@ -15,7 +21,7 @@ class NASConfigYAML(BaseModel):
 
 
 class ScanTaskConfigYAML(BaseModel):
-    """Scan-Task Konfiguration aus YAML"""
+    """Konfiguration eines Scan-Tasks"""
     name: str
     slug: Optional[str] = None  # Optional: URL-freundlicher Slug (wird automatisch generiert wenn nicht angegeben)
     created_at: Optional[datetime] = None  # Optional: Erstellungsdatum (wird automatisch gesetzt wenn nicht angegeben)
@@ -70,41 +76,3 @@ class ScanTaskConfigYAML(BaseModel):
         return self
 
 
-class StorageConfigYAML(BaseModel):
-    """Storage-Konfiguration aus YAML"""
-    db_path: Optional[str] = None  # Optional: Vollständiger Pfad zur SQLite-Datenbank
-    storage_dir: Optional[str] = None  # Optional: Verzeichnis für persistierte Daten (wird ignoriert wenn db_path gesetzt)
-
-
-class ConfigYAML(BaseModel):
-    """Haupt-Konfiguration aus YAML"""
-    scans: list[ScanTaskConfigYAML]
-    storage: Optional[StorageConfigYAML] = None  # Optional: Storage-Konfiguration
-    
-    @model_validator(mode='after')
-    def generate_ids(self):
-        """
-        Generiert automatisch Slugs für alle Scans, die keine haben,
-        setzt Erstellungsdatum wenn nicht vorhanden,
-        und stellt sicher, dass alle Slugs eindeutig sind.
-        """
-        from app.utils.slug import generate_slug, ensure_unique_slugs
-        
-        # Setze Erstellungsdatum für alle Scans, die keines haben
-        for scan in self.scans:
-            if scan.created_at is None:
-                scan.created_at = datetime.now(timezone.utc)
-        
-        # Generiere Slugs für alle Scans, die keine haben
-        slugs = []
-        for scan in self.scans:
-            if scan.slug is None:
-                scan.slug = generate_slug(scan.name)
-            slugs.append(scan.slug)
-        
-        # Stelle sicher, dass alle Slugs eindeutig sind
-        unique_slugs = ensure_unique_slugs(slugs)
-        for scan, slug in zip(self.scans, unique_slugs):
-            scan.slug = slug
-        
-        return self

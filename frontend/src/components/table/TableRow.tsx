@@ -9,7 +9,6 @@ import { cn } from "@/lib/cn"
 
 interface TableRowProps {
   scan: ScanStatus
-  density: "compact" | "normal"
   onRun: (scanName: string) => void
   onCancel?: (scan: ScanStatus) => void
   onShowResults: (scanName: string) => void
@@ -29,7 +28,6 @@ const statusIcons = {
 
 export function TableRow({
   scan,
-  density,
   onRun,
   onCancel,
   onShowResults,
@@ -61,11 +59,8 @@ export function TableRow({
     (progress.progress.num_file || 0) > 0
   )
   
-  // Adjust padding based on density and whether progress info is shown
   // When progress info is shown, add extra top padding to prevent "Läuft" from touching the top
-  const paddingClasses = hasProgressInfo 
-    ? (density === "compact" ? "pt-5 pb-4" : "pt-6 pb-5")
-    : (density === "compact" ? "py-3" : "py-4")
+  const paddingClasses = hasProgressInfo ? "pt-6 pb-5" : "py-4"
 
   return (
     <tr
@@ -162,12 +157,12 @@ export function TableRow({
       </td>
 
       {/* ID */}
-      <td className={cn("px-3 sm:px-4 whitespace-nowrap", density === "compact" && "text-sm")}>
+      <td className="px-3 sm:px-4 whitespace-nowrap">
         <span className="font-mono text-xs text-slate-600 dark:text-slate-400">{scan.scan_slug}</span>
       </td>
 
       {/* Last Run */}
-      <td className={cn("px-3 sm:px-4 whitespace-nowrap", density === "compact" && "text-sm")}>
+      <td className="px-3 sm:px-4 whitespace-nowrap">
         {scan.last_run ? (
           <Tooltip content={formatDateShort(scan.last_run)}>
             <span className="text-xs text-slate-600 dark:text-slate-400 cursor-help">
@@ -180,7 +175,7 @@ export function TableRow({
       </td>
 
       {/* Next Run */}
-      <td className={cn("px-3 sm:px-4 whitespace-nowrap", density === "compact" && "text-sm")}>
+      <td className="px-3 sm:px-4 whitespace-nowrap">
         {scan.next_run ? (
           <Tooltip content={formatDateShort(scan.next_run)}>
             <span className="text-xs text-slate-600 dark:text-slate-400 cursor-help">
@@ -193,7 +188,7 @@ export function TableRow({
       </td>
 
       {/* Interval */}
-      <td className={cn("px-3 sm:px-4 whitespace-nowrap", density === "compact" && "text-sm")}>
+      <td className="px-3 sm:px-4 whitespace-nowrap">
         <span className="text-xs text-slate-600 dark:text-slate-400 font-mono">
           {scan.interval || "-"}
         </span>

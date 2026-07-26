@@ -3,7 +3,7 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,9 +30,8 @@ from app.api.prtg_nas_routes import router as prtg_nas_router
 from app.api.nas_metrics_routes import router as nas_metrics_router
 from app.api.deps import require_auth
 from app.services.scheduler import scheduler_service
-from app.services.storage import storage, get_storage
-from app.services.scanner import scanner_service
-from app.services.jobs_store import initialize_jobs_store, jobs_store
+from app.services.storage import get_storage
+from app.services.jobs_store import initialize_jobs_store
 from app.services.security import admin_password_configured
 from app.services.health import collect_health, mark_server_start
 
@@ -117,14 +116,7 @@ async def lifespan(app: FastAPI):
 
     try:
         # Initialisiere Jobs-Store (gleiche DB wie die Scan-Historie)
-        # und importiere config.yaml-Scans einmalig
         initialize_jobs_store(get_storage().db_path)
-        import_result = jobs_store.import_from_config_yaml()
-        if import_result.get("imported"):
-            logger.info(
-                f"config.yaml importiert: {import_result['jobs']} Job(s), "
-                f"{import_result['connections']} NAS-Verbindung(en)"
-            )
     except Exception as e:
         logger.error(f"Fehler beim Initialisieren des Jobs-Stores: {e}")
 

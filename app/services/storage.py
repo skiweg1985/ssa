@@ -1,5 +1,4 @@
 """In-Memory Storage für Scan-Ergebnisse mit SQLite-Persistierung"""
-import json
 import sqlite3
 import hashlib
 import logging
@@ -582,28 +581,6 @@ class ScanStorage:
         
         self._save_to_disk(scan_slug, scan_name, result, nas_host)
     
-    def update_latest_result(self, scan_slug: str, scan_name: str, result: ScanResult, nas_host: str) -> None:
-        """
-        Aktualisiert das neueste Ergebnis für einen Scan
-        
-        Args:
-            scan_slug: Slug des Scan-Tasks
-            scan_name: Name des Scan-Tasks
-            result: Aktualisiertes Scan-Ergebnis
-            nas_host: Hostname/IP des NAS (für Primary Key)
-        """
-        if scan_slug not in self._results or not self._results[scan_slug]:
-            self.add_result(scan_slug, scan_name, result, nas_host)
-        else:
-            latest = self._results[scan_slug][-1]
-            if latest.timestamp == result.timestamp:
-                # Update des bestehenden Eintrags
-                self._results[scan_slug][-1] = result
-                self._save_to_disk(scan_slug, scan_name, result, nas_host)
-            else:
-                # Neuer Scan mit neuem Timestamp
-                self.add_result(scan_slug, scan_name, result, nas_host)
-    
     def get_latest_result(self, scan_slug: str) -> Optional[ScanResult]:
         """Holt das neueste Ergebnis für einen Scan (anhand slug)"""
         if scan_slug not in self._results or not self._results[scan_slug]:
@@ -691,11 +668,6 @@ class ScanStorage:
             )
         return summary
     
-    def get_results_since(self, scan_slug: str, since: datetime) -> List[ScanResult]:
-        """Holt alle Ergebnisse seit einem bestimmten Zeitpunkt"""
-        all_results = self.get_all_results(scan_slug)
-        return [r for r in all_results if r.timestamp >= since]
-    
     def clear_results(self, scan_slug: Optional[str] = None) -> None:
         """Löscht Ergebnisse"""
         with self._get_connection() as conn:
@@ -769,10 +741,6 @@ class ScanStorage:
                 ]
             
             return deleted
-    
-    def get_all_scan_slugs(self) -> List[str]:
-        """Gibt alle Scan-Slugs zurück"""
-        return list(self._results.keys())
     
     def get_all_folders(
         self, 
@@ -896,59 +864,6 @@ class ScanStorage:
         
         return stats
     
-    def get_result_ids(
-        self,
-        nas_host: Optional[str] = None,
-        folder_path: Optional[str] = None,
-        scan_slug: Optional[str] = None,
-        since: Optional[datetime] = None,
-        until: Optional[datetime] = None,
-        status: Optional[str] = None
-    ) -> List[Tuple[str, str, str, str]]:
-        """
-        Gibt IDs von Ergebnissen zurück, die bestimmten Kriterien entsprechen
-        
-        Returns:
-            Liste von Tupeln (id, nas_host, folder_path, timestamp)
-        """
-        with self._get_connection() as conn:
-            conditions = []
-            params = []
-            
-            if nas_host:
-                conditions.append("nas_host = ?")
-                params.append(nas_host)
-            
-            if folder_path:
-                normalized = self._normalize_folder_path(folder_path)
-                conditions.append("folder_path = ?")
-                params.append(normalized)
-            
-            if scan_slug:
-                conditions.append("scan_slug = ?")
-                params.append(scan_slug)
-            
-            if since:
-                conditions.append("timestamp >= ?")
-                params.append(since.isoformat())
-            
-            if until:
-                conditions.append("timestamp <= ?")
-                params.append(until.isoformat())
-            
-            if status:
-                conditions.append("status = ?")
-                params.append(status)
-            
-            where_clause = " AND ".join(conditions) if conditions else "1=1"
-            
-            cursor = conn.execute(
-                f"SELECT id, nas_host, folder_path, timestamp FROM scan_results WHERE {where_clause}",
-                params
-            )
-            
-            return cursor.fetchall()
-    
     def get_storage_stats(self) -> Dict[str, any]:
         """Gibt Statistiken über den Storage zurück"""
         # Über eine Kopie iterieren: /health wertet die Statistiken in einem
@@ -1000,12 +915,7 @@ class ScanStorage:
             'db_path': str(self._db_path)
         }
     
-    def get_cleanup_preview(self, days: int) -> Dict[str, any]:
-        """Zeigt Vorschau der Bereinigung ohne zu löschen"""
-        return self.cleanup_old_results(days=days, dry_run=True)
-
-
-# Globale Storage-Instanz (wird mit Defaults initialisiert, kann später mit Config überschrieben werden)
+# Globale Storage-Instanz (wird beim ersten Zugriff mit Defaults initialisiert)
 _storage_instance: Optional[ScanStorage] = None
 
 
@@ -1017,38 +927,10 @@ def get_storage() -> ScanStorage:
     return _storage_instance
 
 
-def init_storage_from_config(
-    db_path: Optional[str] = None,
-    storage_dir: Optional[str] = None,
-    max_history: int = 1000,
-    auto_cleanup_days: Optional[int] = 90
-) -> ScanStorage:
-    """
-    Initialisiert die globale Storage-Instanz mit Konfigurationsparametern
-    
-    Args:
-        db_path: Pfad zur SQLite-Datenbank
-        storage_dir: Verzeichnis für persistierte Daten
-        max_history: Maximale Anzahl gespeicherter Scans
-        auto_cleanup_days: Anzahl Tage für automatische Bereinigung
-    """
-    global _storage_instance
-    _storage_instance = ScanStorage(
-        max_history=max_history,
-        storage_dir=storage_dir,
-        db_path=db_path,
-        auto_cleanup_days=auto_cleanup_days
-    )
-    return _storage_instance
-
-
 class StorageWrapper:
     """Wrapper-Klasse für storage, die immer die aktuelle Instanz zurückgibt"""
     def __getattr__(self, name):
         return getattr(get_storage(), name)
-    
-    def __call__(self, *args, **kwargs):
-        return get_storage()(*args, **kwargs)
 
 
 # Für Rückwärtskompatibilität: storage als Wrapper (gibt immer die aktuelle Instanz zurück)

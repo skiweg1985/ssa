@@ -15,7 +15,6 @@ import { cn } from "@/lib/cn"
 type StatusFilter = "all" | "completed" | "failed" | "cancelled" | "running" | "pending"
 type SortField = "name" | "last_run" | "next_run"
 type SortDirection = "asc" | "desc"
-type Density = "compact" | "normal"
 
 interface ScanTableProps {
   scans: ScanStatus[]
@@ -64,7 +63,6 @@ export function ScanTable({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
   const [sortField, setSortField] = useState<SortField>("name")
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc")
-  const [density] = useState<Density>("normal")
   const { viewMode, setViewMode } = useViewMode()
 
   // Filter and sort scans
@@ -347,7 +345,6 @@ export function ScanTable({
                     <TableRow
                       key={scan.scan_slug}
                       scan={scan}
-                      density={density}
                       onRun={onRun}
                       onCancel={onCancel}
                       onShowResults={onShowResults}

@@ -83,11 +83,6 @@ cmd_setup() {
 
     cmd_build
 
-    if [[ ! -f config.yaml && -f config.yaml.example ]]; then
-        log_warn "Keine config.yaml vorhanden."
-        echo "  Optional fuer den Erst-Import von Scans:  cp config.yaml.example config.yaml"
-        echo "  Scan-Jobs lassen sich aber auch komplett im Frontend anlegen."
-    fi
     if [[ -z "${SSA_ADMIN_PASSWORD:-}" && ! -f .env ]]; then
         log_warn "Weder SSA_ADMIN_PASSWORD noch .env gesetzt - der Login bleibt deaktiviert."
         echo "  echo 'SSA_ADMIN_PASSWORD=dein-passwort' > .env"

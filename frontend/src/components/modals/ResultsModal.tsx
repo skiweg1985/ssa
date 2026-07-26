@@ -263,7 +263,7 @@ export function ResultsModal({ open, onOpenChange, scanName }: ResultsModalProps
                     </div>
 
                     <div className="mt-3" style={{ height: '350px' }}>
-                      <SizeChart result={result} type="bar" height={350} />
+                      <SizeChart result={result} height={350} />
                     </div>
                   </div>
                 )}
@@ -452,7 +452,7 @@ export function ResultsModal({ open, onOpenChange, scanName }: ResultsModalProps
                           </div>
 
                           <div className="mt-3" style={{ height: '300px' }}>
-                            <SizeChart result={selectedHistoryResult} type="bar" height={300} />
+                            <SizeChart result={selectedHistoryResult} height={300} />
                           </div>
                         </div>
                       )}

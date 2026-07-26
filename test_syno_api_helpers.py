@@ -12,7 +12,6 @@ import time
 import pytest
 import threading
 from unittest.mock import patch
-from typing import Dict, Optional
 
 # Füge das aktuelle Verzeichnis zum Python-Pfad hinzu
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
