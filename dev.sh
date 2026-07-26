@@ -21,6 +21,11 @@ VENV_DIR=".venv"
 BACKEND_PORT="${SSA_DEV_BACKEND_PORT:-8080}"
 FRONTEND_PORT="${SSA_DEV_FRONTEND_PORT:-5173}"
 
+# uvicorn --reload beobachtet sonst das ganze Projektverzeichnis - inklusive
+# .claude/worktrees/. Aenderungen in einem parallelen Worktree wuerden dann
+# den laufenden Dev-Server neu starten. Der Backend-Code liegt komplett in app/.
+RELOAD_OPTS=(--reload --reload-dir app)
+
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -125,7 +130,7 @@ cmd_backend() {
     ensure_venv
     warn_if_no_build
     log_info "Backend auf http://localhost:$BACKEND_PORT (Reload aktiv)"
-    exec "$VENV_DIR/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT"
+    exec "$VENV_DIR/bin/uvicorn" app.main:app "${RELOAD_OPTS[@]}" --host 127.0.0.1 --port "$BACKEND_PORT"
 }
 
 cmd_frontend() {
@@ -171,7 +176,7 @@ cmd_start() {
 
     trap cleanup_servers INT TERM EXIT
 
-    "$VENV_DIR/bin/uvicorn" app.main:app --reload --host 127.0.0.1 --port "$BACKEND_PORT" &
+    "$VENV_DIR/bin/uvicorn" app.main:app "${RELOAD_OPTS[@]}" --host 127.0.0.1 --port "$BACKEND_PORT" &
     BACKEND_PID=$!
     npm --prefix frontend run dev &
     FRONTEND_PID=$!
