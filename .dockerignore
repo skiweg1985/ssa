@@ -26,5 +26,5 @@ test_*.py
 
 # Docker selbst
 Dockerfile
-docker-compose.yml
+docker-compose*.yml
 .dockerignore

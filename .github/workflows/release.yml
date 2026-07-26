@@ -21,8 +21,147 @@ on:
         required: false
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Container-Image nach GHCR (ghcr.io/<owner>/ssa)
+  #
+  # Laeuft VOR build-and-release (siehe dessen "needs"): die Release-Notes
+  # enthalten eine docker-pull-Anleitung, und die darf nicht auf ein Image
+  # zeigen, das noch gar nicht in der Registry liegt.
+  #
+  # Bei workflow_dispatch wird nur GEBAUT, nicht gepusht - analog dazu, dass ein
+  # manueller Lauf auch kein Release erzeugt. Der Build ist damit trotzdem eine
+  # echte Validierung (inkl. arm64), nur ohne Nebenwirkung.
+  # ---------------------------------------------------------------------------
+  docker-image:
+    name: Container-Image (GHCR)
+    runs-on: ubuntu-latest
+    # Least Privilege: bewusst KEIN contents:write - dieser Job legt kein
+    # Release an, er liest nur den Quellcode.
+    permissions:
+      contents: read        # Checkout
+      packages: write       # Push nach ghcr.io
+      id-token: write       # OIDC-Token, mit dem Sigstore das Signaturzertifikat ausstellt
+      attestations: write   # Ablage der Attestation an der GitHub-API
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      # GHCR akzeptiert nur Kleinbuchstaben im Image-Namen, GitHub-Kontonamen
+      # duerfen aber Grossbuchstaben enthalten.
+      #
+      # Aus github.repository abgeleitet und nicht fest verdrahtet: in einem Fork
+      # landet das Image dadurch in dessen eigenem Namensraum statt ins Leere.
+      - name: Image-Namen bestimmen
+        id: image
+        run: |
+          echo "name=ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      # Registriert die binfmt-Handler im Kernel des Runners. Ohne die kann der
+      # amd64-Runner keinen arm64-Code ausfuehren (= kein pip install fuer arm64).
+      - name: QEMU einrichten (arm64-Emulation)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+
+      # Der klassische Docker-Builder kann keine Multi-Arch-Manifeste erzeugen,
+      # buildx/BuildKit schon.
+      - name: Buildx einrichten
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+
+      # Nur wenn wirklich gepusht wird: ein Dispatch-Lauf braucht keine
+      # Registry-Credentials, also bekommt er auch keine.
+      - name: An GHCR anmelden
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@abd2ef45e78c5afb21d64d4ca52ee8550d9572c7  # v4.5.1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Kein eigenes Secret noetig: GHCR akzeptiert das Workflow-Token,
+          # solange der Job packages:write hat.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags und Labels bestimmen
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            # Git-Tag v2.1.0 -> Image-Tags 2.1.0 und 2.1. Das v faellt weg,
+            # Registry-Tags werden ueblicherweise ohne Praefix geschrieben.
+            #
+            # Kein nacktes {{major}} ("2"): das waere das Versprechen "jede 2.x
+            # ist fuer dich kompatibel" - bei einer selbst gehosteten App mit
+            # Datenvolume zu stark.
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            # Beim manuellen Lauf gibt es keinen Git-Tag, type=semver liefert
+            # dann gar nichts. Damit der Build trotzdem ein -t bekommt, hier
+            # Branchname + Commit. Gepusht wird davon nie etwas (siehe push:).
+            type=ref,event=branch,enable=${{ github.ref_type != 'tag' }}
+            type=sha,enable=${{ github.ref_type != 'tag' }}
+          flavor: |
+            # latest=auto setzt "latest" NUR bei einer Vollversion. Bei einem
+            # Prerelease-Tag (v2.1.0-rc.1) bleibt latest unangetastet - genau
+            # das wollen wir, ein rc darf nicht der Standard-Pull sein.
+            latest=auto
+
+      - name: Image bauen und (nur bei Tags) pushen
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.ref_type == 'tag' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          # Cache im GitHub-Actions-Cache. Nutzt vor allem beim Wiederholungslauf
+          # eines fehlgeschlagenen Releases: die emulierte arm64-Ebene
+          # (pip install) wird dann nicht ein zweites Mal gebaut. Zwischen zwei
+          # Releases ist der Cache meist kalt - GitHub raeumt nach 7 Tagen ohne
+          # Zugriff ab.
+          #
+          # Eigener scope, sonst verdraengen sich die Workflows im gemeinsamen
+          # Default-Scope gegenseitig.
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,mode=max,scope=release
+          # BuildKits eigene Provenance-Attestation abschalten: verbindlich ist
+          # die Sigstore-signierte GitHub-Attestation im naechsten Schritt.
+          # Zusaetzlich wuerde BuildKit Attestation-Manifeste in den Index legen,
+          # die auf der GHCR-Paketseite als Architektur "unknown/unknown"
+          # auftauchen und die Plattformliste unlesbar machen.
+          provenance: false
+
+      # Signierte SLSA-Build-Provenance: bindet den Image-Digest nachpruefbar an
+      # diesen Workflow-Lauf und diesen Commit. Pruefen laesst sich das mit
+      #   gh attestation verify oci://ghcr.io/<owner>/ssa:2.1.0 --repo <owner>/ssa
+      #
+      # subject-digest ist der Digest des Manifest-INDEX, eine Attestation deckt
+      # also beide Architekturen ab.
+      - name: Build-Provenance attestieren
+        if: github.ref_type == 'tag'
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-name: ${{ steps.image.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          # Legt die Attestation zusaetzlich als OCI-Artefakt neben das Image,
+          # damit sie auch ohne GitHub-API auffindbar ist.
+          push-to-registry: true
+
+      # Falls der emulierte arm64-Build irgendwann zu lange dauert: seit August
+      # 2025 gibt es kostenlose native ARM-Runner fuer public Repos. Der Umbau
+      # waere eine Matrix aus ubuntu-latest + ubuntu-24.04-arm mit
+      # "push-by-digest" und einem abschliessenden
+      # "docker buildx imagetools create"-Merge-Job. Kostet drei Jobs statt
+      # einem - erst messen, dann umbauen.
+
   build-and-release:
     runs-on: ubuntu-latest
+    # Das Release entsteht erst, wenn das Image in GHCR liegt: die Notes
+    # enthalten unten eine docker-pull-Anleitung, die sonst ins Leere zeigt.
+    # Faellt der Image-Build, faellt auch das Release aus - bewusst, ein halbes
+    # Release ist schlimmer als gar keins.
+    needs: docker-image
     # Schreibrechte nur fuer diesen Job (Release + Assets anlegen)
     permissions:
       contents: write
@@ -153,6 +292,51 @@ jobs:
           # ... darunter die vollstaendige PR-Liste, wie sie --generate-notes liefert.
           gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
             -f tag_name="${VERSION}" --jq .body >> notes.md
+
+          # Container-Anleitung ans Ende. Das Image liegt zu diesem Zeitpunkt
+          # sicher in GHCR - dafuer sorgt "needs: docker-image" oben.
+          IMAGE="ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          PLAIN="${VERSION#v}"   # v2.1.0 -> 2.1.0 (Registry-Tags ohne v-Praefix)
+
+          # Bei einem Prerelease (v2.1.0-rc.1) erzeugt metadata-action bewusst
+          # WEDER den verkuerzten Tag NOCH latest - dann darf die Notes-Zeile
+          # die auch nicht versprechen.
+          if printf '%s' "${PLAIN}" | grep -q -- '-'; then
+            TAGLIST="\`${PLAIN}\` (Prerelease - kein \`latest\`, kein verkuerzter Tag)"
+          else
+            TAGLIST="\`${PLAIN}\`, \`${PLAIN%.*}\`, \`latest\`"
+          fi
+
+          # ACHTUNG, zwei Fallstricke in diesem Block:
+          #
+          # 1. Heredoc ohne Quotes (wir brauchen die Variablen), deshalb muessen
+          #    alle Backticks escaped sein - sonst fuehrt die Shell sie als
+          #    Kommando aus und der Schritt bricht beim echten Tag.
+          # 2. Die Zeilen tragen die Einrueckung des YAML-Blocks. Die entfernt
+          #    YAML wieder, die Shell sieht sie also am Zeilenanfang. Nimmt man
+          #    sie raus, ist die YAML-Datei kaputt.
+          cat >> notes.md <<EOF
+
+          ## Container-Image
+
+          \`\`\`bash
+          docker pull ${IMAGE}:${PLAIN}
+          docker run -d -p 8080:8080 -v ssa-data:/app/data ${IMAGE}:${PLAIN}
+          \`\`\`
+
+          Tags: ${TAGLIST}
+          Architekturen: \`linux/amd64\`, \`linux/arm64\`
+
+          Fuer den Dauerbetrieb den festen Versions-Tag verwenden, nicht \`latest\`.
+          Ein fertiger Compose-Stack inklusive Haertung liegt als
+          \`docker-compose.ghcr.yml\` im Repo.
+
+          Signierte Build-Provenance pruefen:
+
+          \`\`\`bash
+          gh attestation verify oci://${IMAGE}:${PLAIN} --repo ${GITHUB_REPOSITORY}
+          \`\`\`
+          EOF
 
           gh release create "${VERSION}" \
             --title "${VERSION}" \
