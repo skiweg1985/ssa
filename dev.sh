@@ -89,8 +89,8 @@ cmd_setup() {
     cmd_build
 
     if [[ -z "${SSA_ADMIN_PASSWORD:-}" && ! -f .env ]]; then
-        log_warn "Weder SSA_ADMIN_PASSWORD noch .env gesetzt - der Login bleibt deaktiviert."
-        echo "  echo 'SSA_ADMIN_PASSWORD=dein-passwort' > .env"
+        log_info "Kein Admin-Passwort gesetzt - das ist der Normalfall."
+        echo "  Beim ersten Aufruf der Oberflaeche legst du das Konto im Browser an."
     fi
 
     echo

@@ -5,10 +5,12 @@ import { Input } from "@/components/ui/input"
 
 interface LoginScreenProps {
   onLogin: (username: string, password: string) => Promise<void>
+  /** Vorschlagswert - der bei der Ersteinrichtung vergebene bzw. konfigurierte Name */
+  defaultUsername?: string
 }
 
-export function LoginScreen({ onLogin }: LoginScreenProps) {
-  const [username, setUsername] = useState("admin")
+export function LoginScreen({ onLogin, defaultUsername = "admin" }: LoginScreenProps) {
+  const [username, setUsername] = useState(defaultUsername)
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)

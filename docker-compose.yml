@@ -1,10 +1,10 @@
 # ==============================================================================
 # Synology Space Analyzer - Compose-Stack
 #
-# Start:   SSA_ADMIN_PASSWORD=geheim docker compose up -d
-# (oder SSA_ADMIN_PASSWORD in eine .env-Datei neben dieser Datei legen)
+# Start:   docker compose up -d
 #
-# Web-UI danach unter http://localhost:8080 (Login: admin / dein Passwort)
+# Danach http://localhost:8080 aufrufen - beim ersten Mal legst du dort
+# Benutzername und Passwort an. Eine .env brauchst du dafuer nicht.
 # ==============================================================================
 
 services:
@@ -16,15 +16,18 @@ services:
     ports:
       - "8080:8080"
     environment:
-      # PFLICHT: Login-Passwort (ohne ist der Login deaktiviert)
-      SSA_ADMIN_PASSWORD: ${SSA_ADMIN_PASSWORD:?SSA_ADMIN_PASSWORD muss gesetzt sein (z.B. in .env)}
+      # Optional: Login-Passwort aus der Umgebung. Gesetzt hat es Vorrang und
+      # ueberspringt die Ersteinrichtung; leer (Default) heisst "im Browser
+      # einrichten". Fuer Deployments, die Secrets ohnehin injizieren.
+      SSA_ADMIN_PASSWORD: ${SSA_ADMIN_PASSWORD:-}
       # Optional:
       # SSA_ADMIN_USER: admin
+      # SSA_SETUP_TOKEN: langes-zufaelliges-token   # schuetzt die Ersteinrichtung
       # SSA_SECRET_KEY: langer-zufaelliger-string   # sonst auto data/secret.key im Volume
       # SSA_TOKEN_TTL_HOURS: "168"
     volumes:
-      # Persistente Daten: SQLite (Historie, Jobs, verschluesselte NAS-Creds)
-      # und der auto-generierte secret.key
+      # Persistente Daten: SQLite (Historie, Jobs, verschluesselte NAS-Creds,
+      # Admin-Konto als Hash) und der auto-generierte secret.key
       - ssa-data:/app/data
 
     # --- Betrieb ---

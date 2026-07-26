@@ -32,7 +32,7 @@ from app.api.deps import require_auth
 from app.services.scheduler import scheduler_service
 from app.services.storage import get_storage
 from app.services.jobs_store import initialize_jobs_store
-from app.services.security import admin_password_configured
+from app.services.security import setup_required
 from app.services.health import collect_health, mark_server_start
 
 # Logging konfigurieren
@@ -106,19 +106,23 @@ async def lifespan(app: FastAPI):
     mark_server_start()
     logger.info("Starte FastAPI Server...")
     
-    if not admin_password_configured():
-        logger.warning(
-            "=" * 60 + "\n"
-            "WARNUNG: SSA_ADMIN_PASSWORD ist nicht gesetzt!\n"
-            "Der Login ist deaktiviert, bis die Umgebungsvariable gesetzt\n"
-            "und der Server neu gestartet wurde.\n" + "=" * 60
-        )
-
     try:
         # Initialisiere Jobs-Store (gleiche DB wie die Scan-Historie)
         initialize_jobs_store(get_storage().db_path)
     except Exception as e:
         logger.error(f"Fehler beim Initialisieren des Jobs-Stores: {e}")
+
+    # Erst nach dem Jobs-Store: die Prüfung schaut auch in der Datenbank nach,
+    # ob dort schon ein Admin-Konto liegt.
+    if setup_required():
+        logger.warning(
+            "=" * 60 + "\n"
+            "ERSTEINRICHTUNG OFFEN\n"
+            "Es ist noch kein Admin-Konto angelegt. Bitte jetzt die\n"
+            "Weboberflaeche aufrufen und das Konto anlegen - bis dahin kann\n"
+            "das jeder tun, der diesen Port erreicht.\n"
+            "Alternativ SSA_ADMIN_PASSWORD in der Umgebung setzen.\n" + "=" * 60
+        )
 
     try:
         # Lade Jobs aus der Datenbank und starte Scheduler - aber nur in EINEM

@@ -87,12 +87,13 @@ class TestLogin:
         assert response.status_code == 401
 
     def test_unconfigured_password_503(self, client, monkeypatch):
+        # Weder Umgebungsvariable noch Admin-Konto in der Datenbank
         monkeypatch.delenv("SSA_ADMIN_PASSWORD", raising=False)
         response = client.post(
             "/api/auth/login", json={"username": "admin", "password": "x"}
         )
         assert response.status_code == 503
-        assert "SSA_ADMIN_PASSWORD" in response.json()["detail"]
+        assert "Ersteinrichtung" in response.json()["detail"]
 
     def test_me_with_token(self, client, auth_headers):
         response = client.get("/api/auth/me", headers=auth_headers)

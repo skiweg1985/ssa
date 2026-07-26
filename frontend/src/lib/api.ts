@@ -21,6 +21,7 @@ import type {
   ScanJobPublic,
   ApiTokenPublic,
   ApiTokenCreated,
+  SetupStatus,
 } from "@/types/api";
 
 const API_BASE = '/api';
@@ -111,6 +112,27 @@ export async function login(username: string, password: string): Promise<LoginRe
 
 export async function fetchMe(): Promise<{ username: string }> {
   return fetchAPI<{ username: string }>('/auth/me');
+}
+
+/** Ersteinrichtung noch offen? Wird beim Boot vor dem Login-Bildschirm geprueft. */
+export async function fetchSetupStatus(): Promise<SetupStatus> {
+  return fetchAPI<SetupStatus>('/auth/setup-status');
+}
+
+/** Legt das Admin-Konto an und meldet direkt an (funktioniert genau einmal) */
+export async function setupAdmin(
+  username: string,
+  password: string,
+  setupToken?: string
+): Promise<LoginResponse> {
+  return fetchAPI<LoginResponse>('/auth/setup', {
+    method: 'POST',
+    body: JSON.stringify({
+      username,
+      password,
+      ...(setupToken ? { setup_token: setupToken } : {}),
+    }),
+  });
 }
 
 // --- NAS connection endpoints ---

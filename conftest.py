@@ -12,8 +12,12 @@ Build wird nie überschrieben - liegt einer vor, testen wir gegen ihn.
 Das passiert absichtlich auf Modulebene: pytest importiert conftest.py vor der
 Sammlung der Testmodule, also verlässlich bevor irgendein Test app.main
 importiert. Ein Fixture käme dafür zu spät.
+
+Zweiter Punkt hier: die Datenbank-Isolation (siehe _isolate_database).
 """
 from pathlib import Path
+
+import pytest
 
 # Muss den Marker '<div id="root">' enthalten, an dem die Tests die SPA erkennen.
 #
@@ -51,3 +55,38 @@ def _ensure_frontend_build() -> None:
 
 
 _ensure_frontend_build()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_database(monkeypatch, tmp_path):
+    """
+    Hält jeden Test von der echten data/history.db fern.
+
+    Ohne das greift ein Test, der weder Storage noch Jobs-Store selbst umbiegt,
+    über get_storage() auf die Produktionsdatenbank im Projekt zu - seit der
+    Admin-Login auch dort nachschlägt (verify_admin) betrifft das auch Tests,
+    die mit Persistenz nichts zu tun haben.
+
+    Umgebogen wird der Default-Pfad, nicht die Instanz: Tests, die selbst eine
+    ScanStorage mit explizitem db_path bauen (z.B. test_auth_api.py), laufen
+    unverändert weiter.
+    """
+    import app.services.jobs_store as jobs_store_module
+    import app.services.storage as storage_module
+
+    real_init = storage_module.ScanStorage.__init__
+
+    def init_in_tmp(self, *args, **kwargs):
+        # len(args) < 2: ab dem zweiten positionalen Argument sind storage_dir
+        # bzw. db_path selbst gesetzt und haben Vorrang.
+        if (
+            len(args) < 2
+            and kwargs.get("db_path") is None
+            and kwargs.get("storage_dir") is None
+        ):
+            kwargs["db_path"] = tmp_path / "history.db"
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(storage_module.ScanStorage, "__init__", init_in_tmp)
+    monkeypatch.setattr(storage_module, "_storage_instance", None)
+    monkeypatch.setattr(jobs_store_module, "_jobs_store_instance", None)

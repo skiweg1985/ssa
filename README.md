@@ -77,8 +77,9 @@ Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
 
 </details>
 
-Scan-Jobs werden vollständig im Frontend angelegt. Für den Login muss
-`SSA_ADMIN_PASSWORD` gesetzt sein, z.B. in einer `.env`.
+Scan-Jobs werden vollständig im Frontend angelegt. Zugangsdaten musst du vorher
+nirgends eintragen: beim ersten Aufruf der Oberfläche legst du Benutzername und
+Passwort im Browser an (siehe [Ersteinrichtung](#ersteinrichtung)).
 
 Die Abhängigkeiten sind auf exakte Versionen gepinnt (`==`), damit jede
 Installation dieselben Pakete bekommt. `requirements.txt` enthält
@@ -130,18 +131,16 @@ Die App kann komplett als Container laufen — das Image baut das Frontend
 selbst (Multi-Stage), es wird also weder Node noch Python auf dem Host benötigt:
 
 ```bash
-# Passwort setzen (oder in .env neben der docker-compose.yml legen)
-echo 'SSA_ADMIN_PASSWORD=dein-passwort' > .env
-
 docker compose up -d
-# Web-UI: http://localhost:8080 (Login: admin / dein Passwort)
+# Web-UI: http://localhost:8080 - beim ersten Aufruf Konto anlegen
 ```
 
 - **Persistenz:** Das Volume `ssa-data` (→ `/app/data`) enthält die SQLite-DB
-  (Historie, Jobs, verschlüsselte NAS-Creds) und den auto-generierten
-  `secret.key`. Nicht löschen, sonst müssen NAS-Passwörter neu eingegeben werden.
+  (Historie, Jobs, verschlüsselte NAS-Creds, Admin-Konto als Hash) und den
+  auto-generierten `secret.key`. Nicht löschen, sonst müssen NAS-Passwörter und
+  Admin-Konto neu eingegeben werden.
 - **Healthcheck** ist im Image integriert (`/health`).
-- Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -e SSA_ADMIN_PASSWORD=... -v ssa-data:/app/data ssa`
+- Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -v ssa-data:/app/data ssa`
 
 Der CI-Workflow baut das Image bei jedem PR und führt einen Boot-Smoke-Test
 durch (Health, Login, Auth-Durchsetzung, Frontend-Auslieferung).
@@ -231,7 +230,40 @@ Zabbix, Checkmk, Grafana und Uptime-Kuma.
 
 ## Sicherheit
 
-- **Login erforderlich**: Das Frontend/die API ist per Passwort geschützt. Setze `SSA_ADMIN_PASSWORD` in der Umgebung (z.B. `.env`); Standard-Benutzer ist `admin` (änderbar via `SSA_ADMIN_USER`). Ohne gesetztes Passwort ist der Login deaktiviert.
+### Ersteinrichtung
+
+Beim ersten Aufruf der Weboberfläche erscheint statt des Logins ein
+Einrichtungsbildschirm: Benutzername und Passwort festlegen, fertig — danach
+bist du direkt angemeldet. Das Passwort wird als scrypt-Hash in
+`data/history.db` gespeichert, der Secret-Key für Tokens und NAS-Passwörter
+(`data/secret.key`) entsteht automatisch. Eine `.env` ist dafür nicht nötig.
+
+Zwei Dinge sind dabei wichtig:
+
+- **Das Zeitfenster ist offen.** Solange kein Konto existiert, kann es sich
+  jeder anlegen, der den Port erreicht. Also gleich nach dem Start einrichten.
+  Ist der Dienst aus einem nicht vertrauenswürdigen Netz erreichbar, vorher
+  `SSA_SETUP_TOKEN` setzen — dann verlangt der Bildschirm zusätzlich genau
+  dieses Token, das nur du aus der Server-Umgebung kennst.
+- **Headless-Deployments** setzen weiterhin `SSA_ADMIN_PASSWORD` (plus optional
+  `SSA_ADMIN_USER`) in der Umgebung. Das hat Vorrang, überspringt die
+  Ersteinrichtung und ignoriert ein eventuell gespeichertes Konto.
+
+**Passwort vergessen?** Zwei Wege:
+
+```bash
+# 1. Über die Umgebung: hat Vorrang, sofort nach dem Neustart wirksam
+SSA_ADMIN_PASSWORD=neues-passwort docker compose up -d
+```
+
+```bash
+# 2. Konto verwerfen und neu einrichten (Dienst vorher stoppen)
+sqlite3 data/history.db "DELETE FROM app_meta WHERE key LIKE 'admin_%'"
+```
+
+### Weitere Maßnahmen
+
+- **Login erforderlich**: Das Frontend/die API ist per Passwort geschützt. Ohne eingerichtetes Konto *und* ohne `SSA_ADMIN_PASSWORD` ist der Login deaktiviert (fail-closed); die API antwortet dann mit 503.
 - **Brute-Force-Schutz**: Nach mehreren Fehlversuchen wird der Login pro Client-IP gesperrt (HTTP 429 mit `Retry-After`). Jede weitere Sperre verdoppelt die Dauer, gedeckelt bei einer Stunde. Ein erfolgreicher Login setzt den Zähler zurück, damit legitime Nutzer nie ausgesperrt werden.
 
   | Variable | Default | Bedeutung |

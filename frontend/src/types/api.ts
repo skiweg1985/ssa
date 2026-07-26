@@ -55,6 +55,15 @@ export interface LoginResponse {
   expires_at: string;
 }
 
+export interface SetupStatus {
+  /** true, solange noch kein Admin-Konto existiert */
+  setup_required: boolean;
+  /** Vorschlagswert für das Formular */
+  username: string;
+  /** true, wenn der Server SSA_SETUP_TOKEN verlangt */
+  token_required: boolean;
+}
+
 // --- NAS-Verbindungen ---
 
 /**

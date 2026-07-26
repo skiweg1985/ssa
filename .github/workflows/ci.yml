@@ -157,12 +157,65 @@ jobs:
             || { echo "::error::Frontend index.html wird nicht ausgeliefert"; exit 1; }
           echo "Smoke-Test bestanden"
 
+      - name: Ersteinrichtung (Container ohne jede Konfiguration)
+        run: |
+          # Der eigentliche Standardweg: "docker compose up -d" ohne .env.
+          # Eigener Container, damit der Headless-Fall oben unberuehrt bleibt.
+          docker run -d --name ssa-ci-setup \
+            -p 8081:8080 \
+            --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges --pids-limit 256 \
+            -v ssa-ci-setup-data:/app/data \
+            ssa:ci
+
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8081/health > /dev/null && break
+            [ "$i" = "30" ] && { echo "::error::/health nicht erreichbar"; exit 1; }
+            sleep 2
+          done
+
+          # Ohne Konto meldet der Status "Einrichtung offen" und der Login 503
+          curl -sf http://localhost:8081/api/auth/setup-status | grep -q '"setup_required":true' \
+            || { echo "::error::setup_required war nicht true"; exit 1; }
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8081/api/auth/login \
+            -H 'Content-Type: application/json' -d '{"username":"admin","password":"x"}')
+          [ "$STATUS" = "503" ] || { echo "::error::Erwartet 503 vor der Einrichtung, bekam $STATUS"; exit 1; }
+
+          # Einrichtung meldet direkt an
+          TOKEN=$(curl -sf -X POST http://localhost:8081/api/auth/setup \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-admin","password":"ci-test-passwort"}' \
+            | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+          [ -n "$TOKEN" ] || { echo "::error::Einrichtung lieferte kein Token"; exit 1; }
+          curl -sf -H "Authorization: Bearer $TOKEN" http://localhost:8081/api/scans > /dev/null
+
+          # Ein zweiter Versuch darf das Konto nicht uebernehmen
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8081/api/auth/setup \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"angreifer","password":"uebernahme1"}')
+          [ "$STATUS" = "409" ] || { echo "::error::Zweite Einrichtung lieferte $STATUS statt 409"; exit 1; }
+
+          # Neustart: das Konto liegt im Volume, nicht im Prozess
+          docker restart ssa-ci-setup > /dev/null
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8081/health > /dev/null && break
+            [ "$i" = "30" ] && { echo "::error::/health nach Neustart nicht erreichbar"; exit 1; }
+            sleep 2
+          done
+          curl -sf -X POST http://localhost:8081/api/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"ci-admin","password":"ci-test-passwort"}' > /dev/null \
+            || { echo "::error::Login nach Neustart fehlgeschlagen"; exit 1; }
+          echo "Ersteinrichtung bestanden"
+
       - name: Container-Logs (bei Fehler)
         if: failure()
-        run: docker logs ssa-ci || true
+        run: |
+          docker logs ssa-ci || true
+          docker logs ssa-ci-setup || true
 
       - name: Aufraeumen
         if: always()
         run: |
-          docker rm -f ssa-ci || true
-          docker volume rm ssa-ci-data || true
+          docker rm -f ssa-ci ssa-ci-setup || true
+          docker volume rm ssa-ci-data ssa-ci-setup-data || true

@@ -1,20 +1,28 @@
 """Tests für app/services/security.py (Keys, Tokens, Verschlüsselung, Admin-Check)"""
+import hashlib
 import os
 import stat
 import time
 
 import pytest
 
+from app.services import jobs_store as jobs_store_module
 from app.services import security
+from app.services.jobs_store import initialize_jobs_store
 from app.services.security import (
     SecretDecryptionError,
+    admin_password_configured,
     create_token,
     decrypt_secret,
     encrypt_secret,
+    get_admin_user,
     get_master_key,
     get_token_expiry,
+    hash_password,
     reset_key_cache,
+    setup_required,
     verify_admin,
+    verify_password,
     verify_token,
 )
 
@@ -145,4 +153,105 @@ class TestVerifyAdmin:
     def test_fail_closed_without_password(self, monkeypatch):
         monkeypatch.delenv("SSA_ADMIN_PASSWORD", raising=False)
         assert verify_admin("admin", "") is False
+        assert verify_admin("admin", "irgendwas") is False
+
+    def test_empty_env_password_counts_as_unset(self, monkeypatch):
+        # docker compose setzt bei ${SSA_ADMIN_PASSWORD:-} den leeren String
+        monkeypatch.setenv("SSA_ADMIN_PASSWORD", "")
+        assert admin_password_configured() is False
+        assert verify_admin("admin", "") is False
+
+
+class TestPasswordHashing:
+    def test_roundtrip(self):
+        stored = hash_password("geheim123")
+        assert stored.startswith("scrypt$")
+        assert verify_password("geheim123", stored) is True
+
+    def test_salt_makes_hashes_differ(self):
+        assert hash_password("geheim123") != hash_password("geheim123")
+
+    def test_wrong_password(self):
+        assert verify_password("falsch", hash_password("geheim123")) is False
+
+    @pytest.mark.parametrize(
+        "stored",
+        [
+            "",
+            "muell",
+            "unbekannt$1$aaaa$bbbb",
+            "scrypt$16384$8",  # zu wenige Felder
+            "scrypt$nichtnumerisch$8$1$aaaa$bbbb",
+            "pbkdf2_sha256$600000",
+        ],
+    )
+    def test_broken_hash_is_fail_closed(self, stored):
+        assert verify_password("geheim123", stored) is False
+
+    def test_empty_password_never_verifies(self):
+        assert verify_password("", hash_password("geheim123")) is False
+
+    def test_pbkdf2_format_verifies(self):
+        # Von Hand gebaut - so sehen Hashes aus, die auf einem Build ohne
+        # scrypt entstanden sind.
+        salt = b"0123456789abcdef"
+        rounds = 1000
+        dk = hashlib.pbkdf2_hmac("sha256", b"geheim123", salt, rounds, dklen=32)
+        stored = (
+            f"pbkdf2_sha256${rounds}"
+            f"${security._b64url_encode(salt)}${security._b64url_encode(dk)}"
+        )
+        assert verify_password("geheim123", stored) is True
+        assert verify_password("falsch", stored) is False
+
+    def test_falls_back_to_pbkdf2_without_scrypt(self, monkeypatch):
+        def no_scrypt(*args, **kwargs):
+            raise ValueError("scrypt nicht verfügbar")
+
+        monkeypatch.setattr(security.hashlib, "scrypt", no_scrypt)
+        stored = hash_password("geheim123")
+        assert stored.startswith("pbkdf2_sha256$")
+        # Die Verifikation läuft ebenfalls ohne scrypt
+        assert verify_password("geheim123", stored) is True
+
+
+class TestStoredAdminCredentials:
+    """Admin-Konto aus der Ersteinrichtung (Datenbank statt Umgebung)"""
+
+    @pytest.fixture
+    def store(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("SSA_ADMIN_PASSWORD", raising=False)
+        monkeypatch.delenv("SSA_ADMIN_USER", raising=False)
+        return initialize_jobs_store(tmp_path / "jobs.db")
+
+    def test_login_against_database(self, store):
+        assert store.create_admin_credentials("benjamin", hash_password("geheim123"))
+        assert admin_password_configured() is True
+        assert setup_required() is False
+        assert get_admin_user() == "benjamin"
+        assert verify_admin("benjamin", "geheim123") is True
+        assert verify_admin("benjamin", "falsch") is False
+        assert verify_admin("admin", "geheim123") is False
+
+    def test_env_wins_over_database(self, store, monkeypatch):
+        store.create_admin_credentials("benjamin", hash_password("db-passwort"))
+        monkeypatch.setenv("SSA_ADMIN_PASSWORD", "env-passwort")
+
+        assert get_admin_user() == "admin"
+        assert verify_admin("admin", "env-passwort") is True
+        # Das in der Datenbank gespeicherte Konto ist währenddessen wirkungslos
+        assert verify_admin("benjamin", "db-passwort") is False
+
+    def test_setup_required_on_fresh_database(self, store):
+        assert setup_required() is True
+        assert verify_admin("admin", "irgendwas") is False
+
+    def test_unreadable_store_is_fail_closed(self, monkeypatch):
+        monkeypatch.delenv("SSA_ADMIN_PASSWORD", raising=False)
+
+        def boom():
+            raise RuntimeError("Datenbank weg")
+
+        monkeypatch.setattr(jobs_store_module, "get_jobs_store", boom)
+        assert security._stored_admin() is None
         assert verify_admin("admin", "irgendwas") is False

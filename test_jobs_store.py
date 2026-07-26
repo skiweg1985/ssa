@@ -1,7 +1,12 @@
 """Tests für app/services/jobs_store.py (DB-Layer, Config-Bridge)"""
+import threading
+
 import pytest
 
 from app.services.jobs_store import (
+    ADMIN_CREATED_AT_KEY,
+    ADMIN_PASSWORD_HASH_KEY,
+    ADMIN_USERNAME_KEY,
     ConnectionInUseError,
     JobsStore,
     NotFoundError,
@@ -183,3 +188,65 @@ class TestToScanConfig:
         assert config.shares == ["homes"]
         assert config.folders == ["alice", "bob"]
 
+
+class TestAdminCredentials:
+    """Admin-Konto aus der Ersteinrichtung (genau eines, in app_meta)"""
+
+    def test_none_on_fresh_database(self, store):
+        assert store.get_admin_credentials() is None
+
+    def test_create_and_read(self, store):
+        assert store.create_admin_credentials("benjamin", "hash-1") is True
+
+        stored = store.get_admin_credentials()
+        assert stored == {"username": "benjamin", "password_hash": "hash-1"}
+        assert store.get_meta(ADMIN_CREATED_AT_KEY) is not None
+
+    def test_second_call_does_not_overwrite(self, store):
+        store.create_admin_credentials("benjamin", "hash-1")
+
+        assert store.create_admin_credentials("angreifer", "hash-2") is False
+        assert store.get_admin_credentials() == {
+            "username": "benjamin",
+            "password_hash": "hash-1",
+        }
+
+    def test_username_falls_back_to_admin(self, store):
+        # Hash ohne Benutzername (z.B. von Hand in der Datenbank angelegt)
+        store.set_meta(ADMIN_PASSWORD_HASH_KEY, "hash-1")
+        assert store.get_admin_credentials() == {
+            "username": "admin",
+            "password_hash": "hash-1",
+        }
+
+    def test_username_without_hash_counts_as_unconfigured(self, store):
+        store.set_meta(ADMIN_USERNAME_KEY, "benjamin")
+        assert store.get_admin_credentials() is None
+
+    def test_only_one_of_two_parallel_setups_wins(self, store):
+        """
+        Zwei zeitgleiche Ersteinrichtungen: genau eine darf durchkommen.
+
+        Ohne das ON CONFLICT DO NOTHING in der Schreibtransaktion würden beide
+        ihren Hash schreiben - der zweite überschriebe das Konto des ersten,
+        obwohl dessen Setup schon als erfolgreich gemeldet wurde.
+        """
+        barrier = threading.Barrier(2)
+        results = {}
+
+        def run(name):
+            barrier.wait()
+            results[name] = store.create_admin_credentials(name, f"hash-{name}")
+
+        threads = [threading.Thread(target=run, args=(n,)) for n in ("erster", "zweiter")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        winners = [name for name, created in results.items() if created]
+        assert len(winners) == 1
+
+        stored = store.get_admin_credentials()
+        assert stored["username"] == winners[0]
+        assert stored["password_hash"] == f"hash-{winners[0]}"
