@@ -12,8 +12,50 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 
 ## Installation
 
+Drei Wege, je nachdem was Sie vorhaben:
+
+| Weg | Wofür | Voraussetzung |
+|---|---|---|
+| **[Docker / Compose](#docker--compose)** – empfohlen | Betrieb | Docker |
+| **[Release-Paket](#download--start-fertiges-paket)** | Betrieb ohne Docker, z.B. mit systemd | Python 3.11+ |
+| **[Aus dem Quellcode](#aus-dem-quellcode-entwicklung)** | Entwicklung | Python 3.11+ und Node 22+ |
+
+Für den Betrieb sind Docker und das Release-Paket die vorgesehenen Wege: Beide
+bringen ein fertig gebautes Frontend mit, es wird also **kein Node** benötigt.
+Das Git-Repository enthält bewusst nur Quellcode — `frontend/dist` wird dort
+gebaut, wo es gebraucht wird (Docker-Stage 1 bzw. Release-Workflow).
+
+### Aus dem Quellcode (Entwicklung)
+
+Benötigt Python 3.11+ **und Node 22+** (letzteres für das Frontend) sowie
+Netzwerkzugriff aufs NAS — alle Scans laufen über die File Station API, es wird
+nichts lokal gemountet:
+
 ```bash
-pip install -r requirements.txt
+git clone <repo-url> && cd ssa
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp config.yaml.example config.yaml   # anpassen
+```
+
+Das Frontend einmalig bauen, sonst liefert der Server statt der UI eine
+Fehlerseite:
+
+```bash
+npm --prefix frontend ci && npm --prefix frontend run build
+```
+
+```bash
+.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+```
+
+Web-UI danach unter `http://localhost:8080`.
+
+**Beim Arbeiten am Frontend** ist der Vite-Dev-Server der bequemere Weg — mit
+Hot Reload, und `/api` wird automatisch auf das Backend unter `:8080` geleitet:
+
+```bash
+npm --prefix frontend run dev
 ```
 
 Die Abhängigkeiten sind auf exakte Versionen gepinnt (`==`), damit jede
@@ -21,22 +63,6 @@ Installation dieselben Pakete bekommt. `requirements.txt` enthält
 ausschließlich die **Laufzeit**-Abhängigkeiten – das Test-Werkzeug steht in
 `requirements-dev.txt` und landet damit weder im Docker-Image noch im
 Release-Paket (siehe [Tests](#tests)).
-
-### Lokal auf macOS/Linux (venv)
-
-Die App läuft ohne Anpassungen lokal, z.B. auf einem Mac – benötigt wird nur
-Python 3.11+ und Netzwerkzugriff aufs NAS (alle Scans laufen über die
-File Station API, nichts wird lokal gemountet):
-
-```bash
-git clone <repo-url> && cd ssa
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp config.yaml.example config.yaml   # anpassen
-
-# Server starten (Web-UI: http://localhost:8080)
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
-```
 
 Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
 `uvicorn`, `pytest` und `python` direkt ohne `.venv/bin/`-Präfix.
@@ -125,8 +151,9 @@ Form `v*` gepusht wird:
 git tag v1.0.0 && git push origin v1.0.0
 ```
 
-Alternativ funktioniert weiterhin der klassische Weg: Repo klonen und direkt
-starten – das gebaute Frontend (`frontend/dist/`) ist im Repo enthalten.
+Das Paket enthält ein **fertig gebautes Frontend**, es wird also kein Node
+benötigt. Wer stattdessen aus dem Git-Repository arbeitet, baut das Frontend
+einmalig selbst — siehe [Aus dem Quellcode](#aus-dem-quellcode-entwicklung).
 
 > **Für Maintainer:** Wie ein Release erstellt wird (Tag pushen, Workflow,
 > Paketinhalt, Troubleshooting) steht in [RELEASING.md](RELEASING.md).
