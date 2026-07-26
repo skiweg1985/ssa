@@ -1,0 +1,47 @@
+# Gliederung der automatisch erzeugten Release-Notes.
+#
+# GitHub liest diese Datei beim Erzeugen der Notes und gruppiert die Pull
+# Requests nach ihren Labels. Ohne sie ist die Liste eine flache Aufzaehlung.
+#
+# Voraussetzung: die PRs tragen die Labels. Nachtraeglich labeln geht auch -
+# die Notes werden erst beim Release ausgewertet, nicht beim Merge.
+
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+
+  categories:
+    - title: ⚠️ Breaking Changes
+      labels:
+        - breaking-change
+
+    - title: ✨ Neue Funktionen
+      labels:
+        - enhancement
+
+    - title: 🐛 Fehlerbehebungen
+      labels:
+        - bug
+        - race-condition
+        - robustness
+
+    - title: 🔒 Sicherheit
+      labels:
+        - security
+
+    - title: 📚 Dokumentation
+      labels:
+        - documentation
+
+    - title: 🧰 Wartung, Build und CI
+      labels:
+        - chore
+        - dependencies
+        - ci
+
+    # Auffangkategorie. Pflicht: ohne sie fallen PRs, die zu keiner Kategorie
+    # passen, komplett aus den Notes - sie landen dann nirgends statt unten.
+    - title: Sonstiges
+      labels:
+        - "*"

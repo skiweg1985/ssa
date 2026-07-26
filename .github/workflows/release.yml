@@ -23,6 +23,9 @@ jobs:
         with:
           # gh nutzt GITHUB_TOKEN, die Checkout-Credentials werden nicht gebraucht
           persist-credentials: false
+          # Vollstaendige Historie inkl. Tags: der Release-Notes-Schritt braucht
+          # den Vorgaenger-Tag und die Commits seitdem. Ein flacher Klon hat beides nicht.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -79,14 +82,46 @@ jobs:
             dist-pkg/${{ steps.package.outputs.stage }}.tar.gz
             dist-pkg/${{ steps.package.outputs.stage }}.zip
 
+      # Der redaktionelle Kopf der Release-Notes: was sich fuer Betreiber aendert,
+      # was bricht, was beim Upgrade zu tun ist. Die vollstaendige PR-Liste kommt
+      # im naechsten Schritt von GitHub selbst.
+      #
+      # Schlaegt der Schritt fehl (Secret fehlt, Modell antwortet nicht), laeuft das
+      # Release trotzdem durch - dann eben nur mit der generierten Liste.
+      - name: Release-Notes-Kopf erzeugen
+        if: github.ref_type == 'tag'
+        continue-on-error: true
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
+        run: |
+          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^")"
+          echo "Vorgaenger-Tag: ${PREVIOUS_TAG}"
+          python3 scripts/release_notes.py "${PREVIOUS_TAG}" "${GITHUB_REF_NAME}" \
+            > release-notes-head.md
+
       - name: GitHub Release erstellen
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.package.outputs.version }}"
+
+          # Erzeugter Kopf (falls vorhanden) ...
+          if [ -s release-notes-head.md ]; then
+            cat release-notes-head.md > notes.md
+            printf '\n\n' >> notes.md
+          else
+            echo "::warning::Kein Release-Notes-Kopf erzeugt - Release enthaelt nur die PR-Liste."
+            : > notes.md
+          fi
+
+          # ... darunter die vollstaendige PR-Liste, wie sie --generate-notes liefert.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${VERSION}" --jq .body >> notes.md
+
           gh release create "${VERSION}" \
             --title "${VERSION}" \
-            --generate-notes \
+            --notes-file notes.md \
             "dist-pkg/ssa-${VERSION}.tar.gz" \
             "dist-pkg/ssa-${VERSION}.zip"

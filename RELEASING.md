@@ -31,11 +31,60 @@ Das war's. Der Rest passiert automatisch:
 1. GitHub Actions startet den **Release**-Workflow (Tab **Actions**).
 2. Das Frontend wird gebaut (`npm ci && npm run build`).
 3. Backend + gebautes Frontend + Konfig-Beispiele + Skripte werden gepackt.
-4. Ein GitHub **Release** `v2.0.0` wird erstellt, mit zwei Download-Assets:
+4. Die Release-Notes werden erzeugt (siehe unten).
+5. Ein GitHub **Release** `v2.0.0` wird erstellt, mit zwei Download-Assets:
    - `ssa-v2.0.0.tar.gz`
    - `ssa-v2.0.0.zip`
 
 Das fertige Release erscheint unter **Releases** (`/releases`).
+
+---
+
+## Release-Notes
+
+Die Notes bestehen aus zwei Teilen, die getrennt entstehen:
+
+**Der Kopf** – „Das Wichtigste", Breaking Changes, Upgrade-Hinweise – wird von
+einem Sprachmodell aus den Commits seit dem letzten Tag geschrieben. Zuständig
+ist [`scripts/release_notes.py`](scripts/release_notes.py), das über OpenRouter
+läuft.
+
+**Die Liste der Pull Requests** kommt von GitHub selbst und ist damit
+vollständig und korrekt. Gegliedert wird sie nach den Labels der PRs; die
+Kategorien stehen in [`.github/release.yml`](.github/release.yml).
+
+### Einrichtung (einmalig)
+
+| Was | Wo | Wert |
+|---|---|---|
+| `OPENROUTER_API_KEY` | Settings → Secrets and variables → Actions → **Secrets** | Key von [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `RELEASE_NOTES_MODEL` | Settings → Secrets and variables → Actions → **Variables** | Modell-Slug von [openrouter.ai/models](https://openrouter.ai/models), z.B. `anthropic/claude-opus-4.1` |
+
+Das Modell ist bewusst eine Variable ohne Default: ein fest eingebauter Slug
+veraltet und lässt das Release mit einem 404 auflaufen. Zum Wechseln reicht es,
+die Variable zu ändern – kein Commit nötig.
+
+**Fällt der Schritt aus** – Secret fehlt, Modell antwortet nicht –, läuft das
+Release trotzdem durch und enthält dann nur die PR-Liste. Im Actions-Log steht
+in dem Fall eine Warnung.
+
+### Notes vorab ansehen
+
+Der Kopf lässt sich lokal erzeugen, bevor der Tag gesetzt wird:
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+export RELEASE_NOTES_MODEL=anthropic/claude-opus-4.1
+python3 scripts/release_notes.py v1.0.0 HEAD
+```
+
+### PRs labeln
+
+Damit die Gliederung greift, brauchen die PRs Labels. Nachträglich labeln
+funktioniert auch – die Notes werden erst beim Release ausgewertet, nicht beim
+Merge. Verwendet werden `breaking-change`, `enhancement`, `bug`,
+`race-condition`, `robustness`, `security`, `documentation`, `chore`,
+`dependencies` und `ci`. Ein PR ohne passendes Label landet unter „Sonstiges".
 
 ---
 
