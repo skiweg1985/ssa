@@ -127,23 +127,58 @@ uvicorn app.main:app --host 0.0.0.0 --port 8080
 
 ## Docker / Compose
 
-Die App kann komplett als Container laufen — das Image baut das Frontend
-selbst (Multi-Stage), es wird also weder Node noch Python auf dem Host benötigt:
+Die App kann komplett als Container laufen — weder Node noch Python werden auf
+dem Host benötigt.
+
+### Fertiges Image (empfohlen)
+
+Jedes Release veröffentlicht ein Image in der GitHub Container Registry, für
+`linux/amd64` und `linux/arm64`:
+
+```bash
+docker run -d -p 8080:8080 -v ssa-data:/app/data ghcr.io/skiweg1985/ssa:latest
+# Web-UI: http://localhost:8080 - beim ersten Aufruf Konto anlegen
+```
+
+Mit Compose inklusive aller Härtungs-Einstellungen:
+
+```bash
+docker compose -f docker-compose.ghcr.yml up -d
+```
+
+Für den Dauerbetrieb besser den **festen Versions-Tag** setzen (`:2.1.0` statt
+`:latest`), damit ein `docker compose pull` nicht ungefragt eine neue
+Hauptversion zieht. Verfügbare Tags: `<major>.<minor>.<patch>`,
+`<major>.<minor>` und `latest`.
+
+Jedes Image trägt eine signierte Build-Provenance — prüfen mit:
+
+```bash
+gh attestation verify oci://ghcr.io/skiweg1985/ssa:latest --repo skiweg1985/ssa
+```
+
+### Selbst bauen (Entwicklung)
+
+Das Image baut das Frontend selbst (Multi-Stage):
 
 ```bash
 docker compose up -d
-# Web-UI: http://localhost:8080 - beim ersten Aufruf Konto anlegen
 ```
+
+Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -v ssa-data:/app/data ssa`
+
+### Betrieb
 
 - **Persistenz:** Das Volume `ssa-data` (→ `/app/data`) enthält die SQLite-DB
   (Historie, Jobs, verschlüsselte NAS-Creds, Admin-Konto als Hash) und den
   auto-generierten `secret.key`. Nicht löschen, sonst müssen NAS-Passwörter und
   Admin-Konto neu eingegeben werden.
 - **Healthcheck** ist im Image integriert (`/health`).
-- Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -v ssa-data:/app/data ssa`
 
 Der CI-Workflow baut das Image bei jedem PR und führt einen Boot-Smoke-Test
-durch (Health, Login, Auth-Durchsetzung, Frontend-Auslieferung).
+durch (Health, Login, Auth-Durchsetzung, Frontend-Auslieferung). Beim Release
+wird es zusätzlich für beide Architekturen gebaut, signiert und nach GHCR
+veröffentlicht.
 
 ## Download & Start (fertiges Paket)
 

@@ -1,23 +1,29 @@
 # ==============================================================================
-# Synology Space Analyzer - Compose-Stack (baut das Image selbst)
+# Synology Space Analyzer - Compose-Stack mit fertigem Image aus GHCR
 #
-# Start:   docker compose up -d
+# Start:   docker compose -f docker-compose.ghcr.yml up -d
 #
 # Danach http://localhost:8080 aufrufen - beim ersten Mal legst du dort
 # Benutzername und Passwort an. Eine .env brauchst du dafuer nicht.
 #
-# Diese Datei baut aus dem Quellcode - richtig fuer Entwicklung und lokale
-# Aenderungen. Fuer den reinen Betrieb ist docker-compose.ghcr.yml der
-# einfachere Weg: fertiges Image aus der Registry, kein Build noetig.
+# Unterschied zur docker-compose.yml: hier wird NICHTS gebaut, das Image kommt
+# fertig aus der GitHub Container Registry (linux/amd64 und linux/arm64). Das
+# ist der empfohlene Weg fuer den Betrieb; docker-compose.yml ist die Variante
+# fuer Entwicklung und lokale Aenderungen am Quellcode.
 #
 # WICHTIG: Die Haertungs-Einstellungen unten (read_only, tmpfs, cap_drop,
-# security_opt, pids_limit) mit docker-compose.ghcr.yml SYNCHRON HALTEN.
+# security_opt, pids_limit) mit docker-compose.yml SYNCHRON HALTEN. Zwei
+# Dateien statt einer Override-Datei, weil "build: !reset null" Compose >= 2.24
+# braucht und DSM 7.2 noch 2.20.x ausliefert.
 # ==============================================================================
 
 services:
   ssa:
-    build: .
-    image: ssa:latest
+    # Fuer den Dauerbetrieb besser den festen Versions-Tag setzen (z.B.
+    # ":2.1.0"), damit ein "docker compose pull" nicht ungefragt eine neue
+    # Hauptversion zieht. Verfuegbare Tags: <major>.<minor>.<patch>,
+    # <major>.<minor> und latest - siehe Releases.
+    image: ghcr.io/skiweg1985/ssa:latest
     container_name: ssa
     restart: unless-stopped
     ports:
@@ -50,9 +56,9 @@ services:
     #
     # BESTEHENDE INSTALLATION: Ein Datenvolume aus einer aelteren Version gehoert
     # noch root. Einmalig uebereignen, sonst startet der Container nicht:
-    #   docker compose down
+    #   docker compose -f docker-compose.ghcr.yml down
     #   docker run --rm -v ssa_ssa-data:/data alpine chown -R 1000:1000 /data
-    #   docker compose up -d
+    #   docker compose -f docker-compose.ghcr.yml up -d
     read_only: true          # Root-Dateisystem unveraenderlich
     tmpfs:
       - /tmp                 # einziger beschreibbarer Pfad ausser dem Datenvolume

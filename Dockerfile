@@ -13,7 +13,14 @@
 # ---------- Stage 1: Frontend-Build ----------
 # Node 22 LTS: Vite 7 verlangt ^20.19.0 || >=22.12.0, und Node 20 ist seit
 # April 2026 aus dem Support.
-FROM node:22-alpine AS frontend-build
+#
+# --platform=$BUILDPLATFORM: NICHT entfernen. Beim Multi-Arch-Build im Release
+# (linux/amd64 + linux/arm64) wuerde diese Stage sonst zweimal laufen - die
+# arm64-Variante unter QEMU-Emulation, wo "npm ci && vite build" leicht
+# 15-25 Minuten braucht. Das Ergebnis sind statische JS/CSS-Dateien, also
+# architekturunabhaengig; $BUILDPLATFORM heftet die Stage an die Architektur
+# des Builders, sie laeuft damit genau einmal nativ.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS frontend-build
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
@@ -23,6 +30,8 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---------- Stage 2: Python-Runtime ----------
+# Bewusst OHNE --platform: diese Stage installiert architekturspezifische
+# Wheels und muss pro Zielplattform einmal laufen.
 FROM python:3.11-slim
 
 # Keine .pyc-Dateien, ungepuffertes Logging (Container-freundlich)
