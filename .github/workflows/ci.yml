@@ -219,3 +219,78 @@ jobs:
         run: |
           docker rm -f ssa-ci ssa-ci-setup || true
           docker volume rm ssa-ci-data ssa-ci-setup-data || true
+
+  # Das Release baut das Image fuer amd64 UND arm64. Ein arm64-Problem (fehlendes
+  # Wheel nach einem Dependency-Update, Paket ohne aarch64-Build) faellt dort
+  # sonst erst auf, wenn es zu spaet ist: release.yml haengt per "needs" daran,
+  # das Release entsteht dann komplett nicht.
+  #
+  # Eigener Job statt eines Schrittes im docker-Job: so laeuft er PARALLEL zum
+  # Smoke-Test, die CI-Gesamtzeit steigt also nur um die Differenz, nicht um die
+  # volle Build-Dauer.
+  docker-arm64:
+    name: Docker (arm64 baubar)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: QEMU einrichten (arm64-Emulation)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8  # v4.2.0
+
+      - name: Buildx einrichten
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+
+      # "type=cacheonly": bauen, aber nichts exportieren. Uns interessiert nur,
+      # DASS es durchlaeuft - das Image selbst testet der docker-Job oben (nativ
+      # und damit deutlich schneller).
+      #
+      # Eigener Cache-Scope, sonst verdraengen sich CI und Release gegenseitig.
+      - name: arm64-Build pruefen
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          platforms: linux/arm64
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=ci-arm64
+          cache-to: type=gha,mode=max,scope=ci-arm64
+
+  # Es gibt zwei Compose-Dateien: docker-compose.yml baut aus dem Quellcode,
+  # docker-compose.ghcr.yml zieht das fertige Image. Die Haertung muss in beiden
+  # identisch sein - sonst laeuft der Standardweg (Registry-Image) irgendwann
+  # unbemerkt schwaecher abgesichert als der Entwickler-Weg.
+  #
+  # Zwei Dateien statt einer Override-Datei, weil "build: !reset null" Compose
+  # >= 2.24 braucht und DSM 7.2 noch 2.20.x ausliefert.
+  compose-drift:
+    name: Compose (Haertung synchron)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      - name: Haertung beider Compose-Dateien vergleichen
+        run: |
+          # "compose config" normalisiert beide Dateien (Defaults aufgeloest,
+          # Kurzschreibweisen expandiert) - ein reiner Textvergleich wuerde an
+          # Formatierung scheitern. Der Vergleich prueft nebenbei, dass beide
+          # Dateien ueberhaupt gueltig sind.
+          extract() {
+            docker compose -f "$1" config --format json \
+              | jq -S '.services.ssa | {read_only, tmpfs, cap_drop, security_opt,
+                                        pids_limit, ports, volumes, environment,
+                                        restart, container_name}'
+          }
+
+          extract docker-compose.yml      > /tmp/compose-build.json
+          extract docker-compose.ghcr.yml > /tmp/compose-ghcr.json
+
+          if ! diff -u /tmp/compose-build.json /tmp/compose-ghcr.json; then
+            echo "::error::docker-compose.yml und docker-compose.ghcr.yml sind auseinandergelaufen - Haertung/Betrieb muss in beiden identisch sein (siehe diff oben)"
+            exit 1
+          fi
+          echo "Beide Compose-Dateien sind synchron"

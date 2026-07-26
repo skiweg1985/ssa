@@ -1,0 +1,35 @@
+# ==============================================================================
+# Dependabot - haelt die GitHub-Actions aktuell
+#
+# Alle Actions in ci.yml und release.yml sind auf einen Commit-SHA gepinnt (mit
+# der Version als Kommentar dahinter). Das ist die sichere Variante - ein
+# verschobener Tag kann keinen fremden Code einschleusen -, aber von Hand
+# nachziehen laesst sich das kaum: es sind inzwischen neun Actions.
+#
+# Dependabot aktualisiert SHA-Pins korrekt inklusive des Versionskommentars und
+# oeffnet dafuer einen PR. Die CI laeuft darauf ganz normal mit.
+#
+# Bewusst NUR github-actions: pip und npm haetten hier eine ganz andere
+# Schlagzahl und sollen, wenn ueberhaupt, getrennt entschieden werden.
+# ==============================================================================
+
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Ein PR fuer alle faelligen Action-Updates statt neun einzelne. Bei
+    # SHA-Pins ist das unkritisch: die Aenderung ist immer dieselbe Zeile pro
+    # Action, und die CI prueft das Ergebnis als Ganzes.
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      # Landet damit in der Kategorie "Wartung" der Release-Notes,
+      # siehe .github/release.yml
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
