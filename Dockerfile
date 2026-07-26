@@ -6,7 +6,8 @@
 #   Stage 2 ist die schlanke Python-Runtime mit Backend + gebautem Frontend.
 #
 # Build:  docker build -t ssa .
-# Run:    docker run -p 8080:8080 -e SSA_ADMIN_PASSWORD=geheim -v ssa-data:/app/data ssa
+# Run:    docker run -p 8080:8080 -v ssa-data:/app/data ssa
+#         (Zugangsdaten legst du beim ersten Aufruf im Browser an)
 # ==============================================================================
 
 # ---------- Stage 1: Frontend-Build ----------

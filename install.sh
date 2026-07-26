@@ -345,6 +345,15 @@ show_info() {
     echo "Benutzer: $SERVICE_USER"
     echo "Port: $PORT"
     echo
+    log_warn "Ersteinrichtung: jetzt http://$(hostname -I 2>/dev/null | awk '{print $1}'):$PORT im Browser oeffnen"
+    echo "  Dort legst du Benutzername und Passwort an - bis dahin kann das jeder,"
+    echo "  der diesen Port erreicht. Am besten also gleich."
+    echo
+    echo "  Aus einem nicht vertrauenswuerdigen Netz erreichbar? Dann vorher in"
+    echo "  /etc/systemd/system/$SERVICE_NAME.service ergaenzen:"
+    echo "    Environment=\"SSA_SETUP_TOKEN=langes-zufaelliges-token\""
+    echo "  Der Setup-Bildschirm verlangt dann zusaetzlich genau dieses Token."
+    echo
     echo "Nützliche Befehle:"
     echo "  Status anzeigen:  systemctl status $SERVICE_NAME"
     echo "  Logs anzeigen:    journalctl -u $SERVICE_NAME -f"

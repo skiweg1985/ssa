@@ -1,7 +1,7 @@
 """Pydantic-Modelle für Auth, NAS-Verbindungen und Scan-Job-Verwaltung"""
 from typing import Annotated, Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Obergrenzen für Freitextfelder und Listen.
 #
@@ -39,6 +39,40 @@ class LoginResponse(BaseModel):
 
 class MeResponse(BaseModel):
     username: str
+
+
+# Mindestlänge für das bei der Ersteinrichtung vergebene Passwort. Bewusst
+# keine Zusammensetzungsregeln ("muss eine Ziffer enthalten") - NIST 800-63B
+# rät davon ab, sie erzeugen vorhersagbarere Passwörter. Die Obergrenze
+# MAX_PASSWORD_LENGTH ist hier nicht kosmetisch: jeder Setup-Versuch löst
+# einen scrypt-Durchlauf aus, ein Megabyte-Passwort wäre ein DoS-Hebel.
+MIN_ADMIN_PASSWORD_LENGTH = 8
+
+
+class SetupRequest(BaseModel):
+    """Ersteinrichtung: legt das einzige Admin-Konto an"""
+
+    username: str = Field(min_length=1, max_length=MAX_USERNAME_LENGTH)
+    password: str = Field(
+        min_length=MIN_ADMIN_PASSWORD_LENGTH, max_length=MAX_PASSWORD_LENGTH
+    )
+    # Nur nötig, wenn SSA_SETUP_TOKEN gesetzt ist
+    setup_token: Optional[str] = Field(default=None, max_length=MAX_PASSWORD_LENGTH)
+
+    @field_validator("username")
+    @classmethod
+    def _username_not_blank(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Benutzername darf nicht leer sein")
+        return stripped
+
+
+class SetupStatusResponse(BaseModel):
+    setup_required: bool
+    # Vorschlagswert für das Formular (SSA_ADMIN_USER bzw. der gespeicherte Name)
+    username: str
+    token_required: bool = False
 
 
 # ----------------------------------------------------------------------

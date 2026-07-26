@@ -15,6 +15,7 @@ import { JobEditorModal } from "@/components/modals/JobEditorModal"
 import { NasConnectionsModal } from "@/components/modals/NasConnectionsModal"
 import { ApiTokensModal } from "@/components/modals/ApiTokensModal"
 import { LoginScreen } from "@/components/auth/LoginScreen"
+import { SetupScreen } from "@/components/auth/SetupScreen"
 import { useScans } from "@/hooks/useScans"
 import { useAuth } from "@/hooks/useAuth"
 import { cancelScan, triggerScan, reloadConfig, deleteScanJob } from "@/lib/api"
@@ -310,7 +311,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
 }
 
 function AuthGate() {
-  const { status, login, logout } = useAuth()
+  const { status, lastUsername, setupStatus, login, completeSetup, logout } = useAuth()
 
   if (status === "checking") {
     return (
@@ -320,8 +321,23 @@ function AuthGate() {
     )
   }
 
+  if (status === "setup") {
+    return (
+      <SetupScreen
+        onSetup={completeSetup}
+        defaultUsername={setupStatus?.username ?? "admin"}
+        tokenRequired={setupStatus?.token_required ?? false}
+      />
+    )
+  }
+
   if (status === "unauthenticated") {
-    return <LoginScreen onLogin={login} />
+    return (
+      <LoginScreen
+        onLogin={login}
+        defaultUsername={lastUsername ?? setupStatus?.username}
+      />
+    )
   }
 
   return <AppContent onLogout={logout} />

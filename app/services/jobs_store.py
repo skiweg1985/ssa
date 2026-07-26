@@ -6,6 +6,9 @@ verschlüsselt gespeichert (siehe app/services/security.py).
 
 Bestehende config.yaml-Scans werden beim ersten Start einmalig importiert
 (Marker in app_meta), danach wird die YAML für Jobs nicht mehr gelesen.
+
+In app_meta liegt außerdem das Admin-Konto aus der Ersteinrichtung
+(Benutzername + Passwort-Hash), sofern kein SSA_ADMIN_PASSWORD gesetzt ist.
 """
 import json
 import logging
@@ -22,6 +25,12 @@ from app.utils.slug import generate_slug
 logger = logging.getLogger(__name__)
 
 IMPORT_MARKER_KEY = "config_yaml_imported"
+
+# Admin-Konto aus der Ersteinrichtung. Es gibt genau eines, ohne Rollen und
+# ohne Beziehungen - dafür reicht app_meta, eine eigene Tabelle wäre Ballast.
+ADMIN_USERNAME_KEY = "admin_username"
+ADMIN_PASSWORD_HASH_KEY = "admin_password_hash"
+ADMIN_CREATED_AT_KEY = "admin_created_at"
 
 # Aktueller Stand des Schemas (PRAGMA user_version). Bei jeder neuen
 # Migrationsstufe hochzählen und in _migrate() einen Block ergänzen.
@@ -283,6 +292,69 @@ class JobsStore:
                 (key, value),
             )
             conn.commit()
+
+    # ------------------------------------------------------------------
+    # Admin-Konto (Ersteinrichtung über die Weboberfläche)
+    # ------------------------------------------------------------------
+
+    def get_admin_credentials(self) -> Optional[Dict[str, str]]:
+        """
+        Gespeicherte Admin-Zugangsdaten (Benutzername + Passwort-Hash), sonst None.
+
+        Der Hash ist das maßgebliche Feld: fehlt er, gilt die Ersteinrichtung
+        als offen - auch wenn ein Benutzername dasteht.
+        """
+        with self._get_connection() as conn:
+            rows = conn.execute(
+                "SELECT key, value FROM app_meta WHERE key IN (?, ?)",
+                (ADMIN_USERNAME_KEY, ADMIN_PASSWORD_HASH_KEY),
+            ).fetchall()
+
+        values = {row["key"]: row["value"] for row in rows}
+        password_hash = values.get(ADMIN_PASSWORD_HASH_KEY)
+        if not password_hash:
+            return None
+        return {
+            "username": values.get(ADMIN_USERNAME_KEY) or "admin",
+            "password_hash": password_hash,
+        }
+
+    def create_admin_credentials(self, username: str, password_hash: str) -> bool:
+        """
+        Legt die Admin-Zugangsdaten an - genau einmal.
+
+        Returns:
+            True, wenn dieser Aufruf das Konto angelegt hat. False, wenn bereits
+            eines existierte; der gespeicherte Hash bleibt dann unverändert.
+
+        Die Einmaligkeit erledigt SQLite (ON CONFLICT DO NOTHING innerhalb von
+        BEGIN IMMEDIATE), nicht der Anwendungscode: zwischen einem "gibt es
+        schon eines?"-SELECT und dem INSERT läge sonst ein Fenster, in dem zwei
+        gleichzeitige Ersteinrichtungen beide gewinnen. Aus demselben Grund darf
+        hier nicht set_meta() verwendet werden - es überschreibt bedingungslos.
+
+        Der Passwort-Hash steht bewusst als erster INSERT: an ihm hängt die
+        Frage "ist ein Konto konfiguriert?".
+        """
+        with self._write_transaction() as conn:
+            cursor = conn.execute(
+                "INSERT INTO app_meta (key, value) VALUES (?, ?) "
+                "ON CONFLICT(key) DO NOTHING",
+                (ADMIN_PASSWORD_HASH_KEY, password_hash),
+            )
+            if cursor.rowcount == 0:
+                return False
+            for key, value in (
+                (ADMIN_USERNAME_KEY, username),
+                (ADMIN_CREATED_AT_KEY, _now_iso()),
+            ):
+                conn.execute(
+                    "INSERT INTO app_meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, value),
+                )
+        logger.info(f"Admin-Konto '{username}' angelegt")
+        return True
 
     # ------------------------------------------------------------------
     # NAS-Verbindungen
