@@ -26,6 +26,8 @@ env/
 ENV/
 .venv
 
+# Frontend-Build und Abhängigkeiten: siehe frontend/.gitignore
+
 # IDE
 .vscode/
 .idea/

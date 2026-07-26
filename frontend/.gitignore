@@ -12,5 +12,15 @@ yarn-error.log*
 # Editor
 *.local
 
-# HINWEIS: frontend/dist/ wird bewusst NICHT ignoriert –
-# das Backend serviert den committeten Build direkt (siehe FRONTEND_MIGRATION.md).
+# Build-Ausgabe (regenerierbar via `npm run build`)
+#
+# Bewusst NICHT versioniert: Vite schreibt Content-Hashes in die Dateinamen,
+# jeder Branch erzeugt also eigene Dateien. Beim Zusammenführen gab das
+# Rename/Rename-Konflikte an reinen Build-Artefakten - ohne jeden inhaltlichen
+# Wert, aber bei jedem parallelen Branch.
+#
+# Gebaut wird stattdessen dort, wo das Ergebnis gebraucht wird: im Docker-Image
+# (Stage 1) und im Release-Paket (Release-Workflow). Lokal:
+#   npm ci && npm run dev     # Entwicklung, Port 5173, proxyt /api auf :8080
+#   npm ci && npm run build   # Produktionsstand unter :8080 ansehen
+dist/

@@ -50,7 +50,9 @@ Das Backend serviert automatisch die gebauten Dateien aus `frontend/dist/`:
 2. Backend starten: `uvicorn app.main:app --host 0.0.0.0 --port 8080`
 3. Frontend ist verfügbar unter `http://localhost:8080`
 
-Das Backend erkennt automatisch, ob `frontend/dist/` existiert und serviert die React-App. Falls nicht, fällt es auf die alte Template-Version zurück.
+Das Backend erkennt automatisch, ob `frontend/dist/` existiert und serviert die React-App. Falls nicht, liefert es eine Fehlerseite mit dem Hinweis, `npm run build` auszuführen.
+
+`dist/` ist **nicht versioniert**: Vite schreibt Content-Hashes in die Dateinamen, wodurch parallele Branches Konflikte an reinen Build-Artefakten erzeugten. Gebaut wird im Docker-Image (Stage 1) und im Release-Workflow — lokal einmalig selbst.
 
 ## Projektstruktur
 

@@ -70,6 +70,35 @@ check_systemd() {
     fi
 }
 
+# Prüfe, ob das gebaute Frontend vorliegt
+#
+# Im Release-Paket ist frontend/dist enthalten. Im Git-Repository nicht: dort
+# liegt nur der Quellcode, gebaut wird im Docker-Image bzw. im Release-Workflow.
+# Ohne diesen Check liefe die Installation durch und erst der Browser zeigte
+# eine Fehlerseite statt der Oberfläche.
+check_frontend() {
+    if [[ -f "$PROJECT_DIR/frontend/dist/index.html" ]]; then
+        log_info "Frontend-Build gefunden"
+        return
+    fi
+
+    log_error "Kein gebautes Frontend unter frontend/dist gefunden"
+    echo
+    echo "  Dieses Verzeichnis enthält offenbar das Git-Repository, nicht das"
+    echo "  Release-Paket. Drei Wege:"
+    echo
+    echo "  1. Release-Paket verwenden (enthält das Frontend fertig gebaut):"
+    echo "     https://github.com/skiweg1985/ssa/releases/latest"
+    echo
+    echo "  2. Docker verwenden - baut das Frontend selbst:"
+    echo "     docker compose up -d"
+    echo
+    echo "  3. Frontend hier bauen (benötigt Node 22+):"
+    echo "     npm --prefix frontend ci && npm --prefix frontend run build"
+    echo
+    exit 1
+}
+
 # Konfiguriere Port
 configure_port() {
     if [[ -n "${PORT:-}" ]]; then
@@ -334,7 +363,8 @@ main() {
     check_distro
     check_python
     check_systemd
-    
+    check_frontend
+
     configure_port
     check_config
     

@@ -92,14 +92,16 @@ cd frontend
 npm run build
 ```
 
-Dies erstellt optimierte Dateien in `frontend/dist/`.
+Dies erstellt optimierte Dateien in `frontend/dist/`. Das Verzeichnis ist
+**nicht versioniert** — im Docker-Image und im Release-Paket wird es beim Bauen
+erzeugt, lokal einmalig per `npm run build`.
 
 ### Backend-Integration
 
 Das Backend wurde angepasst (`app/main.py`), um automatisch die gebauten Dateien zu servieren:
 
 1. **Wenn `frontend/dist/` existiert**: Backend serviert die React-App
-2. **Falls nicht**: Backend fällt auf die alte Template-Version zurück
+2. **Falls nicht**: Backend liefert eine Fehlerseite mit dem Hinweis, `npm run build` auszuführen
 
 **Backend starten:**
 ```bash
