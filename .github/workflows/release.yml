@@ -8,8 +8,17 @@ on:
   push:
     tags:
       - "v*"
-  # Manueller Start zum Testen (erzeugt kein Release, nur die Artefakte)
+  # Manueller Start zum Testen (erzeugt kein Release, nur die Artefakte).
+  # Der Release-Notes-Kopf wird dabei erzeugt und in die Job-Zusammenfassung
+  # geschrieben - so laesst er sich pruefen, ohne ein Release anzulegen.
   workflow_dispatch:
+    inputs:
+      notes_from:
+        description: "Notes-Test: Start-Tag (leer = letzter Tag)"
+        required: false
+      notes_to:
+        description: "Notes-Test: End-Ref (leer = HEAD)"
+        required: false
 
 jobs:
   build-and-release:
@@ -23,6 +32,9 @@ jobs:
         with:
           # gh nutzt GITHUB_TOKEN, die Checkout-Credentials werden nicht gebraucht
           persist-credentials: false
+          # Vollstaendige Historie inkl. Tags: der Release-Notes-Schritt braucht
+          # den Vorgaenger-Tag und die Commits seitdem. Ein flacher Klon hat beides nicht.
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
@@ -79,14 +91,71 @@ jobs:
             dist-pkg/${{ steps.package.outputs.stage }}.tar.gz
             dist-pkg/${{ steps.package.outputs.stage }}.zip
 
+      # Der redaktionelle Kopf der Release-Notes: was sich fuer Betreiber aendert,
+      # was bricht, was beim Upgrade zu tun ist. Die vollstaendige PR-Liste kommt
+      # im naechsten Schritt von GitHub selbst.
+      #
+      # Schlaegt der Schritt fehl (Secret fehlt, Modell antwortet nicht), laeuft das
+      # Release trotzdem durch - dann eben nur mit der generierten Liste.
+      # Laeuft auch beim manuellen Start - sonst waere das naechste echte Release
+      # der erste Test, und das ist der falsche Moment, um Fehler zu finden.
+      - name: Release-Notes-Kopf erzeugen
+        continue-on-error: true
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            FROM="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^")"
+            TO="${GITHUB_REF_NAME}"
+          else
+            FROM="${{ inputs.notes_from }}"
+            TO="${{ inputs.notes_to }}"
+            [ -n "$FROM" ] || FROM="$(git describe --tags --abbrev=0)"
+            [ -n "$TO" ] || TO="HEAD"
+          fi
+
+          echo "Bereich: ${FROM}..${TO}"
+          python3 scripts/release_notes.py "${FROM}" "${TO}" > release-notes-head.md
+
+          # In die Job-Zusammenfassung, damit der Text ohne Release lesbar ist.
+          {
+            echo "## Release-Notes-Kopf (\`${FROM}..${TO}\`)"
+            echo
+            cat release-notes-head.md
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      # Zusaetzlich als Artefakt: die Zusammenfassung laesst sich nur in der
+      # Oberflaeche lesen, das Artefakt auch per gh herunterladen.
+      - name: Release-Notes-Kopf als Artefakt
+        if: hashFiles('release-notes-head.md') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: release-notes-head
+          path: release-notes-head.md
+
       - name: GitHub Release erstellen
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ steps.package.outputs.version }}"
+
+          # Erzeugter Kopf (falls vorhanden) ...
+          if [ -s release-notes-head.md ]; then
+            cat release-notes-head.md > notes.md
+            printf '\n\n' >> notes.md
+          else
+            echo "::warning::Kein Release-Notes-Kopf erzeugt - Release enthaelt nur die PR-Liste."
+            : > notes.md
+          fi
+
+          # ... darunter die vollstaendige PR-Liste, wie sie --generate-notes liefert.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="${VERSION}" --jq .body >> notes.md
+
           gh release create "${VERSION}" \
             --title "${VERSION}" \
-            --generate-notes \
+            --notes-file notes.md \
             "dist-pkg/ssa-${VERSION}.tar.gz" \
             "dist-pkg/ssa-${VERSION}.zip"
