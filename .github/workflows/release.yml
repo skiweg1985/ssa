@@ -125,6 +125,15 @@ jobs:
             cat release-notes-head.md
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      # Zusaetzlich als Artefakt: die Zusammenfassung laesst sich nur in der
+      # Oberflaeche lesen, das Artefakt auch per gh herunterladen.
+      - name: Release-Notes-Kopf als Artefakt
+        if: hashFiles('release-notes-head.md') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: release-notes-head
+          path: release-notes-head.md
+
       - name: GitHub Release erstellen
         if: github.ref_type == 'tag'
         env:
