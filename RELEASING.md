@@ -16,9 +16,14 @@ schnürt das Paket und hängt es ans Release.
 git checkout main
 git pull origin main
 
-# 2. Tag mit v-Präfix setzen und pushen
-git tag v1.0.0
-git push origin v1.0.0
+# 2. Version im Code auf die neue Nummer ziehen (ohne v-Präfix)
+#    - app/main.py:  version="..." der FastAPI-App
+#    - frontend/:    npm version 2.0.0 --no-git-tag-version
+#    Danach committen und nach main mergen – der Tag soll den Bump enthalten.
+
+# 3. Tag mit v-Präfix setzen und pushen
+git tag v2.0.0
+git push origin v2.0.0
 ```
 
 Das war's. Der Rest passiert automatisch:
@@ -26,9 +31,9 @@ Das war's. Der Rest passiert automatisch:
 1. GitHub Actions startet den **Release**-Workflow (Tab **Actions**).
 2. Das Frontend wird gebaut (`npm ci && npm run build`).
 3. Backend + gebautes Frontend + Konfig-Beispiele + Skripte werden gepackt.
-4. Ein GitHub **Release** `v1.0.0` wird erstellt, mit zwei Download-Assets:
-   - `ssa-v1.0.0.tar.gz`
-   - `ssa-v1.0.0.zip`
+4. Ein GitHub **Release** `v2.0.0` wird erstellt, mit zwei Download-Assets:
+   - `ssa-v2.0.0.tar.gz`
+   - `ssa-v2.0.0.zip`
 
 Das fertige Release erscheint unter **Releases** (`/releases`).
 
