@@ -1,6 +1,6 @@
 # FastAPI-Server
 
-Der FastAPI-Server ermöglicht geplante Scans über eine REST API und ein Web-Interface. Scans werden automatisch basierend auf einer YAML-Konfiguration ausgeführt und Ergebnisse in einer SQLite-Datenbank gespeichert.
+Der FastAPI-Server ermöglicht geplante Scans über eine REST API und ein Web-Interface. Scan-Jobs werden im Frontend verwaltet, automatisch nach Zeitplan ausgeführt und die Ergebnisse in einer SQLite-Datenbank gespeichert.
 
 ## Funktionen
 
@@ -10,7 +10,6 @@ Der FastAPI-Server ermöglicht geplante Scans über eine REST API und ein Web-In
 - Persistente Speicherung in SQLite
 - Automatische Bereinigung alter Ergebnisse
 - Health-Check mit Systemressourcen
-- Konfiguration ohne Neustart neu laden
 
 ## Konfiguration
 
@@ -290,29 +289,6 @@ Startet einen Scan sofort, unabhängig vom Zeitplan.
   "scan_slug": "homes-scan",
   "message": "Scan 'homes_scan' wurde gestartet",
   "triggered": true
-}
-```
-
-### Scheduler
-
-#### Scheduler synchronisieren
-
-```http
-POST /api/config/reload
-```
-
-Synchronisiert den Scheduler neu aus der Datenbank und aktualisiert alle
-geplanten Jobs ohne Server-Neustart.
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "Konfiguration erfolgreich neu geladen",
-  "added_scans": ["new_scan"],
-  "updated_scans": ["homes_scan"],
-  "removed_scans": [],
-  "total_scans": 2
 }
 ```
 

@@ -1,6 +1,4 @@
 """Scheduler Service - APScheduler Integration"""
-import hashlib
-import json
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -85,50 +83,9 @@ class SchedulerService:
             job_defaults=job_defaults
         )
         self._job_ids: Dict[str, str] = {}  # Mapping von scan_slug zu job_id
-        # Fingerabdruck der zuletzt eingeplanten Konfiguration je Slug.
-        # Damit erkennt der Resync, ob sich ein Job wirklich geändert hat -
-        # sonst wurde jeder bestehende Job neu eingeplant und das Intervall
-        # begann von vorn (ein häufiger Reload konnte Läufe dauerhaft
-        # verschieben).
-        self._job_signatures: Dict[str, str] = {}
 
-    @staticmethod
-    def _job_signature(scan_config: ScanTaskConfigYAML) -> str:
-        """Fingerabdruck aller Felder, die den eingeplanten Lauf bestimmen"""
-        payload = json.dumps(
-            {
-                "name": scan_config.name,
-                "interval": scan_config.interval,
-                "shares": scan_config.shares,
-                "folders": scan_config.folders,
-                "paths": scan_config.paths,
-                "enabled": scan_config.enabled,
-                "nas": {
-                    "host": scan_config.nas.host,
-                    "port": scan_config.nas.port,
-                    "use_https": scan_config.nas.use_https,
-                    "verify_ssl": scan_config.nas.verify_ssl,
-                    "username": scan_config.nas.username,
-                    # Die Zugangsdaten stecken im eingeplanten Job-Argument,
-                    # ein Passwortwechsel muss also neu einplanen. Nur als
-                    # Hash, damit das Klartextpasswort nirgends liegen bleibt.
-                    "password": hashlib.sha256(
-                        (scan_config.nas.password or "").encode("utf-8")
-                    ).hexdigest(),
-                },
-            },
-            sort_keys=True,
-            default=str,
-        )
-        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-    
-    def load_and_schedule(self, config_path: Optional[str] = None) -> None:
-        """
-        Lädt alle aktivierten Scan-Jobs aus der Datenbank und plant sie ein.
-
-        (Jobs leben seit der Frontend-Verwaltung in der SQLite-DB;
-        config.yaml wird nur noch einmalig beim ersten Start importiert.)
-        """
+    def load_and_schedule(self) -> None:
+        """Lädt alle aktivierten Scan-Jobs aus der Datenbank und plant sie ein."""
         try:
             from app.services.jobs_store import jobs_store
 
@@ -247,7 +204,6 @@ class SchedulerService:
             )
             
             self._job_ids[scan_config.slug] = job_id
-            self._job_signatures[scan_config.slug] = self._job_signature(scan_config)
 
             # Berechne nächsten Lauf
             next_run = self.scheduler.get_job(job_id).next_run_time if self.scheduler.running else None
@@ -294,7 +250,6 @@ class SchedulerService:
         try:
             self.scheduler.remove_job(job_id)
             self._job_ids.pop(scan_slug, None)
-            self._job_signatures.pop(scan_slug, None)
             logger.info(f"Job für Scan '{scan_slug}' entfernt")
             return True
         except Exception as e:
@@ -433,76 +388,6 @@ class SchedulerService:
 
         return None
 
-    def resync_from_db(self) -> Dict[str, any]:
-        """
-        Synchronisiert die Scheduler-Jobs mit dem aktuellen Stand der Datenbank.
-
-        Entfernt Jobs, die es nicht mehr gibt oder die deaktiviert wurden,
-        und fügt neue/aktivierte Jobs hinzu. Bestehende Jobs werden nur dann
-        neu eingeplant, wenn sich ihre Konfiguration tatsächlich geändert hat.
-
-        Wichtig: Ein Neuplanen setzt bei Intervall-Triggern den Zähler zurück.
-        Würde hier jeder bestehende Job angefasst, verschöbe jeder Aufruf den
-        nächsten Lauf um ein volles Intervall - bei regelmässigem Reload liefe
-        ein Job nie.
-
-        Returns:
-            Dictionary mit Informationen über die Synchronisierung
-        """
-        try:
-            from app.services.jobs_store import jobs_store
-
-            jobs = jobs_store.list_jobs()
-            old_scan_slugs = set(self._job_ids.keys())
-            enabled_jobs = {job["slug"]: job for job in jobs if job["enabled"]}
-
-            # Entferne Jobs, die nicht mehr existieren oder deaktiviert sind
-            removed_scans = []
-            for scan_slug in list(old_scan_slugs):
-                if scan_slug not in enabled_jobs:
-                    if self.remove_scan_job(scan_slug):
-                        removed_scans.append(scan_slug)
-
-            # Füge neue hinzu bzw. plane bestehende neu ein
-            added_scans = []
-            updated_scans = []
-            for slug, job in enabled_jobs.items():
-                try:
-                    scan_config = jobs_store.to_scan_config(job)
-                except Exception as e:
-                    logger.error(f"Job '{slug}' konnte nicht geladen werden: {e}")
-                    continue
-                if slug in old_scan_slugs:
-                    # Unveränderte Jobs in Ruhe lassen, sonst beginnt ihr
-                    # Intervall bei jedem Resync von vorn.
-                    if self._job_signatures.get(slug) == self._job_signature(scan_config):
-                        continue
-                    self.remove_scan_job(slug)
-                    self.add_scan_job(scan_config)
-                    updated_scans.append(job["name"])
-                else:
-                    self.add_scan_job(scan_config)
-                    added_scans.append(job["name"])
-
-            result = {
-                "success": True,
-                "message": "Scheduler erfolgreich aus der Datenbank synchronisiert",
-                "added_scans": added_scans,
-                "updated_scans": updated_scans,
-                "removed_scans": removed_scans,
-                "total_scans": len(jobs)
-            }
-
-            logger.info(f"Scheduler-Resync abgeschlossen: {result}")
-            return result
-
-        except Exception as e:
-            logger.error(f"Fehler beim Synchronisieren aus der Datenbank: {e}")
-            return {
-                "success": False,
-                "message": f"Fehler beim Synchronisieren: {str(e)}",
-                "error": str(e)
-            }
 
     def get_all_jobs(self) -> Dict[str, Dict]:
         """

@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react"
 import {
   Search,
-  Settings,
   Database,
   X,
   BookOpen,
@@ -34,14 +33,12 @@ import { formatTimeAgo } from "@/lib/utils"
 interface TopbarProps {
   searchQuery: string
   onSearchChange: (query: string) => void
-  onReloadConfig: () => void
   onOpenStorage: () => void
   onOpenCommandPalette: () => void
   onOpenApiInfo: () => void
   onNewScan: () => void
   onOpenNasConnections: () => void
   onLogout: () => void
-  isLoading?: boolean
   lastUpdated?: Date | null
 }
 
@@ -59,14 +56,12 @@ interface Action {
 export function Topbar({
   searchQuery,
   onSearchChange,
-  onReloadConfig,
   onOpenStorage,
   onOpenCommandPalette,
   onOpenApiInfo,
   onNewScan,
   onOpenNasConnections,
   onLogout,
-  isLoading = false,
   lastUpdated = null,
 }: TopbarProps) {
   const [localSearch, setLocalSearch] = useState(searchQuery)
@@ -89,14 +84,6 @@ export function Topbar({
       onClick: toggleTheme,
     },
     { id: "api", icon: BookOpen, label: "API-Dokumentation", short: "API", onClick: onOpenApiInfo },
-    {
-      id: "config",
-      icon: Settings,
-      label: "Scheduler synchronisieren",
-      short: "Sync",
-      onClick: onReloadConfig,
-      disabled: isLoading,
-    },
     { id: "storage", icon: Database, label: "Storage-Management", short: "Storage", onClick: onOpenStorage },
     { id: "nas", icon: Server, label: "NAS-Verbindungen", onClick: onOpenNasConnections },
     { id: "logout", icon: LogOut, label: "Abmelden", onClick: onLogout },

@@ -501,39 +501,6 @@ async def cancel_scan(scan_identifier: str):
         )
 
 
-@router.post("/config/reload")
-async def reload_config():
-    """
-    Synchronisiert den Scheduler neu aus der Datenbank
-    (früher: Neuladen der config.yaml - Jobs leben jetzt in der DB)
-    """
-    try:
-        result = scheduler_service.resync_from_db()
-        
-        if result["success"]:
-            return {
-                "success": True,
-                "message": result["message"],
-                "added_scans": result.get("added_scans", []),
-                "updated_scans": result.get("updated_scans", []),
-                "removed_scans": result.get("removed_scans", []),
-                "total_scans": result.get("total_scans", 0)
-            }
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=result.get("message", "Fehler beim Neuladen der Konfiguration")
-            )
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Fehler beim Neuladen der Konfiguration: {str(e)}"
-        )
-
-
 # ========== STORAGE MANAGEMENT ENDPOINTS ==========
 
 @router.get("/storage/stats")
