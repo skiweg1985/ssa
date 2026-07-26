@@ -29,42 +29,62 @@ gebaut, wo es gebraucht wird (Docker-Stage 1 bzw. Release-Workflow).
 
 Benötigt Python 3.11+ **und Node 22+** (letzteres für das Frontend) sowie
 Netzwerkzugriff aufs NAS — alle Scans laufen über die File Station API, es wird
-nichts lokal gemountet:
+nichts lokal gemountet.
+
+`dev.sh` nimmt die Einrichtung ab. Einmalig — legt `.venv` an, installiert
+Python- und npm-Pakete und baut das Frontend:
 
 ```bash
-git clone <repo-url> && cd ssa
+git clone <repo-url> && cd ssa && ./dev.sh setup
+```
+
+Danach beide Server starten (Backend mit Reload, Vite mit Hot Reload):
+
+```bash
+./dev.sh
+```
+
+| Adresse | Zeigt |
+|---|---|
+| `http://localhost:5173` | Vite-Dev-Server — **hier entwickeln**, Hot Reload, `/api` wird aufs Backend geleitet |
+| `http://localhost:8080` | Backend samt gebauter UI — der Stand, den auch Docker ausliefert |
+
+Weitere Befehle:
+
+| Befehl | Wofür |
+|---|---|
+| `./dev.sh backend` | nur das Backend |
+| `./dev.sh frontend` | nur den Vite-Dev-Server |
+| `./dev.sh build` | Frontend neu bauen (aktualisiert die UI unter `:8080`) |
+| `./dev.sh test` | Testsuite; Argumente werden an pytest durchgereicht |
+
+Die Ports lassen sich über `SSA_DEV_BACKEND_PORT` und `SSA_DEV_FRONTEND_PORT`
+umstellen. Für den **Betrieb** ist `dev.sh` nicht gedacht — dafür `docker
+compose` oder das Release-Paket.
+
+<details>
+<summary>Dieselben Schritte von Hand</summary>
+
+```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-```
-
-Das Frontend einmalig bauen, sonst liefert der Server statt der UI eine
-Fehlerseite:
-
-```bash
+.venv/bin/pip install -r requirements-dev.txt
 npm --prefix frontend ci && npm --prefix frontend run build
+.venv/bin/uvicorn app.main:app --reload --host 127.0.0.1 --port 8080
 ```
 
-```bash
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
-```
+Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
+`uvicorn`, `pytest` und `python` direkt ohne `.venv/bin/`-Präfix.
 
-Web-UI danach unter `http://localhost:8080`.
+</details>
 
-**Beim Arbeiten am Frontend** ist der Vite-Dev-Server der bequemere Weg — mit
-Hot Reload, und `/api` wird automatisch auf das Backend unter `:8080` geleitet:
-
-```bash
-npm --prefix frontend run dev
-```
+Scan-Jobs werden vollständig im Frontend angelegt. Für den Login muss
+`SSA_ADMIN_PASSWORD` gesetzt sein, z.B. in einer `.env`.
 
 Die Abhängigkeiten sind auf exakte Versionen gepinnt (`==`), damit jede
 Installation dieselben Pakete bekommt. `requirements.txt` enthält
 ausschließlich die **Laufzeit**-Abhängigkeiten – das Test-Werkzeug steht in
 `requirements-dev.txt` und landet damit weder im Docker-Image noch im
 Release-Paket (siehe [Tests](#tests)).
-
-Alternativ das venv aktivieren (`source .venv/bin/activate`), dann funktionieren
-`uvicorn`, `pytest` und `python` direkt ohne `.venv/bin/`-Präfix.
 
 `install.sh`/`service.sh` (systemd) sind nur für den Dauerbetrieb unter Linux
 gedacht und werden auf dem Mac nicht benötigt.
@@ -228,13 +248,25 @@ Zabbix, Checkmk, Grafana und Uptime-Kuma.
 
 ## Tests
 
-Zum Testen zusätzlich die Entwicklungs-Abhängigkeiten installieren
-(`requirements-dev.txt` zieht `requirements.txt` selbst mit):
+Nach `./dev.sh setup` genügt:
+
+```bash
+./dev.sh test
+```
+
+Argumente werden an pytest durchgereicht, z.B. `./dev.sh test test_prtg_api.py -v`.
+
+Von Hand — `requirements-dev.txt` zieht `requirements.txt` selbst mit:
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
+
+`frontend/dist` wird für die Tests nicht benötigt: Fehlt ein Build, legt
+`conftest.py` einen Platzhalter an, damit die Tests der SPA-Auslieferung
+(Path-Traversal-Schutz) auch im frischen Klon laufen. Ein vorhandener Build
+wird nie überschrieben.
 
 ## Lizenz
 
