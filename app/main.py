@@ -159,7 +159,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Synology Space Analyzer API",
     description="REST API für Synology Space Analyzer mit automatischem Scheduling",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
