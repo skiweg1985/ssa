@@ -8,8 +8,17 @@ on:
   push:
     tags:
       - "v*"
-  # Manueller Start zum Testen (erzeugt kein Release, nur die Artefakte)
+  # Manueller Start zum Testen (erzeugt kein Release, nur die Artefakte).
+  # Der Release-Notes-Kopf wird dabei erzeugt und in die Job-Zusammenfassung
+  # geschrieben - so laesst er sich pruefen, ohne ein Release anzulegen.
   workflow_dispatch:
+    inputs:
+      notes_from:
+        description: "Notes-Test: Start-Tag (leer = letzter Tag)"
+        required: false
+      notes_to:
+        description: "Notes-Test: End-Ref (leer = HEAD)"
+        required: false
 
 jobs:
   build-and-release:
@@ -88,17 +97,33 @@ jobs:
       #
       # Schlaegt der Schritt fehl (Secret fehlt, Modell antwortet nicht), laeuft das
       # Release trotzdem durch - dann eben nur mit der generierten Liste.
+      # Laeuft auch beim manuellen Start - sonst waere das naechste echte Release
+      # der erste Test, und das ist der falsche Moment, um Fehler zu finden.
       - name: Release-Notes-Kopf erzeugen
-        if: github.ref_type == 'tag'
         continue-on-error: true
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL }}
         run: |
-          PREVIOUS_TAG="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^")"
-          echo "Vorgaenger-Tag: ${PREVIOUS_TAG}"
-          python3 scripts/release_notes.py "${PREVIOUS_TAG}" "${GITHUB_REF_NAME}" \
-            > release-notes-head.md
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            FROM="$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^")"
+            TO="${GITHUB_REF_NAME}"
+          else
+            FROM="${{ inputs.notes_from }}"
+            TO="${{ inputs.notes_to }}"
+            [ -n "$FROM" ] || FROM="$(git describe --tags --abbrev=0)"
+            [ -n "$TO" ] || TO="HEAD"
+          fi
+
+          echo "Bereich: ${FROM}..${TO}"
+          python3 scripts/release_notes.py "${FROM}" "${TO}" > release-notes-head.md
+
+          # In die Job-Zusammenfassung, damit der Text ohne Release lesbar ist.
+          {
+            echo "## Release-Notes-Kopf (\`${FROM}..${TO}\`)"
+            echo
+            cat release-notes-head.md
+          } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: GitHub Release erstellen
         if: github.ref_type == 'tag'
