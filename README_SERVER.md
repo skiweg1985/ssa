@@ -293,9 +293,9 @@ Startet einen Scan sofort, unabhängig vom Zeitplan.
 }
 ```
 
-### Konfiguration
+### Scheduler
 
-#### Konfiguration neu laden
+#### Scheduler synchronisieren
 
 ```http
 POST /api/config/reload

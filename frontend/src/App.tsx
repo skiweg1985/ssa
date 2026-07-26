@@ -85,7 +85,7 @@ function AppContent({ onLogout }: { onLogout: () => void }) {
     try {
       await reloadConfig()
       // Diese Aktion hat keine sichtbare Wirkung in der Tabelle — sie bleibt gemeldet.
-      showToast("Scheduler synchronisiert", "config.yaml neu eingelesen, Zeitpläne aktualisiert.", "info")
+      showToast("Scheduler synchronisiert", "Zeitpläne mit der Datenbank abgeglichen.", "info")
       setTimeout(() => refetch(), 1000)
     } catch (err) {
       showToast("Neuladen fehlgeschlagen", err instanceof Error ? err.message : "Unbekannter Fehler", "error")

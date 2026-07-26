@@ -92,8 +92,8 @@ export function Topbar({
     {
       id: "config",
       icon: Settings,
-      label: "Konfiguration neu laden",
-      short: "Config",
+      label: "Scheduler synchronisieren",
+      short: "Sync",
       onClick: onReloadConfig,
       disabled: isLoading,
     },
