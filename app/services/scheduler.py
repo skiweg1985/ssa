@@ -12,7 +12,7 @@ from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.executors.asyncio import AsyncIOExecutor
 
 from app.services.scanner import scanner_service
-from app.models.config import ConfigYAML, ScanTaskConfigYAML
+from app.models.config import ScanTaskConfigYAML
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +84,6 @@ class SchedulerService:
             executors=executors,
             job_defaults=job_defaults
         )
-        self.config: Optional[ConfigYAML] = None
         self._job_ids: Dict[str, str] = {}  # Mapping von scan_slug zu job_id
         # Fingerabdruck der zuletzt eingeplanten Konfiguration je Slug.
         # Damit erkennt der Resync, ob sich ein Job wirklich geändert hat -

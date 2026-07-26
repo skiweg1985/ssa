@@ -1,8 +1,7 @@
 import * as React from "react"
-import { Check } from "lucide-react"
 import { cn } from "@/lib/cn"
 
-/* Button · Zustände: default · hover · focus-visible · active · disabled · loading · success
+/* Button · Zustände: default · hover · focus-visible · active · disabled · loading
  *
  * Systemstimme: 6 px Radius statt Pille, EIN gefüllter Akzentbutton, alles andere
  * typografisch oder als Hairline-Umriss. Weiß auf accent-500 trägt 5.54:1.
@@ -12,8 +11,6 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   variant?: "default" | "primary" | "secondary" | "ghost" | "destructive"
   size?: "sm" | "md" | "lg"
   isLoading?: boolean
-  /** Quittiert eine abgeschlossene Aktion am Ort des Klicks — statt eines Erfolgs-Toasts. */
-  isSuccess?: boolean
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
@@ -23,7 +20,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       variant = "default",
       size = "md",
       isLoading,
-      isSuccess,
       children,
       disabled,
       type,
@@ -80,7 +76,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(baseStyles, variants[variant], sizes[size], className)}
         ref={ref}
         disabled={disabled || isLoading}
-        data-state={isLoading ? "loading" : isSuccess ? "success" : undefined}
+        data-state={isLoading ? "loading" : undefined}
         {...props}
       >
         {showSpinner && (
@@ -99,7 +95,6 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
             />
           </svg>
         )}
-        {!isLoading && isSuccess && <Check className="h-3.5 w-3.5" aria-hidden="true" />}
         {children}
       </button>
     )

@@ -62,7 +62,7 @@ def _job_to_view_config(job: dict) -> Optional[ScanTaskConfigYAML]:
 
 
 def get_scan_config_from_db(identifier: str) -> Optional[ScanTaskConfigYAML]:
-    """DB-basierter Ersatz für get_scan_config (Slug oder Name) - Lese-Ansicht"""
+    """Lese-Ansicht eines Jobs aus der DB (Slug oder Name)"""
     job = jobs_store.get_job(identifier)
     if job is None:
         return None

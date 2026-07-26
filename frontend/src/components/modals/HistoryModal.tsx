@@ -420,7 +420,7 @@ export function HistoryModal({ open, onOpenChange, scanName }: HistoryModalProps
                       </div>
 
                       <div className="mt-3" style={{ height: '300px' }}>
-                        <SizeChart result={selectedResult} type="bar" height={300} />
+                        <SizeChart result={selectedResult} height={300} />
                       </div>
                     </div>
                   )}

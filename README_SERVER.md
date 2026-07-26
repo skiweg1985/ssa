@@ -14,26 +14,9 @@ Der FastAPI-Server ermöglicht geplante Scans über eine REST API und ein Web-In
 
 ## Konfiguration
 
-### `config.yaml`
-
-Kopiere `config.yaml.example` zu `config.yaml` und passe die Werte an:
-
-```yaml
-scans:
-  - name: "homes_scan"
-    enabled: true
-    interval: "6h"        # oder Cron: "0 */6 * * *"
-    nas:
-      host: "192.168.1.100"
-      username: "admin"
-      password: "password123"
-      port: null          # null = automatisch (5001 für HTTPS, 5000 für HTTP)
-      use_https: true
-      verify_ssl: true
-    shares: ["homes"]      # oder paths: ["homes/user1/Documents"]
-    folders: null         # nur mit genau 1 Share
-    paths: null
-```
+Scan-Jobs und NAS-Verbindungen werden im Web-Frontend verwaltet und in der
+SQLite-Datenbank gespeichert (siehe „Job-Verwaltung im Frontend" in der
+README.md). Die folgenden Abschnitte beschreiben die Felder eines Jobs.
 
 ### Scan-Konfiguration
 
@@ -51,7 +34,7 @@ scans:
 **Hinweis zu Slugs:**
 - Slugs werden automatisch aus dem Namen generiert (URL-freundlich, nur Kleinbuchstaben, Zahlen, Bindestriche)
 - Slugs werden in API-URLs verwendet (z.B. `/api/scans/{scan_slug}/results`)
-- Bei doppelten Slugs wird das neuere Scan verworfen (basierend auf Erstellungsdatum)
+- Der Jobs-Store stellt sicher, dass Slugs eindeutig bleiben
 
 **Interval-Formate:**
 
@@ -97,7 +80,6 @@ sudo ./install.sh
 
 Das Install-Script:
 - Fragt nach dem Server-Port (Standard: 8080, kann auch als Umgebungsvariable `PORT` gesetzt werden)
-- Prüft, ob `config.yaml` existiert und bietet an, `config.yaml.example` zu kopieren
 - Erstellt den Systemd-Service mit konfiguriertem Port
 
 Der Service startet automatisch beim Booten.
@@ -319,7 +301,8 @@ Startet einen Scan sofort, unabhängig vom Zeitplan.
 POST /api/config/reload
 ```
 
-Lädt `config.yaml` neu und aktualisiert alle geplanten Jobs ohne Server-Neustart.
+Synchronisiert den Scheduler neu aus der Datenbank und aktualisiert alle
+geplanten Jobs ohne Server-Neustart.
 
 **Response:**
 ```json
@@ -563,7 +546,7 @@ Ergebnisse werden in einer SQLite-Datenbank gespeichert:
 Der Scheduler verwendet APScheduler für die Ausführung geplanter Scans:
 
 - Startet automatisch beim Server-Start
-- Lädt Konfiguration aus `config.yaml`
+- Lädt die Jobs aus der Datenbank
 - Unterstützt Cron- und Interval-Formate
 - Deaktivierte Scans werden nicht ausgeführt
 - Fehlerbehandlung mit Logging
@@ -584,7 +567,6 @@ Für detailliertere Logs kann das Log-Level angepasst werden.
 - SSL-Verifizierung standardmäßig aktiviert
 - Passwörter werden nicht in API-Responses zurückgegeben
 - CORS konfigurierbar (Standard: alle Origins erlaubt - für Produktion einschränken)
-- `config.yaml` sollte nicht in Git committed werden
 
 ## Fortschrittsanzeige
 

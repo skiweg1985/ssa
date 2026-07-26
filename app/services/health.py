@@ -245,14 +245,15 @@ def collect_job_health() -> Dict[str, Any]:
 
 
 def collect_config_warnings() -> List[Dict[str, str]]:
-    """Konfigurationswarnungen (z.B. doppelte Slugs)"""
-    try:
-        from app.config.loader import get_config_warnings
+    """
+    Konfigurationswarnungen.
 
-        return get_config_warnings() or []
-    except Exception as e:
-        logger.warning(f"Fehler beim Abrufen der Konfigurations-Warnungen: {e}")
-        return []
+    Lieferte früher die Duplikat-Warnungen des config.yaml-Loaders. Seit Jobs
+    ausschliesslich im Jobs-Store leben, gibt es keine Quelle mehr dafür - die
+    Funktion bleibt als Anschluss erhalten, weil /health, der PRTG-Sensor und
+    der Monitor-State CONFIG_WARNINGS darauf aufsetzen.
+    """
+    return []
 
 
 # ----------------------------------------------------------------------

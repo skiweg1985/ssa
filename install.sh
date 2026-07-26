@@ -125,40 +125,6 @@ configure_port() {
     log_success "Port konfiguriert: $PORT"
 }
 
-# Prüfe und erstelle config.yaml
-check_config() {
-    local config_file="$PROJECT_DIR/config.yaml"
-    local example_file="$PROJECT_DIR/config.yaml.example"
-    
-    if [[ -f "$config_file" ]]; then
-        log_info "config.yaml existiert bereits"
-        return 0
-    fi
-    
-    if [[ ! -f "$example_file" ]]; then
-        log_warning "config.yaml.example nicht gefunden - überspringe Config-Prüfung"
-        return 0
-    fi
-    
-    echo
-    log_warning "config.yaml nicht gefunden"
-    read -p "config.yaml.example nach config.yaml kopieren? (J/n): " -n 1 -r
-    echo
-    
-    if [[ -z "$REPLY" ]] || [[ $REPLY =~ ^[JjYy]$ ]]; then
-        log_info "Kopiere config.yaml.example nach config.yaml..."
-        cp "$example_file" "$config_file" || {
-            log_error "Fehler beim Kopieren der Config-Datei"
-            exit 1
-        }
-        log_success "config.yaml erstellt"
-        log_warning "Bitte passe config.yaml an deine Bedürfnisse an!"
-    else
-        log_info "Überspringe Erstellung von config.yaml"
-        log_warning "Der Server benötigt eine config.yaml zum Betrieb"
-    fi
-}
-
 # Erstelle Service-Benutzer
 create_user() {
     if id "$SERVICE_USER" &>/dev/null; then
@@ -366,8 +332,7 @@ main() {
     check_frontend
 
     configure_port
-    check_config
-    
+
     create_user
     create_venv
     install_dependencies

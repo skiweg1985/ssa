@@ -14,8 +14,6 @@ import threading
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.models.scan import ScanResult, ScanResultItem, TotalSize
 from app.services.jobs_store import JobsStore, NotFoundError, initialize_jobs_store
 from app.services.scheduler import parse_interval_string

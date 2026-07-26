@@ -55,7 +55,7 @@ jobs:
           # Backend + Laufzeit-Dateien
           cp -r app "dist-pkg/${STAGE}/"
           cp explore_syno_api.py requirements.txt "dist-pkg/${STAGE}/"
-          cp config.yaml.example .env.example "dist-pkg/${STAGE}/"
+          cp .env.example "dist-pkg/${STAGE}/"
           cp README.md README_CLI.md README_SERVER.md "dist-pkg/${STAGE}/"
           cp install.sh service.sh uninstall.sh "dist-pkg/${STAGE}/"
 

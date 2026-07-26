@@ -7,7 +7,7 @@ Tooling, um **Verzeichnisgrößen auf einem Synology NAS** über die **File Stat
 ## Funktionen
 
 - **Misst Größen** für Shares/Ordner/Pfade
-- **Server** mit Scheduler (aus `config.yaml`) und Ergebnis-API
+- **Server** mit Scheduler und Ergebnis-API
 - **Persistente Historie** per SQLite (standardmäßig `data/history.db`)
 
 ## Installation
@@ -35,7 +35,6 @@ nichts lokal gemountet:
 git clone <repo-url> && cd ssa
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp config.yaml.example config.yaml   # anpassen
 ```
 
 Das Frontend einmalig bauen, sonst liefert der Server statt der UI eine
@@ -121,9 +120,6 @@ docker compose up -d
 - **Persistenz:** Das Volume `ssa-data` (→ `/app/data`) enthält die SQLite-DB
   (Historie, Jobs, verschlüsselte NAS-Creds) und den auto-generierten
   `secret.key`. Nicht löschen, sonst müssen NAS-Passwörter neu eingegeben werden.
-- **Erst-Import:** Eine bestehende `config.yaml` kann optional read-only nach
-  `/app/config.yaml` gemountet werden (auskommentierte Zeile in der
-  `docker-compose.yml`) — sie wird beim ersten Start einmalig importiert.
 - **Healthcheck** ist im Image integriert (`/health`).
 - Ohne Compose: `docker build -t ssa . && docker run -d -p 8080:8080 -e SSA_ADMIN_PASSWORD=... -v ssa-data:/app/data ssa`
 
@@ -139,7 +135,6 @@ neuesten [GitHub Release](../../releases/latest) (`ssa-<version>.tar.gz` oder
 ```bash
 tar -xzf ssa-<version>.tar.gz && cd ssa-<version>
 pip install -r requirements.txt
-cp config.yaml.example config.yaml   # anpassen
 uvicorn app.main:app --host 0.0.0.0 --port 8080
 ```
 
@@ -164,7 +159,6 @@ Scan-Jobs und NAS-Verbindungen werden **im Web-Frontend** verwaltet:
 
 - **Scan-Jobs**: anlegen/bearbeiten/löschen über „Neuer Scan" bzw. das Aktionsmenü der Tabelle — inkl. Verzeichnisauswahl per NAS-Browser, Intervall-Presets oder Cron.
 - **NAS-Verbindungen**: eigener Bereich (Topbar → Server-Icon) mit „Verbindung testen"; Passwörter werden **verschlüsselt** in der Datenbank gespeichert und nie wieder ans Frontend ausgeliefert.
-- Bestehende `config.yaml`-Scans werden beim **ersten Start einmalig importiert**; danach ist die Datenbank die einzige Quelle.
 
 ## Monitoring (PRTG, Zabbix, Grafana …)
 
