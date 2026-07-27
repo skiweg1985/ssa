@@ -15,11 +15,15 @@ importiert. Ein Fixture käme dafür zu spät.
 
 Zweiter Punkt hier: die Datenbank-Isolation (siehe _isolate_database).
 """
+import sys
 from pathlib import Path
 
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Der direkte pytest-Launcher nimmt – anders als ``python -m pytest`` – das
+# aktuelle Arbeitsverzeichnis nicht auf allen Plattformen in sys.path auf.
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Muss den Marker '<div id="root">' enthalten, an dem die Tests die SPA erkennen.
 #
