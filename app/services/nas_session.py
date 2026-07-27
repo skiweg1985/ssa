@@ -29,7 +29,7 @@ SESSION_TTL = 300  # Sekunden (5 Minuten)
 _session_cache: Dict[int, Tuple[Any, float]] = {}
 # Metrik-Abfragen laufen im Worker-Thread, Browse-Requests im Event-Loop -
 # ohne Lock ist "prüfen, dann zugreifen" auf dem Dict nicht sicher
-# (siehe test_metrics_concurrency.py).
+# (siehe tests/test_metrics_concurrency.py).
 _cache_lock = threading.Lock()
 
 

@@ -265,7 +265,7 @@ def collect_health() -> Dict[str, Any]:
     Vollständige Health-Daten.
 
     WICHTIG: Struktur ist der öffentliche Vertrag von GET /health und darf
-    sich nicht ändern (siehe test_health_contract in test_prtg_api.py).
+    sich nicht ändern (siehe test_health_contract in tests/test_prtg_api.py).
     """
     health_data: Dict[str, Any] = {
         "status": "healthy",

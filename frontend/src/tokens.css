@@ -1,5 +1,5 @@
 /* Der Token-Layer des Synology Space Analyzer.
- * Beschrieben in design.md im Projektwurzelverzeichnis.
+ * Beschrieben in docs/design.md.
  * Einzige Quelle für Farbe, Schrift, Abstand, Radius und Motion.
  * Kein Wert in einer Komponente darf an diesem Layer vorbei definiert werden.
  *

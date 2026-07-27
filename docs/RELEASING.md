@@ -2,7 +2,7 @@
 
 Releases werden **automatisch von GitHub Actions** gebaut und veröffentlicht,
 sobald ein Git-Tag der Form `v*` gepusht wird. Der zuständige Workflow ist
-[`.github/workflows/release.yml`](.github/workflows/release.yml).
+[`../.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 Es ist **kein** manueller Build nötig – der Workflow baut das Frontend frisch,
 schnürt das Paket und hängt es ans Release.
@@ -53,12 +53,12 @@ Die Notes bestehen aus zwei Teilen, die getrennt entstehen:
 
 **Der Kopf** – „Das Wichtigste", Breaking Changes, Upgrade-Hinweise – wird von
 einem Sprachmodell aus den Commits seit dem letzten Tag geschrieben. Zuständig
-ist [`scripts/release_notes.py`](scripts/release_notes.py), das über OpenRouter
+ist [`scripts/release_notes.py`](../scripts/release_notes.py), das über OpenRouter
 läuft.
 
 **Die Liste der Pull Requests** kommt von GitHub selbst und ist damit
 vollständig und korrekt. Gegliedert wird sie nach den Labels der PRs; die
-Kategorien stehen in [`.github/release.yml`](.github/release.yml).
+Kategorien stehen in [`../.github/release.yml`](../.github/release.yml).
 
 ### Einrichtung (einmalig)
 
@@ -158,13 +158,16 @@ ssa-v1.0.0/
 ├── app/                  # FastAPI-Backend
 ├── explore_syno_api.py   # Synology-API-Client / CLI
 ├── frontend/dist/        # fertig gebautes Frontend (kein Node nötig)
+├── docs/                 # CLI-, Server-, Monitoring- und Betriebsdoku
 ├── requirements.txt
 ├── .env.example
-├── README.md, README_CLI.md, README_SERVER.md
+├── README.md
 └── install.sh, service.sh, uninstall.sh
 ```
 
-Nicht enthalten (bewusst): `frontend/src`, `node_modules`, Tests, Entwicklungs-Dateien.
+Nicht enthalten (bewusst): `frontend/src`, `node_modules`, Tests,
+`docs/design.md`, das Synology-API-Referenz-PDF und weitere
+Entwicklungs-Dateien.
 
 ### Installieren & Starten (Endnutzer)
 

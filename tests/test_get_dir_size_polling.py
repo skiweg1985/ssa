@@ -11,8 +11,8 @@ import pytest
 from unittest.mock import Mock, patch
 import threading
 
-# Füge das aktuelle Verzeichnis zum Python-Pfad hinzu
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Füge das Projekt-Root zum Python-Pfad hinzu
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importiere die SynologyAPI-Klasse
 from explore_syno_api import SynologyAPI

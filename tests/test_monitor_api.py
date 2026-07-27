@@ -64,7 +64,8 @@ def assert_monitor_contract(body):
 
 
 # ----------------------------------------------------------------------
-# Fixtures (bewusst je Testmodul dupliziert - das Repo hat kein conftest.py)
+# Fachliche Fixtures bleiben bewusst lokal; tests/conftest.py enthält nur
+# suiteweite Voraussetzungen und Datenbank-Isolation.
 # ----------------------------------------------------------------------
 
 def _reset_scanner_state():

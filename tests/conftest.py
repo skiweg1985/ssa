@@ -15,9 +15,15 @@ importiert. Ein Fixture käme dafür zu spät.
 
 Zweiter Punkt hier: die Datenbank-Isolation (siehe _isolate_database).
 """
+import sys
 from pathlib import Path
 
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# Der direkte pytest-Launcher nimmt – anders als ``python -m pytest`` – das
+# aktuelle Arbeitsverzeichnis nicht auf allen Plattformen in sys.path auf.
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # Muss den Marker '<div id="root">' enthalten, an dem die Tests die SPA erkennen.
 #
@@ -46,7 +52,7 @@ npm --prefix frontend run build</code></pre>
 
 
 def _ensure_frontend_build() -> None:
-    dist = Path(__file__).parent / "frontend" / "dist"
+    dist = PROJECT_ROOT / "frontend" / "dist"
     index = dist / "index.html"
     if index.exists():
         return
@@ -68,7 +74,7 @@ def _isolate_database(monkeypatch, tmp_path):
     die mit Persistenz nichts zu tun haben.
 
     Umgebogen wird der Default-Pfad, nicht die Instanz: Tests, die selbst eine
-    ScanStorage mit explizitem db_path bauen (z.B. test_auth_api.py), laufen
+    ScanStorage mit explizitem db_path bauen (z.B. tests/test_auth_api.py), laufen
     unverändert weiter.
     """
     import app.services.jobs_store as jobs_store_module

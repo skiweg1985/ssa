@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 
-/* Farb-, Schrift- und Motion-Mapping. Das System ist in design.md beschrieben.
+/* Farb-, Schrift- und Motion-Mapping. Das System ist in docs/design.md beschrieben.
  *
  * Dieser Config ist die Brücke zwischen src/tokens.css und den Utility-Klassen.
  * Jede Farbe hier zeigt auf einen Token — es gibt keinen Hex-Wert mehr im Projekt.

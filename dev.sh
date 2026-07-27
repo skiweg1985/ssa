@@ -136,6 +136,9 @@ cmd_frontend() {
 
 cmd_test() {
     ensure_venv
+    if [[ $# -eq 0 ]]; then
+        exec "$VENV_DIR/bin/pytest" -q tests
+    fi
     exec "$VENV_DIR/bin/pytest" -q "$@"
 }
 
