@@ -16,6 +16,7 @@ from enum import Enum, IntEnum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+from app.models.scan import RetryInfo
 
 
 class MonitorSeverity(IntEnum):
@@ -226,6 +227,10 @@ class ScanMonitorReport(BaseModel):
     last_run: LastRunInfo
     last_success: LastSuccessInfo
     schedule: ScheduleInfo
+    retry: RetryInfo = Field(
+        default_factory=RetryInfo,
+        description="Zustand einer automatischen Scheduler-Wiederholung",
+    )
 
 
 # ----------------------------------------------------------------------

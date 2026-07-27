@@ -205,6 +205,10 @@ Zustand des Jobs.
 | `schedule.next_run_at`, `next_run_in_seconds` | nächster geplanter Lauf |
 | `schedule.overdue`, `overdue_by_seconds` | Überfälligkeit, serverseitig gerechnet |
 | `schedule.stale_after_seconds`, `overdue_after_seconds` | die verwendeten Schwellwerte |
+| `retry.state` | `pending`, `running` oder `null` |
+| `retry.attempt`, `retry.max_attempts` | Nummer des nächsten/aktiven Retries und konfigurierte Obergrenze |
+| `retry.scheduled_at` | geplanter Start des wartenden Retries, sonst `null` |
+| `retry.reason` | `failed`, `partial` oder `null` |
 
 Zwei Festlegungen, die Rückfragen erübrigen:
 
@@ -220,6 +224,10 @@ Zwei Festlegungen, die Rückfragen erübrigen:
   bleibt trotz Job-Änderungen sichtbar. Läufe aus Versionen vor dieser
   Änderung tragen keinen Sollwert; dort gilt die aktuelle Konfiguration, und
   im Zweifel wird ein Fehler gemeldet statt verschwiegen.
+- Ein geplanter Retry ändert `state` und `severity` nicht: ein Fehllauf bleibt
+  kritisch, ein Teilfehler bleibt eine Warnung. `retry` und der Zusatz in
+  `message` zeigen an, dass bereits eine automatische Wiederholung geplant ist
+  oder läuft. Der Retry-Zustand liegt nur im Prozessspeicher.
 
 ### Beispiel: alles in Ordnung
 

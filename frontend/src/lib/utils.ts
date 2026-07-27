@@ -57,6 +57,16 @@ export function formatRelativeTime(dateString: string | undefined): string {
   return formatDateShort(dateString);
 }
 
+export function formatRetryStatus(scan: ScanStatus): string | null {
+  const retry = scan.retry;
+  if (!retry?.state || !retry.attempt) return null;
+
+  const prefix = `Wiederholung ${retry.attempt}/${retry.max_attempts}`;
+  if (retry.state === 'running') return `${prefix} läuft`;
+  if (retry.scheduled_at) return `${prefix} ${formatRelativeTime(retry.scheduled_at)}`;
+  return `${prefix} geplant`;
+}
+
 // Format time ago for last updated
 export function formatTimeAgo(date: Date | null): string {
   if (!date) return '';
@@ -155,6 +165,10 @@ export function buildScanTooltipContent(scan: ScanStatus): string {
     content += `Intervall: ${scan.interval}\n`;
   }
   content += `Status: ${scan.enabled ? '✅ Aktiviert' : '❌ Deaktiviert'}\n`;
+  const retryStatus = formatRetryStatus(scan);
+  if (retryStatus) {
+    content += `Retry: ${retryStatus}\n`;
+  }
   
   if (scan.nas) {
     const protocol = scan.nas.use_https ? 'HTTPS' : 'HTTP';

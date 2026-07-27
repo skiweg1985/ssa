@@ -33,6 +33,14 @@ export interface ScanResult {
   error?: string;
 }
 
+export interface RetryInfo {
+  state?: 'pending' | 'running' | null;
+  attempt?: number | null;
+  max_attempts: number;
+  scheduled_at?: string | null;
+  reason?: 'failed' | 'partial' | null;
+}
+
 export interface ScanStatus {
   scan_slug: string;
   scan_name: string;
@@ -46,6 +54,7 @@ export interface ScanStatus {
   nas?: NASConfigPublic;
   interval?: string;
   nas_connection_id?: number;
+  retry: RetryInfo;
 }
 
 // --- Auth ---
@@ -318,4 +327,3 @@ export interface CleanupResponse {
   message: string;
   stats?: CleanupPreview;
 }
-

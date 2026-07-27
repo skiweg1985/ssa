@@ -124,7 +124,14 @@ Gibt Liste aller konfigurierten Scans mit Status zurück.
       "next_run": "2024-01-15T16:30:00Z",
       "enabled": true,
       "shares": ["homes"],
-      "interval": "6h"
+      "interval": "6h",
+      "retry": {
+        "state": null,
+        "attempt": null,
+        "max_attempts": 2,
+        "scheduled_at": null,
+        "reason": null
+      }
     }
   ]
 }
@@ -148,7 +155,7 @@ GET /api/scans/{scan_slug}/status
 ```
 
 > **Veraltet** — abgelöst von `GET /api/monitor/scans/{scan_slug}`. Der Endpoint
-> bleibt unverändert erhalten, ist aber für Monitoring ungeeignet: `status`
+> bleibt kompatibel erhalten, ist aber für Monitoring ungeeignet: `status`
 > mischt Lebenszyklus und Ergebnis, Teilfehler und Fehlertexte fehlen, und die
 > Überfälligkeit müsste der Client selbst berechnen. Siehe
 > [README_MONITORING.md](README_MONITORING.md), Kapitel „Veraltet".
@@ -525,6 +532,14 @@ Der Scheduler verwendet APScheduler für die Ausführung geplanter Scans:
 - Lädt die Jobs aus der Datenbank
 - Unterstützt Cron- und Interval-Formate
 - Deaktivierte Scans werden nicht ausgeführt
+- Fehlgeschlagene und teilweise fehlgeschlagene geplante Läufe werden
+  automatisch wiederholt (`SSA_SCAN_RETRY_COUNT`, Default `2`;
+  `SSA_SCAN_RETRY_DELAY_SECONDS`, Default `300`, plus 0–30 Sekunden Jitter)
+- Jeder Retry scannt den vollständigen Job und wird als eigener Lauf
+  gespeichert. Manuelle Starts werden nicht automatisch wiederholt.
+- Ein früher oder gleichzeitig fälliger regulärer Lauf hat Vorrang. Manuelles
+  Starten sowie Löschen, Deaktivieren oder Ändern des Jobs hebt einen wartenden
+  Retry auf. Wartende Retries werden nach einem Server-Neustart nicht fortgesetzt.
 - Fehlerbehandlung mit Logging
 
 ## Logging
@@ -568,4 +583,5 @@ Die Fortschrittsanzeige ist im Web-Interface sichtbar und kann auch über die RE
 - Fehlgeschlagene Scans werden mit Status `failed` markiert
 - Fehlermeldungen werden in Scan-Ergebnissen gespeichert
 - Server läuft weiter, auch wenn einzelne Scans fehlschlagen
-- Scheduler versucht Scans erneut zum nächsten geplanten Zeitpunkt
+- Scheduler wiederholt geplante Fehlläufe gemäß Retry-Policy; nach Ausschöpfen
+  der Versuche bleibt der Fehler bis zum nächsten regulären Lauf sichtbar

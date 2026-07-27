@@ -27,6 +27,8 @@ services:
       # ueberspringt die Ersteinrichtung; leer (Default) heisst "im Browser
       # einrichten". Fuer Deployments, die Secrets ohnehin injizieren.
       SSA_ADMIN_PASSWORD: ${SSA_ADMIN_PASSWORD:-}
+      SSA_SCAN_RETRY_COUNT: ${SSA_SCAN_RETRY_COUNT:-2}
+      SSA_SCAN_RETRY_DELAY_SECONDS: ${SSA_SCAN_RETRY_DELAY_SECONDS:-300}
       # Optional:
       # SSA_ADMIN_USER: admin
       # SSA_SETUP_TOKEN: langes-zufaelliges-token   # schuetzt die Ersteinrichtung

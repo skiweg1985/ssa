@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from app.models.scan import ScanResult, ScanResultItem, TotalSize
+from app.models.scan import RetryInfo, ScanResult, ScanResultItem, TotalSize
 from app.services.jobs_store import initialize_jobs_store
 from app.services.security import reset_key_cache
 
@@ -21,6 +21,7 @@ from app.services.security import reset_key_cache
 SCAN_REPORT_KEYS = {
     "schema_version", "generated_at", "severity", "severity_text", "state",
     "reasons", "message", "scan", "run", "last_run", "last_success", "schedule",
+    "retry",
 }
 RUN_KEYS = {
     "active", "started_at", "active_seconds", "progress_percent", "current_path",
@@ -39,6 +40,7 @@ SCHEDULE_KEYS = {
     "next_run_in_seconds", "overdue", "overdue_by_seconds",
     "stale_after_seconds", "overdue_after_seconds",
 }
+RETRY_KEYS = {"state", "attempt", "max_attempts", "scheduled_at", "reason"}
 SEVERITY_TEXTS = {0: "ok", 1: "warning", 2: "critical"}
 
 
@@ -49,6 +51,7 @@ def assert_monitor_contract(body):
     assert set(body["last_run"].keys()) == LAST_RUN_KEYS
     assert set(body["last_success"].keys()) == LAST_SUCCESS_KEYS
     assert set(body["schedule"].keys()) == SCHEDULE_KEYS
+    assert set(body["retry"].keys()) == RETRY_KEYS
 
     severity = body["severity"]
     assert isinstance(severity, int) and not isinstance(severity, bool)
@@ -302,6 +305,36 @@ class TestScanStates:
         assert "Login fehlgeschlagen" in body["message"]
         assert body["last_success"]["at"] is not None
         assert body["last_success"]["total_bytes"] == 1073741824 + 500000000
+
+    def test_failed_run_exposes_pending_retry_without_hiding_alarm(
+        self, client, auth_headers, seeded_job, monkeypatch
+    ):
+        from app.services.scheduler import scheduler_service
+
+        _add_result(
+            seeded_job, status="failed", folders=[], error="NAS offline"
+        )
+        scheduled_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+        monkeypatch.setattr(
+            scheduler_service,
+            "get_retry_info",
+            lambda _slug: RetryInfo(
+                state="pending",
+                attempt=1,
+                max_attempts=2,
+                scheduled_at=scheduled_at,
+                reason="failed",
+            ),
+        )
+
+        body = _get(client, auth_headers, seeded_job).json()
+
+        assert body["severity"] == 2
+        assert body["state"] == "failed"
+        assert body["retry"]["state"] == "pending"
+        assert body["retry"]["attempt"] == 1
+        assert body["retry"]["reason"] == "failed"
+        assert "Wiederholung 1/2" in body["message"]
 
     def test_running_scan_does_not_hide_previous_result(
         self, client, auth_headers, seeded_job

@@ -1,6 +1,11 @@
 """Scheduler Service - APScheduler Integration"""
+import asyncio
 import logging
+import os
+import random
 import re
+import threading
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Union
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -11,8 +16,89 @@ from apscheduler.executors.asyncio import AsyncIOExecutor
 
 from app.services.scanner import scanner_service
 from app.models.config import ScanTaskConfigYAML
+from app.models.scan import RetryInfo, ScanResult
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_SCAN_RETRY_COUNT = 2
+DEFAULT_SCAN_RETRY_DELAY_SECONDS = 300
+SCAN_RETRY_JITTER_SECONDS = 30
+MAX_SCAN_RETRY_COUNT = 10
+MIN_SCAN_RETRY_DELAY_SECONDS = 10
+MAX_SCAN_RETRY_DELAY_SECONDS = 86400
+
+
+@dataclass(frozen=True)
+class ScanRetryPolicy:
+    """Globale Retry-Policy für geplante Scan-Jobs."""
+
+    count: int
+    delay_seconds: int
+
+
+@dataclass
+class _RetrySequence:
+    """Interner, abbrechbarer Kontext einer geplanten Ausführung."""
+
+    cancel_event: asyncio.Event
+    loop: asyncio.AbstractEventLoop
+
+
+def _bounded_env_int(
+    name: str, default: int, minimum: int, maximum: int
+) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            f"Ungültiger Wert für {name}={raw!r}; verwende Default {default}"
+        )
+        return default
+    if value < minimum or value > maximum:
+        logger.warning(
+            f"{name}={value} außerhalb {minimum}..{maximum}; "
+            f"verwende Default {default}"
+        )
+        return default
+    return value
+
+
+def get_scan_retry_policy() -> ScanRetryPolicy:
+    """Liest und validiert die globale Retry-Policy aus der Umgebung."""
+
+    return ScanRetryPolicy(
+        count=_bounded_env_int(
+            "SSA_SCAN_RETRY_COUNT",
+            DEFAULT_SCAN_RETRY_COUNT,
+            0,
+            MAX_SCAN_RETRY_COUNT,
+        ),
+        delay_seconds=_bounded_env_int(
+            "SSA_SCAN_RETRY_DELAY_SECONDS",
+            DEFAULT_SCAN_RETRY_DELAY_SECONDS,
+            MIN_SCAN_RETRY_DELAY_SECONDS,
+            MAX_SCAN_RETRY_DELAY_SECONDS,
+        ),
+    )
+
+
+def _retry_reason(result: ScanResult) -> Optional[str]:
+    """Liefert den Retry-Grund oder None für ein endgültiges Ergebnis."""
+
+    if result.status == "failed":
+        return "failed"
+    if result.status == "completed" and any(not item.success for item in result.results):
+        return "partial"
+    return None
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def parse_interval_string(interval_str: str) -> Optional[timedelta]:
@@ -83,6 +169,99 @@ class SchedulerService:
             job_defaults=job_defaults
         )
         self._job_ids: Dict[str, str] = {}  # Mapping von scan_slug zu job_id
+        self._retry_lock = threading.Lock()
+        self._retry_states: Dict[str, RetryInfo] = {}
+        self._retry_sequences: Dict[str, _RetrySequence] = {}
+
+    def get_retry_info(self, scan_slug: str) -> RetryInfo:
+        """Gibt eine threadsichere Momentaufnahme des Retry-Zustands zurück."""
+
+        with self._retry_lock:
+            info = self._retry_states.get(scan_slug)
+            if info is not None:
+                return info.model_copy(deep=True)
+        return RetryInfo(max_attempts=get_scan_retry_policy().count)
+
+    def _begin_retry_sequence(self, scan_slug: str) -> _RetrySequence:
+        sequence = _RetrySequence(
+            cancel_event=asyncio.Event(),
+            loop=asyncio.get_running_loop(),
+        )
+        previous = None
+        with self._retry_lock:
+            previous = self._retry_sequences.get(scan_slug)
+            self._retry_sequences[scan_slug] = sequence
+            self._retry_states.pop(scan_slug, None)
+        if previous is not None:
+            previous.loop.call_soon_threadsafe(previous.cancel_event.set)
+        return sequence
+
+    def _sequence_is_current(
+        self, scan_slug: str, sequence: _RetrySequence
+    ) -> bool:
+        with self._retry_lock:
+            return self._retry_sequences.get(scan_slug) is sequence
+
+    def _set_retry_info(
+        self,
+        scan_slug: str,
+        sequence: _RetrySequence,
+        info: RetryInfo,
+    ) -> bool:
+        with self._retry_lock:
+            if self._retry_sequences.get(scan_slug) is not sequence:
+                return False
+            self._retry_states[scan_slug] = info
+            return True
+
+    def _finish_retry_sequence(
+        self, scan_slug: str, sequence: _RetrySequence
+    ) -> None:
+        with self._retry_lock:
+            if self._retry_sequences.get(scan_slug) is sequence:
+                self._retry_sequences.pop(scan_slug, None)
+                self._retry_states.pop(scan_slug, None)
+
+    def cancel_retry_sequence(self, scan_slug: str, reason: str) -> bool:
+        """
+        Hebt einen wartenden Scheduler-Retry auf.
+
+        Die laufende Scanner-Instanz wird weiterhin über request_cancel()
+        beendet; diese Methode weckt nur eine wartende Retry-Schleife auf und
+        verhindert weitere Versuche.
+        """
+
+        with self._retry_lock:
+            sequence = self._retry_sequences.pop(scan_slug, None)
+            retry_was_visible = self._retry_states.pop(scan_slug, None) is not None
+        if sequence is None:
+            return False
+        logger.info(f"Retry-Sequenz für Scan '{scan_slug}' aufgehoben: {reason}")
+        sequence.loop.call_soon_threadsafe(sequence.cancel_event.set)
+        return retry_was_visible
+
+    def _next_regular_run(self, scan_slug: str) -> Optional[datetime]:
+        job_id = self._job_ids.get(scan_slug)
+        if job_id is None:
+            return None
+        job = self.scheduler.get_job(job_id)
+        if job is None:
+            return None
+        return getattr(job, "next_run_time", None)
+
+    @staticmethod
+    async def _wait_for_retry(
+        sequence: _RetrySequence, delay_seconds: int
+    ) -> bool:
+        """Wartet abbrechbar; True bedeutet, dass die Sequenz aufgehoben wurde."""
+
+        try:
+            await asyncio.wait_for(
+                sequence.cancel_event.wait(), timeout=delay_seconds
+            )
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     def load_and_schedule(self) -> None:
         """Lädt alle aktivierten Scan-Jobs aus der Datenbank und plant sie ein."""
@@ -243,6 +422,7 @@ class SchedulerService:
         Returns:
             True wenn erfolgreich entfernt
         """
+        self.cancel_retry_sequence(scan_slug, "Job entfernt oder neu eingeplant")
         job_id = self._job_ids.get(scan_slug)
         if job_id is None:
             return False
@@ -263,37 +443,163 @@ class SchedulerService:
         Args:
             scan_config: Scan-Konfiguration
         """
-        job_start_time = datetime.now(timezone.utc)
-        logger.info(f"=== Scheduler: Starte geplanten Scan '{scan_config.name}' ===")
-        logger.info(f"Job '{scan_config.name}': Konfiguration - NAS: {scan_config.nas.host}, Interval: {scan_config.interval}")
-        
+        from app.services.jobs_store import jobs_store
+        from app.services.storage import storage
+
+        scan_slug = scan_config.slug
+        policy = get_scan_retry_policy()
+        sequence = self._begin_retry_sequence(scan_slug)
+        current_config = scan_config
+        logger.info(
+            f"=== Scheduler: Starte geplanten Scan '{scan_config.name}' === "
+            f"(max. {policy.count} Retries)"
+        )
+
         try:
-            result = await scanner_service.run_scan(scan_config)
-            job_duration = (datetime.now(timezone.utc) - job_start_time).total_seconds()
-            
-            if result.status == "completed":
-                logger.info(
-                    f"=== Scheduler: Scan '{scan_config.name}' erfolgreich abgeschlossen === "
-                    f"Status: {result.status}, Dauer: {job_duration:.1f}s, "
-                    f"Ergebnisse: {len(result.results)} Pfad(e)"
+            for attempt_index in range(policy.count + 1):
+                if not self._sequence_is_current(scan_slug, sequence):
+                    return
+
+                attempt_started = datetime.now(timezone.utc)
+                result = None
+                reason = None
+                failure_timestamp = attempt_started
+
+                try:
+                    result = await scanner_service.run_scan(current_config)
+                    reason = _retry_reason(result)
+                    failure_timestamp = _as_utc(result.timestamp)
+                except Exception as exc:
+                    reason = "failed"
+                    logger.exception(
+                        f"Scheduler-Versuch für Scan '{current_config.name}' "
+                        f"ist unerwartet abgebrochen: {exc}"
+                    )
+
+                duration = (
+                    datetime.now(timezone.utc) - attempt_started
+                ).total_seconds()
+                if result is not None and reason is None:
+                    if result.status == "completed":
+                        logger.info(
+                            f"=== Scheduler: Scan '{current_config.name}' "
+                            f"erfolgreich abgeschlossen === Dauer: {duration:.1f}s, "
+                            f"Ergebnisse: {len(result.results)} Pfad(e)"
+                        )
+                    else:
+                        logger.warning(
+                            f"=== Scheduler: Scan '{current_config.name}' mit "
+                            f"Status '{result.status}' beendet === Dauer: {duration:.1f}s"
+                        )
+                    return
+
+                retry_number = attempt_index + 1
+                if retry_number > policy.count:
+                    logger.error(
+                        f"Scheduler: Scan '{current_config.name}' bleibt nach "
+                        f"{policy.count} Retry(s) fehlerhaft "
+                        f"(Grund: {reason or 'failed'})"
+                    )
+                    return
+
+                job = jobs_store.get_job(scan_slug)
+                if job is None or not job["enabled"]:
+                    logger.info(
+                        f"Scheduler: Kein Retry für Scan '{scan_slug}': "
+                        "Job wurde gelöscht oder deaktiviert"
+                    )
+                    return
+
+                latest = storage.get_latest_result(scan_slug)
+                if (
+                    latest is not None
+                    and _as_utc(latest.timestamp) > failure_timestamp
+                ):
+                    logger.info(
+                        f"Scheduler: Retry für Scan '{scan_slug}' entfällt: "
+                        "ein neuerer Lauf ist vorhanden"
+                    )
+                    return
+
+                jitter = random.randint(0, SCAN_RETRY_JITTER_SECONDS)
+                wait_seconds = policy.delay_seconds + jitter
+                retry_at = datetime.now(timezone.utc) + timedelta(
+                    seconds=wait_seconds
                 )
-            elif result.status == "failed":
-                logger.error(
-                    f"=== Scheduler: Scan '{scan_config.name}' fehlgeschlagen === "
-                    f"Status: {result.status}, Dauer: {job_duration:.1f}s, "
-                    f"Fehler: {result.error if result.error else 'Unbekannter Fehler'}"
-                )
-            else:
+                next_regular = self._next_regular_run(scan_slug)
+                if (
+                    next_regular is not None
+                    and _as_utc(next_regular) <= retry_at
+                ):
+                    logger.info(
+                        f"Scheduler: Retry {retry_number}/{policy.count} für "
+                        f"Scan '{scan_slug}' entfällt; regulärer Lauf um "
+                        f"{_as_utc(next_regular).isoformat()} ist früher fällig"
+                    )
+                    return
+
+                if not self._set_retry_info(
+                    scan_slug,
+                    sequence,
+                    RetryInfo(
+                        state="pending",
+                        attempt=retry_number,
+                        max_attempts=policy.count,
+                        scheduled_at=retry_at,
+                        reason=reason,
+                    ),
+                ):
+                    return
+
                 logger.warning(
-                    f"=== Scheduler: Scan '{scan_config.name}' mit Status '{result.status}' beendet === "
-                    f"Dauer: {job_duration:.1f}s"
+                    f"Scheduler: Scan '{scan_slug}' wird wiederholt "
+                    f"({retry_number}/{policy.count}) um {retry_at.isoformat()}; "
+                    f"Grund: {reason}, Basiswartezeit: {policy.delay_seconds}s, "
+                    f"Jitter: {jitter}s"
                 )
-        except Exception as e:
-            job_duration = (datetime.now(timezone.utc) - job_start_time).total_seconds()
-            logger.exception(
-                f"=== Scheduler: Fehler beim Ausführen des Scans '{scan_config.name}' === "
-                f"Dauer: {job_duration:.1f}s, Fehler: {e}"
-            )
+                if await self._wait_for_retry(sequence, wait_seconds):
+                    return
+                if not self._sequence_is_current(scan_slug, sequence):
+                    return
+                if scanner_service.is_scan_running(scan_slug):
+                    logger.info(
+                        f"Scheduler: Retry für Scan '{scan_slug}' entfällt: "
+                        "ein anderer Lauf ist aktiv"
+                    )
+                    return
+
+                job = jobs_store.get_job(scan_slug)
+                if job is None or not job["enabled"]:
+                    logger.info(
+                        f"Scheduler: Retry für Scan '{scan_slug}' entfällt: "
+                        "Job wurde gelöscht oder deaktiviert"
+                    )
+                    return
+                latest = storage.get_latest_result(scan_slug)
+                if (
+                    latest is not None
+                    and _as_utc(latest.timestamp) > failure_timestamp
+                ):
+                    logger.info(
+                        f"Scheduler: Retry für Scan '{scan_slug}' entfällt: "
+                        "ein neuerer Lauf hat den Fehlerzustand abgelöst"
+                    )
+                    return
+
+                current_config = jobs_store.to_scan_config(job)
+                if not self._set_retry_info(
+                    scan_slug,
+                    sequence,
+                    RetryInfo(
+                        state="running",
+                        attempt=retry_number,
+                        max_attempts=policy.count,
+                        reason=reason,
+                    ),
+                ):
+                    return
+        finally:
+            self._finish_retry_sequence(scan_slug, sequence)
     
     def start(self) -> None:
         """Startet den Scheduler"""
@@ -305,6 +611,10 @@ class SchedulerService:
     
     def stop(self) -> None:
         """Stoppt den Scheduler"""
+        with self._retry_lock:
+            retry_slugs = list(self._retry_sequences)
+        for scan_slug in retry_slugs:
+            self.cancel_retry_sequence(scan_slug, "Scheduler wird gestoppt")
         if self.scheduler.running:
             self.scheduler.shutdown(wait=True)
             logger.info("Scheduler gestoppt")
