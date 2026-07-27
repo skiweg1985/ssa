@@ -133,7 +133,8 @@ async def get_scans():
                 paths=scan_config.paths,
                 nas=nas_config_public,
                 interval=scan_config.interval,
-                nas_connection_id=job["nas_connection_id"]
+                nas_connection_id=job["nas_connection_id"],
+                retry=scheduler_service.get_retry_info(scan_config.slug),
             )
             scan_statuses.append(scan_status)
         
@@ -205,7 +206,8 @@ async def get_scan(scan_identifier: str):
             paths=scan_config.paths,
             nas=nas_config_public,
             interval=scan_config.interval,
-            nas_connection_id=job["nas_connection_id"]
+            nas_connection_id=job["nas_connection_id"],
+            retry=scheduler_service.get_retry_info(scan_config.slug),
         )
     
     except HTTPException:
@@ -232,8 +234,9 @@ async def get_scan_status(scan_identifier: str, response: Response):
     Überfälligkeit müsste der Client selbst aus `interval` errechnen.
     Der Monitoring-Endpoint liefert das alles vorberechnet als `severity`.
 
-    Verhalten und Schema bleiben aus Kompatibilitätsgründen unverändert;
-    ein Entfernungsdatum ist nicht gesetzt.
+    Der bestehende Vertrag bleibt kompatibel; das additive `retry`-Feld zeigt
+    den Zustand automatischer Scheduler-Wiederholungen. Ein Entfernungsdatum
+    ist nicht gesetzt.
     """
     # RFC 8594: Nachfolger maschinenlesbar bekanntgeben. Bewusst ohne
     # "Sunset"-Header - es gibt keine Zusage, den Endpoint zu entfernen.
@@ -434,7 +437,13 @@ async def trigger_scan(scan_identifier: str, background_tasks: BackgroundTasks):
                 message=f"Scan '{scan_config.name}' läuft bereits",
                 triggered=False
             )
-        
+
+        # Ein manueller Lauf ist eine neue Benutzerentscheidung und ersetzt
+        # deshalb einen eventuell wartenden automatischen Retry.
+        scheduler_service.cancel_retry_sequence(
+            scan_config.slug, "manueller Lauf gestartet"
+        )
+
         # Starte Scan im Hintergrund
         background_tasks.add_task(scanner_service.run_scan, scan_config)
         

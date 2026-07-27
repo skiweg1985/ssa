@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tooltip } from "@/components/ui/tooltip"
 import { Info, CheckCircle2, XCircle, Loader2, Clock } from "lucide-react"
 import { TableActions } from "./TableActions"
-import { getStatusConfig, formatDateShort, formatRelativeTime, buildScanTooltipContent, formatSizeCompact } from "@/lib/utils"
+import { getStatusConfig, formatDateShort, formatRelativeTime, formatRetryStatus, buildScanTooltipContent, formatSizeCompact } from "@/lib/utils"
 import { useScanProgress } from "@/hooks/useScanProgress"
 import type { ScanStatus } from "@/types/api"
 import { cn } from "@/lib/cn"
@@ -47,6 +47,7 @@ export function TableRow({
   const effectiveStatus = (progress?.status === "completed") ? "completed" : scan.status
   const status = getStatusConfig(effectiveStatus)
   const StatusIcon = statusIcons[effectiveStatus as keyof typeof statusIcons] || Clock
+  const retryStatus = formatRetryStatus(scan)
   
   // Check if progress info is displayed (with or without percent)
   const hasProgressInfo = isRunning && progress && progress.progress
@@ -85,6 +86,11 @@ export function TableRow({
             />
             <span className="whitespace-nowrap">{status.text}</span>
           </Badge>
+          {retryStatus && (
+            <span className="text-[10px] font-medium text-amber-700 dark:text-amber-300">
+              {retryStatus}
+            </span>
+          )}
           {hasProgressInfo && (
             <Tooltip
               content={

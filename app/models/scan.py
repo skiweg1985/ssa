@@ -1,6 +1,6 @@
 """Pydantic Models für Scan-Ergebnisse"""
 from datetime import datetime
-from typing import Optional, List
+from typing import Literal, Optional, List
 from pydantic import BaseModel, Field
 
 
@@ -57,6 +57,26 @@ class NASConfigPublic(BaseModel):
     verify_ssl: bool = Field(True, description="Ob SSL-Zertifikate verifiziert werden")
 
 
+class RetryInfo(BaseModel):
+    """Aktueller Zustand der automatischen Scheduler-Wiederholung."""
+
+    state: Optional[Literal["pending", "running"]] = Field(
+        None, description="Wartender oder aktiver Retry; null ohne Retry"
+    )
+    attempt: Optional[int] = Field(
+        None, description="Nummer des nächsten oder aktiven Retries (1-basiert)"
+    )
+    max_attempts: int = Field(
+        0, description="Global konfigurierte Anzahl zusätzlicher Versuche"
+    )
+    scheduled_at: Optional[datetime] = Field(
+        None, description="Geplanter Startzeitpunkt des wartenden Retries"
+    )
+    reason: Optional[Literal["failed", "partial"]] = Field(
+        None, description="Auslöser des Retries"
+    )
+
+
 class ScanStatus(BaseModel):
     """Status eines Scan-Tasks"""
     scan_slug: str = Field(..., description="Slug des Scan-Tasks")
@@ -76,6 +96,10 @@ class ScanStatus(BaseModel):
     nas: Optional[NASConfigPublic] = Field(None, description="NAS-Konfiguration (ohne Passwort)")
     interval: Optional[str] = Field(None, description="Cron-Format Intervall")
     nas_connection_id: Optional[int] = Field(None, description="ID der NAS-Verbindung (für die Job-Verwaltung)")
+    retry: RetryInfo = Field(
+        default_factory=RetryInfo,
+        description="Zustand einer automatischen Scheduler-Wiederholung",
+    )
 
 
 class ScanListResponse(BaseModel):

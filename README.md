@@ -213,6 +213,17 @@ Scan-Jobs und NAS-Verbindungen werden **im Web-Frontend** verwaltet:
 
 - **Scan-Jobs**: anlegen/bearbeiten/löschen über „Neuer Scan" bzw. das Aktionsmenü der Tabelle — inkl. Verzeichnisauswahl per NAS-Browser, Intervall-Presets oder Cron.
 - **NAS-Verbindungen**: eigener Bereich (Topbar → Server-Icon) mit „Verbindung testen"; Passwörter werden **verschlüsselt** in der Datenbank gespeichert und nie wieder ans Frontend ausgeliefert.
+- **Automatische Wiederholungen**: Fehlgeschlagene geplante Läufe und Läufe mit einzelnen fehlgeschlagenen Pfaden werden standardmäßig zweimal nach fünf Minuten plus 0–30 Sekunden Jitter wiederholt. Jeder Versuch wird separat in der Historie gespeichert; manuelle Starts werden nicht automatisch wiederholt.
+
+  | Variable | Default | Gültig | Bedeutung |
+  |---|---:|---:|---|
+  | `SSA_SCAN_RETRY_COUNT` | `2` | `0`–`10` | Zusätzliche Versuche; `0` deaktiviert Retries |
+  | `SSA_SCAN_RETRY_DELAY_SECONDS` | `300` | `10`–`86400` | Basiswartezeit in Sekunden |
+
+  Ist der nächste reguläre Lauf früher oder gleichzeitig fällig, entfällt der
+  Retry. Ein manueller Lauf sowie Löschen, Deaktivieren oder Ändern des Jobs
+  heben eine wartende Wiederholung ebenfalls auf. Der wartende Zustand liegt
+  nur im Prozessspeicher und wird nach einem Server-Neustart nicht fortgesetzt.
 
 ## Monitoring (PRTG, Zabbix, Grafana …)
 

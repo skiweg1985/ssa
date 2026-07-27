@@ -39,6 +39,7 @@ from app.models.monitor import (
     SystemInfo,
     severity_text,
 )
+from app.models.scan import RetryInfo
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +410,7 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
     latest_completed = storage.get_latest_completed_result(slug)
     run_active = scanner_service.is_scan_running(slug)
     job_info = scheduler_service.get_job_info(slug)
+    retry = scheduler_service.get_retry_info(slug)
 
     # Alters-Schwellwerte nur für aktivierte Jobs - ein bewusst deaktivierter
     # Job wäre sonst zwangsläufig überfällig. Dieselben Faktoren wie der
@@ -562,12 +564,14 @@ def _evaluate_scan(job: Dict[str, Any]) -> ScanMonitorReport:
             last_run=last_run,
             last_success=last_success,
             schedule=schedule,
+            retry=retry,
         ),
         scan=ScanRef(slug=slug, name=job["name"], enabled=enabled),
         run=run,
         last_run=last_run,
         last_success=last_success,
         schedule=schedule,
+        retry=retry,
     )
 
 
@@ -580,9 +584,26 @@ def _build_scan_message(
     last_run: LastRunInfo,
     last_success: LastSuccessInfo,
     schedule: ScheduleInfo,
+    retry: RetryInfo,
 ) -> str:
     """Baut den Text, den ein Monitoring-System als Alarmmeldung anzeigt"""
     age = format_age(last_run.age_seconds)
+
+    retry_hint = ""
+    if retry.state == "running":
+        retry_hint = (
+            f" - Wiederholung {retry.attempt}/{retry.max_attempts} läuft"
+        )
+    elif retry.state == "pending":
+        when = (
+            as_utc(retry.scheduled_at).isoformat()
+            if retry.scheduled_at is not None
+            else "in Kürze"
+        )
+        retry_hint = (
+            f" - Wiederholung {retry.attempt}/{retry.max_attempts} "
+            f"geplant für {when}"
+        )
 
     if state == MonitorState.DISABLED:
         return "Job ist deaktiviert"
@@ -607,7 +628,7 @@ def _build_scan_message(
         return "Job hat noch keine Ergebnisse geliefert"
     if state == MonitorState.FAILED:
         detail = last_run.error or "unbekannter Fehler"
-        return f"Letzter Lauf {age} fehlgeschlagen: {detail}"
+        return f"Letzter Lauf {age} fehlgeschlagen: {detail}{retry_hint}"
     if state == MonitorState.OVERDUE:
         return (
             f"Scan ist überfällig: letzter Lauf {age}, erwartet "
@@ -625,7 +646,7 @@ def _build_scan_message(
         detail = f": {names}" if names else ""
         return (
             f"Letzter Lauf abgeschlossen, aber {last_run.folders_failed} von "
-            f"{last_run.folders_total} Ordnern fehlgeschlagen{detail}"
+            f"{last_run.folders_total} Ordnern fehlgeschlagen{detail}{retry_hint}"
         )
     if state == MonitorState.ERROR:
         return "Zustand konnte nicht ermittelt werden - Details siehe Server-Log"
