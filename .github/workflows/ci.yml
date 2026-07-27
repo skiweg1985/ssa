@@ -38,7 +38,7 @@ jobs:
           pip install -r requirements-dev.txt
 
       - name: Tests ausführen
-        run: pytest -q
+        run: pytest -q tests
 
   frontend:
     name: Frontend (build)

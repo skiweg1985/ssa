@@ -94,7 +94,7 @@ gedacht und werden auf dem Mac nicht benötigt.
 
 Der interaktive CLI-Client ermöglicht Ad-hoc-Analysen von Verzeichnisgrößen.
 
-Siehe [README_CLI.md](README_CLI.md) für Details zur Nutzung.
+Siehe [README_CLI.md](docs/README_CLI.md) für Details zur Nutzung.
 
 **Schnellstart:**
 
@@ -113,7 +113,7 @@ python explore_syno_api.py --json --share homes
 
 Der Server ermöglicht geplante Scans über eine REST API und Web-Interface.
 
-Siehe [README_SERVER.md](README_SERVER.md) für Details zur Nutzung.
+Siehe [README_SERVER.md](docs/README_SERVER.md) für Details zur Nutzung.
 
 **Schnellstart:**
 
@@ -205,7 +205,7 @@ benötigt. Wer stattdessen aus dem Git-Repository arbeitet, baut das Frontend
 einmalig selbst — siehe [Aus dem Quellcode](#aus-dem-quellcode-entwicklung).
 
 > **Für Maintainer:** Wie ein Release erstellt wird (Tag pushen, Workflow,
-> Paketinhalt, Troubleshooting) steht in [RELEASING.md](RELEASING.md).
+> Paketinhalt, Troubleshooting) steht in [RELEASING.md](docs/RELEASING.md).
 
 ## Job-Verwaltung im Frontend
 
@@ -259,7 +259,7 @@ und RAM-Kanäle den Rechner betreffen, auf dem SSA läuft.
 curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/monitor
 ```
 
-Siehe [README_MONITORING.md](README_MONITORING.md) für Details — Feldreferenz,
+Siehe [README_MONITORING.md](docs/README_MONITORING.md) für Details — Feldreferenz,
 Beispielantworten, PRTG-Sensoreinrichtung und fertige Rezepte für Nagios,
 Zabbix, Checkmk, Grafana und Uptime-Kuma.
 
@@ -321,17 +321,18 @@ Nach `./dev.sh setup` genügt:
 ./dev.sh test
 ```
 
-Argumente werden an pytest durchgereicht, z.B. `./dev.sh test test_prtg_api.py -v`.
+Argumente werden an pytest durchgereicht, z.B.
+`./dev.sh test tests/test_prtg_api.py -v`.
 
 Von Hand — `requirements-dev.txt` zieht `requirements.txt` selbst mit:
 
 ```bash
 pip install -r requirements-dev.txt
-pytest
+pytest tests
 ```
 
 `frontend/dist` wird für die Tests nicht benötigt: Fehlt ein Build, legt
-`conftest.py` einen Platzhalter an, damit die Tests der SPA-Auslieferung
+`tests/conftest.py` einen Platzhalter an, damit die Tests der SPA-Auslieferung
 (Path-Traversal-Schutz) auch im frischen Klon laufen. Ein vorhandener Build
 wird nie überschrieben.
 
@@ -342,4 +343,4 @@ MIT — siehe [LICENSE](LICENSE).
 ## Sicherheit melden
 
 Sicherheitslücken bitte **nicht** über öffentliche Issues melden, sondern über
-den privaten Meldeweg — Details in [SECURITY.md](SECURITY.md).
+den privaten Meldeweg — Details in [SECURITY.md](docs/SECURITY.md).

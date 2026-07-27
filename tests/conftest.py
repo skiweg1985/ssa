@@ -19,6 +19,8 @@ from pathlib import Path
 
 import pytest
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 # Muss den Marker '<div id="root">' enthalten, an dem die Tests die SPA erkennen.
 #
 # Der sichtbare Hinweis ist Absicht: Wer nach einem Testlauf den Server startet,
@@ -46,7 +48,7 @@ npm --prefix frontend run build</code></pre>
 
 
 def _ensure_frontend_build() -> None:
-    dist = Path(__file__).parent / "frontend" / "dist"
+    dist = PROJECT_ROOT / "frontend" / "dist"
     index = dist / "index.html"
     if index.exists():
         return
@@ -68,7 +70,7 @@ def _isolate_database(monkeypatch, tmp_path):
     die mit Persistenz nichts zu tun haben.
 
     Umgebogen wird der Default-Pfad, nicht die Instanz: Tests, die selbst eine
-    ScanStorage mit explizitem db_path bauen (z.B. test_auth_api.py), laufen
+    ScanStorage mit explizitem db_path bauen (z.B. tests/test_auth_api.py), laufen
     unverändert weiter.
     """
     import app.services.jobs_store as jobs_store_module

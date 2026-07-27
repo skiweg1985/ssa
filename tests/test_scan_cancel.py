@@ -1,6 +1,6 @@
 """Tests für den Abbruch eines laufenden Scans - auf Ebene des Scan-Laufs.
 
-test_monitor_api.py prüft Endpunkt und Flag. Hier läuft ein echter
+tests/test_monitor_api.py prüft Endpunkt und Flag. Hier läuft ein echter
 `run_scan()`-Durchlauf gegen eine nachgebildete NAS-API, damit belegt ist,
 dass der kooperative Abbruch tatsächlich greift: der Lauf endet vorzeitig,
 überspringt die restlichen Pfade und wird als 'cancelled' persistiert.

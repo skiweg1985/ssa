@@ -19,10 +19,10 @@ frontend/node_modules
 frontend/dist
 frontend/.vite
 
-# Doku/Grosse Dateien, die das Image nicht braucht
-Synology_File_Station_API_Guide.pdf
+# Doku und Tests, die das Image nicht braucht
+docs
+tests
 *.md
-test_*.py
 
 # Docker selbst
 Dockerfile

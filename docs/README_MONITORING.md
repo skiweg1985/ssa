@@ -34,7 +34,7 @@ selbst**. Insbesondere messen die CPU-, RAM- und Disk-Kanäle von
 
 Alle Endpoints außer `/health` erwarten ein Bearer-Token. Für Monitoring gibt es
 **statische, read-only API-Tokens**, die im Frontend verwaltet werden — siehe
-[README.md](README.md), Kapitel „Monitoring".
+[README.md](../README.md), Kapitel „Monitoring".
 
 ```bash
 curl -H "Authorization: Bearer ssa_..." http://nas:8080/api/monitor

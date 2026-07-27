@@ -207,7 +207,11 @@ jobs:
           cp -r app "dist-pkg/${STAGE}/"
           cp explore_syno_api.py requirements.txt "dist-pkg/${STAGE}/"
           cp .env.example "dist-pkg/${STAGE}/"
-          cp README.md README_CLI.md README_SERVER.md "dist-pkg/${STAGE}/"
+          cp README.md "dist-pkg/${STAGE}/"
+          mkdir -p "dist-pkg/${STAGE}/docs"
+          cp docs/README_CLI.md docs/README_MONITORING.md \
+            docs/README_SERVER.md docs/RELEASING.md docs/SECURITY.md \
+            "dist-pkg/${STAGE}/docs/"
           cp install.sh service.sh uninstall.sh "dist-pkg/${STAGE}/"
 
           # Frisch gebautes Frontend (das Backend erwartet frontend/dist neben app/)
